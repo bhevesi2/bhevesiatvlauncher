@@ -50,7 +50,7 @@ Minden mező opcionális:
 
 ## Background photos
 
-The `matterhorn` set is downloaded at build time (`tools/fetch_backgrounds.sh`) from Unsplash, under the Unsplash License:
+The `matterhorn` set is downloaded at build time (`tools/fetch_backgrounds.py`) from Unsplash, under the Unsplash License:
 
 | Phase | Photo |
 |---|---|
