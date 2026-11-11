@@ -1,9 +1,16 @@
+import java.text.SimpleDateFormat
+import java.util.Date
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
 }
 
-val buildNumber = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
+// Minutes since 1970: always grows, so a newer build installs over an older one
+// no matter whether it was built on GitHub or on a PC.
+val buildStamp = (System.currentTimeMillis() / 60_000L).toInt()
+val buildName = System.getenv("GITHUB_RUN_NUMBER")?.let { "0.1.$it" }
+    ?: ("0.1-" + SimpleDateFormat("MMdd.HHmm").format(Date()))
 
 android {
     namespace = "hu.otthon.launcher"
@@ -13,8 +20,8 @@ android {
         applicationId = "hu.otthon.launcher"
         minSdk = 26
         targetSdk = 34
-        versionCode = buildNumber
-        versionName = "0.1.$buildNumber"
+        versionCode = buildStamp
+        versionName = buildName
     }
 
     signingConfigs {

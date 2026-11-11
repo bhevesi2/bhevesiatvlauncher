@@ -23,11 +23,6 @@ jobs:
         with:
           gradle-version: "8.7"
 
-      - name: Fetch background photos
-        run: |
-          python3 -m pip install --quiet pillow
-          python3 tools/fetch_backgrounds.py
-
       - name: Build release APK
         run: gradle :app:assembleRelease --no-daemon --stacktrace
 

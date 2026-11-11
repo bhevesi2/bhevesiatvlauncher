@@ -48,7 +48,7 @@ makes an item display-only. A section with `hide_when` disappears while that ent
 
 ## Background photos
 
-The `matterhorn` and `city` sets are downloaded at build time (`tools/fetch_backgrounds.py`) from Unsplash, under the Unsplash License:
+The `matterhorn` and `city` sets live in `app/src/main/assets/backgrounds/` (fetched with `tools/fetch_backgrounds.py`) and come from Unsplash, under the Unsplash License:
 
 | Phase | Photo |
 |---|---|
@@ -61,5 +61,20 @@ City set: Ahmed Nishaath – Dalian at sunrise (`Z0JVfNqv2VE`), Adrian Newell �
 (`oXoQ5nKUd5o`), Arto Marttinen – Tokyo at sunset (`6xh7H5tWj9c`), Andrea De Santis – London at
 night (`bGWu7lcoZqY`).
 
-To swap photos, edit `tools/backgrounds.txt` (set, phase, images.unsplash.com photo path).
+To swap photos, edit `tools/backgrounds.txt` (set, phase, images.unsplash.com photo path), run `python tools/fetch_backgrounds.py` (needs Pillow) and commit the new files.
 Your own photos can also be placed on the TV in `files/backgrounds/<name>/hajnal|nappal|alkony|ejszaka.jpg`.
+
+## Building on a Windows PC
+
+Needs JDK 17. One-time setup, in PowerShell (installs Git if missing, the Android SDK
+command-line tools, adb, platform 34 and build-tools 34, and clones this project to
+`%USERPROFILE%\bhevesiatvlauncher`):
+
+    irm https://raw.githubusercontent.com/bhevesi2/bhevesiatvlauncher/main/tools/setup-windows.ps1 | iex
+
+After that, `update.bat` in the project folder pulls the newest source, builds the APK and
+installs it on the TV over ADB (`update.bat <address>` for another TV, `update.bat build` to only
+build). The first time, the TV asks whether to allow debugging from the PC.
+
+Every build is signed with the key in `app/launcher.keystore` and gets a time-based version
+code, so PC builds and GitHub builds install over each other.
