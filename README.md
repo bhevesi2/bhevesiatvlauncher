@@ -52,8 +52,8 @@ The `matterhorn` and `city` sets are downloaded at build time (`tools/fetch_back
 
 | Phase | Photo |
 |---|---|
-| Dawn | Nadine Marfurt – Fluhalp, Zermatt (`FLfNL6XuOEM`) |
-| Day | Tomi Blasic – Riffelsee, Zermatt (`tDbCVk4bffM`) |
+| Dawn | Ilia Bronskiy – Matterhorn at sunrise, Zermatt (`7bYsjkMTqpw`) |
+| Day | Luke Tanis – Matterhorn reflection, Zermatt (`qnPEmE8M1c4`) |
 | Dusk | Marc Wieland – Swiss alpine lake at dusk (`1Kcgpq1ap9E`) |
 | Night | Pascal Debrunner – Milky Way with Matterhorn (`xu9ck-3xTvI`) |
 
