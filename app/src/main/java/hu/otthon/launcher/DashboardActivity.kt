@@ -378,16 +378,16 @@ class DashboardActivity : Activity() {
             val col = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER_HORIZONTAL
-                setPadding(dp(9f), 0, dp(3f), 0)
+                setPadding(dp(10f), 0, dp(2f), 0)
             }
-            col.addView(label(dayFmt.format(Instant.ofEpochMilli(f.time)), 10f, C.TEXT3))
+            col.addView(label(dayFmt.format(Instant.ofEpochMilli(f.time)), 10f, C.TEXT3), LinearLayout.LayoutParams(-2, -2))
             col.addView(ImageView(this).apply {
                 setImageResource(weatherIcon(f.condition))
                 setColorFilter(C.TEXT2)
             }, LinearLayout.LayoutParams(dp(16f), dp(16f)).apply { topMargin = dp(3f); bottomMargin = dp(3f) })
             val hi = if (f.hi.isNaN()) "–" else Fmt.num(Math.round(f.hi).toDouble(), "°")
             val lo = if (f.lo.isNaN()) "" else " " + Fmt.num(Math.round(f.lo).toDouble(), "°")
-            col.addView(label(hi + lo, 10f, C.TEXT2))
+            col.addView(label(hi + lo, 10f, C.TEXT2).apply { maxLines = 1 }, LinearLayout.LayoutParams(-2, -2))
             forecastRow.addView(col)
         }
     }

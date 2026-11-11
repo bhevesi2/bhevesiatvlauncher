@@ -247,6 +247,7 @@ class RowView(ctx: Context, title: String, value: String? = null, selected: Bool
         titleView.ellipsize = android.text.TextUtils.TruncateAt.END
         addView(titleView, LayoutParams(0, -2, 1f))
         valueView.maxLines = 1
+        valueView.maxWidth = ctx.dp(210f)
         valueView.ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
         valueView.gravity = Gravity.END
         addView(valueView, LayoutParams(-2, -2).apply { leftMargin = ctx.dp(12f) })
