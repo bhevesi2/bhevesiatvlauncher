@@ -59,5 +59,5 @@ The `matterhorn` set is downloaded at build time (`tools/fetch_backgrounds.sh`) 
 | Dusk | Marc Wieland – Swiss alpine lake at dusk (`1Kcgpq1ap9E`) |
 | Night | Pascal Debrunner – Milky Way with Matterhorn (`xu9ck-3xTvI`) |
 
-To swap photos, edit `tools/backgrounds.txt` (set, phase, Unsplash photo id).
+To swap photos, edit `tools/backgrounds.txt` (set, phase, images.unsplash.com photo path).
 Your own photos can also be placed on the TV in `files/backgrounds/<name>/hajnal|nappal|alkony|ejszaka.jpg`.
