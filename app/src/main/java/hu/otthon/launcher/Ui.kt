@@ -1,16 +1,30 @@
 package hu.otthon.launcher
 
+import android.app.Activity
+import android.app.Dialog
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Rect
 import android.graphics.Typeface
+import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.text.InputType
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
+import android.view.inputmethod.EditorInfo
+import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 
 object C {
@@ -18,10 +32,15 @@ object C {
     const val TEXT2 = 0xFFE4E1DA.toInt()
     const val TEXT3 = 0xFFC9C6BE.toInt()
     const val DARK = 0xFF141413.toInt()
+    const val DARK2 = 0xFF444441.toInt()
     const val GLASS = 0x8C0A0A0E.toInt()
     const val GLASS_SOFT = 0x730A0A0E.toInt()
+    const val PANEL = 0xE60E0F13.toInt()
+    const val CARD = 0xB30E0F13.toInt()
+    const val ROW = 0x12FFFFFF
     const val BORDER = 0x1FFFFFFF
     const val FOCUS_FILL = 0xF0F5F3EE.toInt()
+    const val ON = 0xFF9FE1CB.toInt()
 }
 
 fun Context.dp(v: Float): Int = (v * resources.displayMetrics.density + 0.5f).toInt()
@@ -55,7 +74,7 @@ fun Context.chip(iconRes: Int, text: String): TextView = label(text, 12f, C.TEXT
     compoundDrawablePadding = dp(5f)
     gravity = Gravity.CENTER_VERTICAL
     setPadding(dp(10f), dp(6f), dp(12f), dp(6f))
-    background = rounded(C.GLASS_SOFT, dp(20f).toFloat(), dp(0.5f).coerceAtLeast(1), C.BORDER)
+    background = rounded(C.GLASS_SOFT, dp(20f).toFloat(), 1, C.BORDER)
 }
 
 /** Focusable pill button: dark glass, turns light when focused. */
@@ -64,6 +83,7 @@ fun Context.pill(text: String, iconRes: Int?, onClick: () -> Unit): TextView {
     return label(text, 11f, C.TEXT).apply {
         isFocusable = true
         isClickable = true
+        maxLines = 1
         gravity = Gravity.CENTER_VERTICAL
         setPadding(dp(12f), dp(7f), dp(14f), dp(7f))
         val icon: Drawable? = iconRes?.let { ctx.getDrawable(it)!!.mutate().apply { setBounds(0, 0, dp(12f), dp(12f)) } }
@@ -83,17 +103,29 @@ fun Context.pill(text: String, iconRes: Int?, onClick: () -> Unit): TextView {
     }
 }
 
+fun weatherIcon(condition: String): Int = when (condition) {
+    "sunny" -> R.drawable.ic_sun
+    "clear-night" -> R.drawable.ic_moon
+    "partlycloudy" -> R.drawable.ic_partly
+    "fog" -> R.drawable.ic_fog
+    "rainy", "pouring" -> R.drawable.ic_rain
+    "snowy", "snowy-rainy", "hail" -> R.drawable.ic_snow
+    "lightning", "lightning-rainy" -> R.drawable.ic_storm
+    "windy", "windy-variant" -> R.drawable.ic_wind
+    else -> R.drawable.ic_cloud
+}
+
 /** App tile with banner (or icon + name) and focus zoom. */
 class AppTile(ctx: Context, val app: AppEntry) : FrameLayout(ctx) {
-    private val normalBg = rounded(C.GLASS, ctx.dp(8f).toFloat(), 1, C.BORDER)
     private val ring = rounded(0, ctx.dp(8f).toFloat(), ctx.dp(2f), C.TEXT)
+    var onFocused: (() -> Unit)? = null
 
     init {
         isFocusable = true
         isClickable = true
         clipToOutline = true
         outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
-        background = normalBg
+        background = rounded(C.GLASS, ctx.dp(8f).toFloat(), 1, C.BORDER)
         val banner = app.banner
         if (banner != null) {
             addView(ImageView(ctx).apply {
@@ -118,7 +150,263 @@ class AppTile(ctx: Context, val app: AppEntry) : FrameLayout(ctx) {
             foreground = if (f) ring else null
             v.animate().scaleX(if (f) 1.08f else 1f).scaleY(if (f) 1.08f else 1f)
                 .translationZ(if (f) ctx.dp(6f).toFloat() else 0f).setDuration(140).start()
+            if (f) onFocused?.invoke()
         }
+    }
+}
+
+/** Camera tile: latest snapshot with the camera name along the bottom edge. */
+class CamTile(ctx: Context, val item: HaItem, radius: Float, labelSp: Float, zoom: Float) : FrameLayout(ctx) {
+    val image = ImageView(ctx).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+    private val ring = rounded(0, radius, ctx.dp(2f), C.TEXT)
+
+    init {
+        isFocusable = true
+        isClickable = true
+        background = rounded(0xFF22262C.toInt(), radius)
+        clipToOutline = true
+        outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
+        addView(image, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        val name = item.title
+        val caption = ctx.label(name, labelSp, C.TEXT, bold = true)
+        caption.maxLines = 1
+        caption.setPadding(ctx.dp(labelSp * 0.6f), ctx.dp(labelSp * 0.25f), ctx.dp(labelSp * 0.6f), ctx.dp(labelSp * 0.3f))
+        caption.setBackgroundColor(0x99060709.toInt())
+        addView(caption, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
+        contentDescription = "$name camera"
+        setOnFocusChangeListener { v, f ->
+            foreground = if (f) ring else null
+            v.animate().scaleX(if (f) zoom else 1f).scaleY(if (f) zoom else 1f)
+                .translationZ(if (f) ctx.dp(6f).toFloat() else 0f).setDuration(140).start()
+        }
+    }
+}
+
+/**
+ * Horizontal row that scrolls smoothly so the focused child sits inside the side padding,
+ * instead of being squeezed or cut at the screen edge.
+ */
+class RowScroller(ctx: Context) : HorizontalScrollView(ctx) {
+    init {
+        isHorizontalScrollBarEnabled = false
+        overScrollMode = View.OVER_SCROLL_NEVER
+        clipToPadding = false
+        clipChildren = false
+    }
+
+    override fun computeScrollDeltaToGetChildRectOnScreen(rect: Rect): Int {
+        if (childCount == 0) return 0
+        val left = scrollX + paddingLeft
+        val right = scrollX + width - paddingRight
+        val delta = when {
+            rect.left < left -> rect.left - left
+            rect.right > right -> rect.right - right
+            else -> 0
+        }
+        if (delta != 0) smoothScrollBy(delta, 0)
+        return 0
+    }
+}
+
+/** Small on/off indicator for toggle rows. */
+class SwitchDot(ctx: Context) : View(ctx) {
+    var on = false
+        set(v) { field = v; invalidate() }
+    var dark = false
+        set(v) { field = v; invalidate() }
+    private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    override fun onDraw(c: Canvas) {
+        val w = width.toFloat()
+        val h = height.toFloat()
+        p.style = Paint.Style.FILL
+        p.color = if (on) (if (dark) 0xFF1D9E75.toInt() else C.ON) else (if (dark) 0x55141413 else 0x44FFFFFF)
+        c.drawRoundRect(0f, 0f, w, h, h / 2, h / 2, p)
+        p.color = if (dark && !on) C.DARK2 else if (on) C.DARK else C.TEXT
+        val r = h / 2 - h * 0.14f
+        c.drawCircle(if (on) w - h / 2 else h / 2, h / 2, r, p)
+    }
+}
+
+/** One line in a settings list or popup: title, optional value on the right, optional radio mark. */
+class RowView(ctx: Context, title: String, value: String? = null, selected: Boolean? = null) : LinearLayout(ctx) {
+    private val radio: TextView? = if (selected != null) ctx.label(if (selected) "●" else "○", 12f, C.TEXT2) else null
+    val titleView: TextView = ctx.label(title, 12f, C.TEXT)
+    val valueView: TextView = ctx.label(value ?: "", 11f, C.TEXT3)
+    var passive = false
+        set(v) { field = v; paint(isFocused) }
+
+    init {
+        orientation = HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        isFocusable = true
+        isClickable = true
+        setPadding(ctx.dp(12f), ctx.dp(9f), ctx.dp(14f), ctx.dp(9f))
+        radio?.let { addView(it, LayoutParams(-2, -2).apply { rightMargin = ctx.dp(10f) }) }
+        titleView.maxLines = 1
+        titleView.ellipsize = android.text.TextUtils.TruncateAt.END
+        addView(titleView, LayoutParams(0, -2, 1f))
+        valueView.maxLines = 1
+        valueView.ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
+        valueView.gravity = Gravity.END
+        addView(valueView, LayoutParams(-2, -2).apply { leftMargin = ctx.dp(12f) })
+        paint(false)
+        setOnFocusChangeListener { _, f -> paint(f) }
+    }
+
+    private fun paint(f: Boolean) {
+        val r = context.dp(8f).toFloat()
+        background = if (f) rounded(C.FOCUS_FILL, r) else rounded(C.ROW, r)
+        titleView.setTextColor(if (f) C.DARK else if (passive) C.TEXT3 else C.TEXT)
+        valueView.setTextColor(if (f) C.DARK2 else C.TEXT3)
+        radio?.setTextColor(if (f) C.DARK else C.TEXT2)
+    }
+}
+
+/** Floating popups in the launcher's own style. */
+object Popup {
+    private fun shell(act: Activity, title: String, widthDp: Float): Triple<Dialog, LinearLayout, FrameLayout> {
+        val d = Dialog(act, android.R.style.Theme_Translucent_NoTitleBar)
+        val root = FrameLayout(act)
+        root.setBackgroundColor(0xB3000000.toInt())
+        val panel = LinearLayout(act).apply {
+            orientation = LinearLayout.VERTICAL
+            background = rounded(0xF516171C.toInt(), act.dp(16f).toFloat(), 1, C.BORDER)
+            setPadding(act.dp(16f), act.dp(16f), act.dp(16f), act.dp(14f))
+        }
+        panel.addView(act.label(title, 15f, C.TEXT, bold = true).apply {
+            setPadding(act.dp(4f), 0, act.dp(4f), act.dp(10f))
+        })
+        root.addView(panel, FrameLayout.LayoutParams(act.dp(widthDp), -2, Gravity.CENTER))
+        d.setContentView(root)
+        d.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        return Triple(d, panel, root)
+    }
+
+    fun menu(act: Activity, title: String, items: List<String>, selected: Int = -1, onPick: (Int) -> Unit) {
+        val (d, panel, _) = shell(act, title, 340f)
+        val list = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL }
+        var first: View? = null
+        items.forEachIndexed { i, s ->
+            val row = RowView(act, s, null, if (selected >= 0) i == selected else null)
+            row.setOnClickListener { d.dismiss(); onPick(i) }
+            list.addView(row, LinearLayout.LayoutParams(-1, -2).apply { if (i > 0) topMargin = act.dp(4f) })
+            if (i == selected || first == null) first = row
+        }
+        val scroll = ScrollView(act).apply { isVerticalScrollBarEnabled = false; addView(list) }
+        val maxH = act.dp(360f)
+        val wanted = items.size * act.dp(38f)
+        panel.addView(scroll, LinearLayout.LayoutParams(-1, if (wanted > maxH) maxH else -2))
+        d.show()
+        first?.requestFocus()
+    }
+
+    fun text(act: Activity, title: String, initial: String, hint: String = "", onDone: (String) -> Unit) {
+        val (d, panel, _) = shell(act, title, 460f)
+        val edit = EditText(act).apply {
+            setText(initial)
+            setSelection(initial.length)
+            this.hint = hint
+            setHintTextColor(0x66FFFFFF)
+            setTextColor(C.TEXT)
+            textSize = 13f
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
+            imeOptions = EditorInfo.IME_ACTION_DONE
+            setSingleLine(true)
+            background = rounded(0x1FFFFFFF, act.dp(8f).toFloat(), 1, C.BORDER)
+            setPadding(act.dp(12f), act.dp(10f), act.dp(12f), act.dp(10f))
+        }
+        panel.addView(edit, LinearLayout.LayoutParams(-1, -2))
+        val save = RowView(act, "Save")
+        val cancel = RowView(act, "Cancel")
+        save.setOnClickListener { d.dismiss(); onDone(edit.text.toString().trim()) }
+        cancel.setOnClickListener { d.dismiss() }
+        edit.setOnEditorActionListener { _, _, _ -> save.requestFocus(); true }
+        panel.addView(save, LinearLayout.LayoutParams(-1, -2).apply { topMargin = act.dp(10f) })
+        panel.addView(cancel, LinearLayout.LayoutParams(-1, -2).apply { topMargin = act.dp(4f) })
+        d.show()
+        edit.requestFocus()
+    }
+}
+
+/**
+ * Full-screen background shared by every launcher screen: the vector landscape or a photo
+ * for the current time of day, cross-faded, with a darkening layer on top.
+ */
+class Backdrop(ctx: Context) : FrameLayout(ctx) {
+    private val landscape = LandscapeView(ctx)
+    private val photoA = ImageView(ctx).apply { scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0f }
+    private val photoB = ImageView(ctx).apply { scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0f }
+    private val dimView = View(ctx)
+    private var front: ImageView? = null
+    private var key: String? = null
+    private var gen = 0
+
+    init {
+        setBackgroundColor(Color.BLACK)
+        addView(landscape, LayoutParams(-1, -1))
+        addView(photoA, LayoutParams(-1, -1))
+        addView(photoB, LayoutParams(-1, -1))
+        addView(dimView, LayoutParams(-1, -1))
+    }
+
+    /** [flat] darkens evenly (for panels); otherwise only the top and bottom are darkened. */
+    fun setDim(dim: Float, flat: Boolean = false) {
+        val d = dim.coerceIn(0f, 1f)
+        dimView.background = if (flat) {
+            ColorDrawable(Color.argb((d * 255).toInt(), 6, 7, 10))
+        } else {
+            val bottom = (d * 255).toInt()
+            val top = (d * 0.7f * 255).toInt()
+            GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(Color.argb(top, 6, 7, 10), Color.argb(0, 6, 7, 10), Color.argb(bottom / 4, 6, 7, 10), Color.argb(bottom, 6, 7, 10))
+            )
+        }
+    }
+
+    fun show(bg: String, phase: Phase, animate: Boolean) {
+        val k = bg + "/" + phase.key
+        if (k == key) return
+        val anim = animate && key != null
+        key = k
+        val g = ++gen
+        if (Backgrounds.isPhoto(bg)) {
+            val app = context.applicationContext
+            Bg.run({ Backgrounds.photo(app, bg, phase) }) { bmp ->
+                if (g == gen) {
+                    if (bmp != null) showPhoto(bmp, anim) else showLandscape("alpine", phase, anim)
+                }
+            }
+        } else {
+            showLandscape(bg, phase, anim)
+        }
+    }
+
+    private fun showLandscape(style: String, p: Phase, animate: Boolean) {
+        landscape.style = if (style == "hills") "domb" else "alpesi"
+        landscape.setPhase(p, animate)
+        val ms = if (animate) 2500L else 0L
+        photoA.animate().alpha(0f).setDuration(ms).start()
+        photoB.animate().alpha(0f).setDuration(ms).start()
+        front = null
+    }
+
+    private fun showPhoto(bmp: Bitmap, animate: Boolean) {
+        val next = if (front === photoA) photoB else photoA
+        val prev = front
+        next.animate().cancel()
+        next.setImageBitmap(bmp)
+        next.bringToFront()
+        dimView.bringToFront()
+        next.alpha = 0f
+        next.animate().alpha(1f).setDuration(if (animate) 2500L else 0L).withEndAction {
+            if (prev != null && front === next) {
+                prev.alpha = 0f
+                prev.setImageDrawable(null)
+            }
+        }.start()
+        front = next
     }
 }
 
@@ -169,39 +457,17 @@ object Apps {
         return try { ctx.startActivity(i); true } catch (e: Exception) { false }
     }
 
+    fun openSystemSettings(ctx: Context): Boolean = try {
+        ctx.startActivity(Intent(android.provider.Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        true
+    } catch (e: Exception) {
+        false
+    }
+
     fun launch(ctx: Context, pkg: String): Boolean {
         val pm = ctx.packageManager
         val i = pm.getLeanbackLaunchIntentForPackage(pkg) ?: pm.getLaunchIntentForPackage(pkg) ?: return false
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         return try { ctx.startActivity(i); true } catch (e: Exception) { false }
-    }
-}
-
-fun View.lp(w: Int, h: Int) = LinearLayout.LayoutParams(w, h)
-
-/** Camera tile: latest snapshot with the camera name along the bottom edge. */
-class CamTile(ctx: Context, val item: HaItem, radius: Float, labelSp: Float, zoom: Float) : FrameLayout(ctx) {
-    val image = ImageView(ctx).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
-    private val ring = rounded(0, radius, ctx.dp(2f), C.TEXT)
-
-    init {
-        isFocusable = true
-        isClickable = true
-        background = rounded(0xFF22262C.toInt(), radius)
-        clipToOutline = true
-        outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
-        addView(image, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-        val name = item.label.ifBlank { item.entity.substringAfter('.') }
-        val caption = ctx.label(name, labelSp, C.TEXT, bold = true)
-        caption.maxLines = 1
-        caption.setPadding(ctx.dp(labelSp * 0.6f), ctx.dp(labelSp * 0.3f), ctx.dp(labelSp * 0.6f), ctx.dp(labelSp * 0.35f))
-        caption.setBackgroundColor(0x99060709.toInt())
-        addView(caption, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
-        contentDescription = "$name camera"
-        setOnFocusChangeListener { v, f ->
-            foreground = if (f) ring else null
-            v.animate().scaleX(if (f) zoom else 1f).scaleY(if (f) zoom else 1f)
-                .translationZ(if (f) ctx.dp(6f).toFloat() else 0f).setDuration(140).start()
-        }
     }
 }

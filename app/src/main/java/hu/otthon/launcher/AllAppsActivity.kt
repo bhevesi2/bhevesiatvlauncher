@@ -1,12 +1,12 @@
 package hu.otthon.launcher
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.os.Bundle
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Toast
@@ -20,28 +20,39 @@ class AllAppsActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         cfg = Config.load(this)
+        val side = dp(48f)
+
+        val frame = FrameLayout(this)
+        val backdrop = Backdrop(this)
+        backdrop.setDim(0.82f, flat = true)
+        backdrop.show(cfg.background, Backgrounds.phase(this, cfg), false)
+        frame.addView(backdrop, FrameLayout.LayoutParams(-1, -1))
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(0xFF0C0D10.toInt())
-            setPadding(dp(48f), dp(30f), dp(48f), 0)
+            setPadding(0, dp(30f), 0, 0)
+            clipChildren = false
+            clipToPadding = false
         }
         val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.BOTTOM }
         header.addView(label("All apps", 22f, C.TEXT, bold = true))
         header.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
-        header.addView(label("Long-press OK to add to favorites", 11f, C.TEXT3))
-        root.addView(header)
+        header.addView(label("Hold OK to add to or remove from favorites", 11f, C.TEXT3))
+        root.addView(header, LinearLayout.LayoutParams(-1, -2).apply { leftMargin = side; rightMargin = side })
 
+        // The side padding lives inside the scroller, so a zoomed tile at the edge is never cut.
         val scroll = ScrollView(this).apply {
             isVerticalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
             clipChildren = false
             clipToPadding = false
-            setPadding(0, dp(18f), 0, dp(30f))
+            setPadding(side, dp(18f), side, dp(30f))
         }
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; clipChildren = false }
         scroll.addView(list)
         root.addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
-        setContentView(root)
+        frame.addView(root, FrameLayout.LayoutParams(-1, -1))
+        setContentView(frame)
 
         Bg.run({ Apps.all(this) }) { apps -> if (apps != null) build(apps) }
     }
@@ -53,9 +64,9 @@ class AllAppsActivity : Activity() {
             if (i % columns == 0) {
                 val r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; clipChildren = false }
                 row = r
-                list.addView(r, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, -2).apply {
-                    if (i > 0) topMargin = dp(14f)
-                })
+                val lp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, -2)
+                if (i > 0) lp.topMargin = dp(14f)
+                list.addView(r, lp)
             }
             val cell = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; clipChildren = false }
             val tile = AppTile(this, app)
@@ -66,7 +77,9 @@ class AllAppsActivity : Activity() {
                 maxLines = 1
                 setPadding(dp(2f), dp(6f), 0, 0)
             })
-            row!!.addView(cell, LinearLayout.LayoutParams(0, -2, 1f).apply { if (i % columns > 0) leftMargin = dp(12f) })
+            val lp = LinearLayout.LayoutParams(0, -2, 1f)
+            if (i % columns > 0) lp.leftMargin = dp(12f)
+            row!!.addView(cell, lp)
         }
         val rem = apps.size % columns
         if (rem > 0) {
@@ -74,25 +87,24 @@ class AllAppsActivity : Activity() {
                 row!!.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f).apply { leftMargin = dp(12f) })
             }
         }
-        (list.getChildAt(0) as? LinearLayout)?.getChildAt(0)?.let { (it as? LinearLayout)?.getChildAt(0)?.requestFocus() }
+        val firstRow = list.getChildAt(0) as? LinearLayout
+        val firstCell = firstRow?.getChildAt(0) as? LinearLayout
+        firstCell?.getChildAt(0)?.requestFocus()
     }
 
     private fun menu(app: AppEntry) {
         val favs = FavStore.get(this, cfg)
         val isFav = favs.contains(app.pkg)
-        val items = arrayOf(if (isFav) "Remove from favorites" else "Add to favorites", "Open")
-        AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-            .setTitle(app.label)
-            .setItems(items) { _, which ->
-                if (which == 0) {
-                    if (isFav) favs.remove(app.pkg) else favs.add(app.pkg)
-                    FavStore.set(this, favs)
-                    toast(if (isFav) "Removed from favorites" else "Added to favorites")
-                } else {
-                    Apps.launch(this, app.pkg)
-                }
+        val items = listOf(if (isFav) "Remove from favorites" else "Add to favorites", "Open")
+        Popup.menu(this, app.label, items) { which ->
+            if (which == 0) {
+                if (isFav) favs.remove(app.pkg) else favs.add(app.pkg)
+                FavStore.set(this, favs)
+                toast(if (isFav) "Removed from favorites" else "Added to favorites")
+            } else {
+                Apps.launch(this, app.pkg)
             }
-            .show()
+        }
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {

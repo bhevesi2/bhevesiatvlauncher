@@ -8,7 +8,12 @@ import org.json.JSONObject
 import java.io.File
 import java.io.InputStream
 
-data class HaItem(val entity: String, val label: String, val icon: String)
+data class HaItem(val entity: String, val label: String, val icon: String = "", val ro: Boolean = false) {
+    val domain: String get() = entity.substringBefore('.')
+    val title: String get() = label.ifBlank { entity.substringAfter('.').replace('_', ' ') }
+}
+
+data class DashSection(val title: String, val hideWhen: String?, val items: List<HaItem>)
 
 data class Config(
     val haUrl: String?,
@@ -22,12 +27,13 @@ data class Config(
     val nowPlaying: String?,
     val nowPlayingLabel: String,
     val background: String,
-    val dim: Float
+    val dim: Float,
+    val weather: String?,
+    val sections: List<DashSection>,
+    val inputsHidden: Set<String>,
+    val inputNames: Map<String, String>
 ) {
     val haEnabled: Boolean get() = !haUrl.isNullOrBlank() && !haToken.isNullOrBlank()
-
-    override fun toString(): String =
-        "Config(ha=$haUrl, fav=$favorites, status=$status, scenes=$scenes, cams=$cameras, np=$nowPlaying/$nowPlayingLabel, bg=$background, dim=$dim, $lat,$lon)"
 
     companion object {
         val DEFAULT_FAVORITES = listOf(
@@ -39,19 +45,15 @@ data class Config(
             "org.videolan.vlc"
         )
 
-        fun file(ctx: Context): File = File(ctx.getExternalFilesDir(null), "config.json")
-
         fun load(ctx: Context): Config {
-            val json = try {
-                val f = file(ctx)
-                if (f.exists()) JSONObject(f.readText()) else JSONObject()
-            } catch (e: Exception) {
-                JSONObject()
-            }
-            val p = Prefs.of(ctx)
+            ConfigStore.migrate(ctx)
+            val json = ConfigStore.read(ctx)
+            val dash = json.optJSONObject("dashboard") ?: JSONObject()
+            val names = HashMap<String, String>()
+            json.optJSONObject("input_names")?.let { o -> o.keys().forEach { k -> names[k] = o.optString(k) } }
             return Config(
-                haUrl = json.optString("ha_url", "").trimEnd('/').ifBlank { null },
-                haToken = json.optString("ha_token", "").ifBlank { null },
+                haUrl = json.optString("ha_url", "").trim().trimEnd('/').ifBlank { null },
+                haToken = json.optString("ha_token", "").trim().ifBlank { null },
                 lat = json.optDouble("lat", 47.63),
                 lon = json.optDouble("lon", 17.73),
                 favorites = strings(json.optJSONArray("favorites")).ifEmpty { DEFAULT_FAVORITES },
@@ -59,9 +61,13 @@ data class Config(
                 scenes = items(json.optJSONArray("scenes")),
                 cameras = items(json.optJSONArray("cameras")),
                 nowPlaying = json.optString("now_playing", "").ifBlank { null },
-                nowPlayingLabel = json.optString("now_playing_label", "Now playing"),
-                background = Backgrounds.normalize(p.getString("background", null) ?: json.optString("background", "alpine")),
-                dim = (if (p.contains("dim")) p.getFloat("dim", 0.7f) else json.optDouble("dim", 0.7).toFloat()).coerceIn(0f, 1f)
+                nowPlayingLabel = json.optString("now_playing_label", "").ifBlank { "Now playing" },
+                background = Backgrounds.normalize(json.optString("background", "alpine")),
+                dim = json.optDouble("dim", 0.7).toFloat().coerceIn(0f, 1f),
+                weather = dash.optString("weather", "").ifBlank { null },
+                sections = sections(dash.optJSONArray("sections")),
+                inputsHidden = strings(json.optJSONArray("inputs_hidden")).toSet(),
+                inputNames = names
             )
         }
 
@@ -70,23 +76,99 @@ data class Config(
             return (0 until arr.length()).mapNotNull { arr.optString(it, "").ifBlank { null } }
         }
 
-        private fun items(arr: JSONArray?): List<HaItem> {
+        fun items(arr: JSONArray?): List<HaItem> {
             if (arr == null) return emptyList()
             return (0 until arr.length()).mapNotNull { i ->
                 val o = arr.optJSONObject(i) ?: return@mapNotNull null
                 val entity = o.optString("entity", "")
                 if (entity.isBlank()) null
-                else HaItem(entity, o.optString("label", ""), o.optString("icon", ""))
+                else HaItem(entity, o.optString("label", ""), o.optString("icon", ""), o.optBoolean("ro", false))
+            }
+        }
+
+        private fun sections(arr: JSONArray?): List<DashSection> {
+            if (arr == null) return emptyList()
+            return (0 until arr.length()).mapNotNull { i ->
+                val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                DashSection(
+                    o.optString("title", "").ifBlank { "Section ${i + 1}" },
+                    o.optString("hide_when", "").ifBlank { null },
+                    items(o.optJSONArray("items"))
+                )
             }
         }
     }
 }
 
+/** The launcher's settings live in one JSON file that both the settings screens and adb can edit. */
+object ConfigStore {
+    fun file(ctx: Context): File = File(ctx.getExternalFilesDir(null), "config.json")
+
+    fun read(ctx: Context): JSONObject = try {
+        val f = file(ctx)
+        if (f.exists()) JSONObject(f.readText()) else JSONObject()
+    } catch (e: Exception) {
+        JSONObject()
+    }
+
+    fun write(ctx: Context, json: JSONObject): Boolean = try {
+        val f = file(ctx)
+        f.parentFile?.mkdirs()
+        f.writeText(json.toString(1))
+        true
+    } catch (e: Exception) {
+        false
+    }
+
+    fun edit(ctx: Context, block: (JSONObject) -> Unit): Boolean {
+        val j = read(ctx)
+        return try {
+            block(j)
+            write(ctx, j)
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    fun array(o: JSONObject, key: String): JSONArray {
+        var a = o.optJSONArray(key)
+        if (a == null) {
+            a = JSONArray()
+            o.put(key, a)
+        }
+        return a
+    }
+
+    fun obj(o: JSONObject, key: String): JSONObject {
+        var c = o.optJSONObject(key)
+        if (c == null) {
+            c = JSONObject()
+            o.put(key, c)
+        }
+        return c
+    }
+
+    fun swap(a: JSONArray, i: Int, j: Int) {
+        if (i < 0 || j < 0 || i >= a.length() || j >= a.length()) return
+        val t = a.get(i)
+        a.put(i, a.get(j))
+        a.put(j, t)
+    }
+
+    /** Older builds kept background and darkening in preferences; move them into the file once. */
+    fun migrate(ctx: Context) {
+        val p = Prefs.of(ctx)
+        if (!p.contains("background") && !p.contains("dim")) return
+        edit(ctx) { j ->
+            p.getString("background", null)?.let { j.put("background", it) }
+            if (p.contains("dim")) j.put("dim", p.getFloat("dim", 0.7f).toDouble())
+        }
+        p.edit().remove("background").remove("dim").apply()
+    }
+}
+
 object Prefs {
     fun of(ctx: Context) = ctx.getSharedPreferences("launcher", Context.MODE_PRIVATE)
-
-    fun setBackground(ctx: Context, key: String) = of(ctx).edit().putString("background", key).apply()
-    fun setDim(ctx: Context, v: Float) = of(ctx).edit().putFloat("dim", v).apply()
 
     /** Temporary time-of-day preview, valid for 10 minutes. */
     fun setPhaseOverride(ctx: Context, p: Phase?) {
@@ -131,6 +213,8 @@ object Backgrounds {
     data class Option(val key: String, val title: String, val subtitle: String)
 
     private val EXT = listOf("jpg", "jpeg", "png", "webp")
+    private var cacheKey: String? = null
+    private var cacheBmp: Bitmap? = null
 
     fun normalize(k: String): String = when (k) {
         "alpesi", "" -> "alpine"
@@ -138,11 +222,11 @@ object Backgrounds {
         else -> k
     }
 
+    fun phase(ctx: Context, cfg: Config): Phase =
+        Prefs.phaseOverride(ctx) ?: Sun.phase(System.currentTimeMillis(), cfg.lat, cfg.lon)
+
     fun options(ctx: Context): List<Option> {
-        val list = mutableListOf(
-            Option("alpine", "Alpine lake", "Illustration"),
-            Option("hills", "Rolling hills", "Illustration")
-        )
+        val list = ArrayList<Option>()
         try {
             ctx.assets.list("backgrounds")?.sorted()?.forEach { name ->
                 list.add(Option("asset:$name", title(name), "Photos"))
@@ -151,6 +235,8 @@ object Backgrounds {
         ctx.getExternalFilesDir("backgrounds")?.listFiles()?.filter { it.isDirectory }?.sortedBy { it.name }?.forEach {
             list.add(Option("foto:${it.name}", title(it.name), "Your photos"))
         }
+        list.add(Option("alpine", "Alpine lake", "Illustration"))
+        list.add(Option("hills", "Rolling hills", "Illustration"))
         return list
     }
 
@@ -159,7 +245,10 @@ object Backgrounds {
     fun isPhoto(key: String) = key.startsWith("asset:") || key.startsWith("foto:")
 
     /** Loads the photo for a phase, or null if the set has no such image. Call off the main thread. */
+    @Synchronized
     fun photo(ctx: Context, key: String, phase: Phase, w: Int = 1920, h: Int = 1080): Bitmap? {
+        val ck = key + "/" + phase.key
+        if (ck == cacheKey && cacheBmp != null) return cacheBmp
         val opener: (() -> InputStream)? = when {
             key.startsWith("asset:") -> {
                 val dir = "backgrounds/" + key.removePrefix("asset:")
@@ -179,11 +268,16 @@ object Backgrounds {
         opener().use { BitmapFactory.decodeStream(it, null, bounds) }
         var sample = 1
         while (bounds.outWidth / (sample * 2) >= w && bounds.outHeight / (sample * 2) >= h) sample *= 2
-        return opener().use {
+        val bmp = opener().use {
             BitmapFactory.decodeStream(it, null, BitmapFactory.Options().apply {
                 inSampleSize = sample
                 inPreferredConfig = Bitmap.Config.ARGB_8888
             })
         }
+        if (bmp != null) {
+            cacheKey = ck
+            cacheBmp = bmp
+        }
+        return bmp
     }
 }

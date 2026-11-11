@@ -16,44 +16,39 @@ A GitHub Actions minden `main`-re küldött commitnál lefordítja és kiadja az
 Az aláíró kulcs (`app/launcher.keystore`) szándékosan a repóban van, hogy a frissítések felülírhassák egymást.
 Csak saját telepítésre szolgál.
 
-## Beállítás
+## Settings
 
-A launcher a `/sdcard/Android/data/hu.otthon.launcher/files/config.json` fájlt olvassa (ADB-vel feltölthető).
-Minden mező opcionális:
+Everything is edited on the TV: the gear icon on the home screen opens the launcher settings
+(background set, favorites, status chips, quick actions, cameras, inputs, dashboard sections,
+Home Assistant connection). Entities are chosen from a searchable list loaded from Home Assistant.
+
+The settings are stored in `/sdcard/Android/data/hu.otthon.launcher/files/config.json`, which can
+also be written over ADB. Main keys: `ha_url`, `ha_token`, `lat`, `lon`, `background`, `dim`,
+`status`, `scenes`, `cameras` (lists of `{ "entity", "label" }`), `now_playing`, `inputs_hidden`,
+`input_names`, and `dashboard`:
 
 ```json
-{
-  "ha_url": "http://192.168.x.x:8123",
-  "ha_token": "<long-lived access token>",
-  "lat": 47.63,
-  "lon": 17.73,
-  "background": "alpesi",
-  "dim": 0.7,
-  "favorites": ["com.netflix.ninja", "com.google.android.youtube.tv"],
-  "status": [
-    { "entity": "sensor.kulso_homerseklet", "label": "Kint", "icon": "cloud" },
-    { "entity": "sensor.nappali_homerseklet", "label": "Nappali", "icon": "home" },
-    { "entity": "lock.bejarat", "label": "Bejárat", "icon": "lock" }
-  ],
-  "now_playing": "media_player.nappali",
-  "now_playing_label": "Roon · Nappali hi-fi",
-  "cameras": [
-    { "entity": "camera.bejarat", "label": "Entrance" }
-  ],
-  "scenes": [
-    { "entity": "scene.mozi", "label": "Mozi", "icon": "film" },
-    { "entity": "light.nappali", "label": "Fények", "icon": "bulb" }
+"dashboard": {
+  "weather": "weather.home",
+  "sections": [
+    { "title": "Pool", "hide_when": "input_boolean.pool_winterized",
+      "items": [ { "entity": "switch.pool_pump", "label": "Pump" },
+                 { "entity": "input_select.mode", "label": "Mode", "ro": true } ] }
   ]
 }
 ```
 
-- `background`: `alpesi`, `domb` (beépített vektoros tájképek) vagy `foto:<név>`. Az utóbbi a
-  `files/backgrounds/<név>/hajnal.jpg`, `nappal.jpg`, `alkony.jpg`, `ejszaka.jpg` képeket használja.
-- `favorites`: a kezdeti kedvenclista. A távirányítóval végzett módosítások a launcherben tárolódnak.
+On the dashboard, OK toggles switches, lights and helpers, runs scenes and scripts, and opens
+statistics (history chart) for everything else; holding OK always opens statistics. `"ro": true`
+makes an item display-only. A section with `hide_when` disappears while that entity is `on`.
+
+- `background`: `asset:<name>` (photo sets bundled in the APK), `foto:<name>` (your own photos in
+  `files/backgrounds/<name>/hajnal.jpg`, `nappal.jpg`, `alkony.jpg`, `ejszaka.jpg`), or the
+  built-in illustrations `alpine` and `hills`.
 
 ## Background photos
 
-The `matterhorn` set is downloaded at build time (`tools/fetch_backgrounds.py`) from Unsplash, under the Unsplash License:
+The `matterhorn` and `city` sets are downloaded at build time (`tools/fetch_backgrounds.py`) from Unsplash, under the Unsplash License:
 
 | Phase | Photo |
 |---|---|
@@ -61,6 +56,10 @@ The `matterhorn` set is downloaded at build time (`tools/fetch_backgrounds.py`) 
 | Day | Tomi Blasic – Riffelsee, Zermatt (`tDbCVk4bffM`) |
 | Dusk | Marc Wieland – Swiss alpine lake at dusk (`1Kcgpq1ap9E`) |
 | Night | Pascal Debrunner – Milky Way with Matterhorn (`xu9ck-3xTvI`) |
+
+City set: Ahmed Nishaath – Dalian at sunrise (`Z0JVfNqv2VE`), Adrian Newell – Houston skyline
+(`oXoQ5nKUd5o`), Arto Marttinen – Tokyo at sunset (`6xh7H5tWj9c`), Andrea De Santis – London at
+night (`bGWu7lcoZqY`).
 
 To swap photos, edit `tools/backgrounds.txt` (set, phase, images.unsplash.com photo path).
 Your own photos can also be placed on the TV in `files/backgrounds/<name>/hajnal|nappal|alkony|ejszaka.jpg`.

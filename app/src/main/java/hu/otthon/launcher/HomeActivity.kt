@@ -1,17 +1,12 @@
 package hu.otthon.launcher
 
 import android.app.Activity
-import android.app.AlertDialog
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
-import android.provider.Settings
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
@@ -21,7 +16,6 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
-import java.io.File
 import java.time.OffsetDateTime
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
@@ -33,17 +27,14 @@ class HomeActivity : Activity() {
     private var ha: HaClient? = null
     private var signature = ""
 
-    private lateinit var landscape: LandscapeView
-    private lateinit var photoA: ImageView
-    private lateinit var photoB: ImageView
-    private var photoFront: ImageView? = null
-    private lateinit var dimView: View
+    private lateinit var backdrop: Backdrop
     private lateinit var content: LinearLayout
     private lateinit var clock: TextView
     private lateinit var date: TextView
     private lateinit var chipsRow: LinearLayout
+    private lateinit var favScroll: RowScroller
     private lateinit var favRow: LinearLayout
-    private lateinit var bottomRow: LinearLayout
+    private lateinit var bottom: LinearLayout
 
     private lateinit var npCard: LinearLayout
     private lateinit var npCover: ImageView
@@ -55,8 +46,6 @@ class HomeActivity : Activity() {
     private lateinit var npButton: ImageView
     private var npPicture: String? = null
 
-    private var phase: Phase? = null
-    private var bgKey: String? = null
     private val chipViews = mutableListOf<Pair<HaItem, TextView>>()
     private val camTiles = mutableListOf<CamTile>()
     private var resumed = false
@@ -81,7 +70,6 @@ class HomeActivity : Activity() {
             Bg.main.postDelayed(this, 5_000)
         }
     }
-
     private val camLoop = object : Runnable {
         override fun run() {
             refreshCams()
@@ -97,26 +85,19 @@ class HomeActivity : Activity() {
     // ---------- UI ----------
 
     private fun buildUi() {
+        val side = dp(48f)
         val root = FrameLayout(this)
         root.setBackgroundColor(Color.BLACK)
-        val match = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-
-        landscape = LandscapeView(this)
-        root.addView(landscape, match)
-        photoA = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0f }
-        photoB = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0f }
-        root.addView(photoA, FrameLayout.LayoutParams(match))
-        root.addView(photoB, FrameLayout.LayoutParams(match))
-        dimView = View(this)
-        root.addView(dimView, FrameLayout.LayoutParams(match))
+        backdrop = Backdrop(this)
+        root.addView(backdrop, FrameLayout.LayoutParams(-1, -1))
 
         content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(48f), dp(34f), dp(48f), dp(34f))
+            setPadding(0, dp(34f), 0, dp(30f))
             clipChildren = false
             clipToPadding = false
         }
-        root.addView(content, FrameLayout.LayoutParams(match))
+        root.addView(content, FrameLayout.LayoutParams(-1, -1))
 
         // top row
         val top = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.TOP }
@@ -144,19 +125,30 @@ class HomeActivity : Activity() {
             setOnClickListener { startActivity(Intent(this@HomeActivity, SettingsActivity::class.java)) }
         }
         top.addView(gear, LinearLayout.LayoutParams(dp(30f), dp(30f)).apply { leftMargin = dp(7f) })
-        content.addView(top)
+        content.addView(top, LinearLayout.LayoutParams(-1, -2).apply { leftMargin = side; rightMargin = side })
 
         buildNowPlaying()
-        content.addView(npCard, LinearLayout.LayoutParams(dp(320f), ViewGroup.LayoutParams.WRAP_CONTENT).apply { topMargin = dp(26f) })
+        content.addView(npCard, LinearLayout.LayoutParams(dp(320f), -2).apply { leftMargin = side; topMargin = dp(24f) })
 
         content.addView(View(this), LinearLayout.LayoutParams(1, 0, 1f))
 
-        content.addView(label("Favorites", 11f, C.TEXT2, bold = true), LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = dp(9f) })
+        content.addView(label("Favorites", 11f, C.TEXT2, bold = true), LinearLayout.LayoutParams(-2, -2).apply { leftMargin = side })
+        favScroll = RowScroller(this)
+        favScroll.setPadding(side, dp(9f), side, dp(9f))
         favRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; clipChildren = false }
-        content.addView(favRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(76f)))
+        favScroll.addView(favRow, FrameLayout.LayoutParams(-2, dp(76f)))
+        content.addView(favScroll, LinearLayout.LayoutParams(-1, -2))
 
-        bottomRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; clipChildren = false }
-        content.addView(bottomRow, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(22f) })
+        bottom = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.BOTTOM
+            clipChildren = false
+        }
+        content.addView(bottom, LinearLayout.LayoutParams(-1, -2).apply {
+            leftMargin = side
+            rightMargin = side
+            topMargin = dp(9f)
+        })
 
         setContentView(root)
     }
@@ -203,117 +195,149 @@ class HomeActivity : Activity() {
         npCard.addView(npButton, LinearLayout.LayoutParams(dp(32f), dp(32f)))
     }
 
-    private fun rebuildDynamic() {
-        // favourites
+    private fun pillRow(parent: LinearLayout, title: String): LinearLayout {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            clipChildren = false
+        }
+        row.addView(label(title, 11f, C.TEXT2, bold = true), LinearLayout.LayoutParams(dp(50f), -2))
+        val lp = LinearLayout.LayoutParams(-2, -2)
+        if (parent.childCount > 0) lp.topMargin = dp(7f)
+        parent.addView(row, lp)
+        return row
+    }
+
+    private fun addPill(row: LinearLayout, v: View) {
+        val lp = LinearLayout.LayoutParams(-2, -2)
+        if (row.childCount > 1) lp.leftMargin = dp(6f)
+        row.addView(v, lp)
+    }
+
+    private fun rebuildDynamic(focusFav: Int = 0) {
+        // favourites: fixed-size tiles in a scrolling row
         favRow.removeAllViews()
-        val favs = FavStore.get(this, cfg)
-        val entries = favs.mapNotNull { Apps.one(this, it) }
+        val tileW = (resources.displayMetrics.widthPixels - 2 * dp(48f) - 5 * dp(12f)) / 6
+        val entries = FavStore.get(this, cfg).mapNotNull { Apps.one(this, it) }
         entries.forEachIndexed { i, app ->
             val tile = AppTile(this, app)
             tile.setOnClickListener { if (!Apps.launch(this, app.pkg)) toast("Can't open ${app.label}") }
             tile.setOnLongClickListener { favMenu(app); true }
-            favRow.addView(tile, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply {
-                if (i > 0) leftMargin = dp(12f)
-            })
+            val lp = LinearLayout.LayoutParams(tileW, ViewGroup.LayoutParams.MATCH_PARENT)
+            if (i > 0) lp.leftMargin = dp(12f)
+            favRow.addView(tile, lp)
         }
-        if (entries.size < 6) {
-            for (i in entries.size until 6) {
-                favRow.addView(View(this), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply { leftMargin = dp(12f) })
-            }
+        if (entries.isEmpty()) {
+            favRow.addView(pill("Add favorites", R.drawable.ic_plus) {
+                startActivity(Intent(this, AllAppsActivity::class.java))
+            }, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER_VERTICAL })
         }
 
-        // bottom row
-        bottomRow.removeAllViews()
-        val appsGroup = group("Apps")
-        val appsRow = appsGroup.getChildAt(1) as LinearLayout
-        appsRow.addView(pill("All apps", R.drawable.ic_grid) {
-            startActivity(Intent(this, AllAppsActivity::class.java))
-        })
+        // bottom block: labelled rows on the left, cameras on the right
+        bottom.removeAllViews()
+        val rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; clipChildren = false }
+
+        val apps = pillRow(rows, "Apps")
+        addPill(apps, pill("All apps", R.drawable.ic_grid) { startActivity(Intent(this, AllAppsActivity::class.java)) })
         if (Apps.stockHomeIntent(this) != null) {
-            appsRow.addView(pill("Google TV home", R.drawable.ic_home) {
+            addPill(apps, pill("Google TV home", R.drawable.ic_home) {
                 if (!Apps.openStockHome(this)) toast("Google TV home is not available")
-            }, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(6f) })
+            })
         }
-        bottomRow.addView(appsGroup)
-        if (cfg.haEnabled && cfg.scenes.isNotEmpty()) {
-            val g = group("Scenes")
-            val row = g.getChildAt(1) as LinearLayout
-            cfg.scenes.forEachIndexed { i, s ->
-                row.addView(pill(s.label, sceneIcon(s.icon)) { runScene(s) }, LinearLayout.LayoutParams(-2, -2).apply {
-                    if (i > 0) leftMargin = dp(6f)
-                })
+        addPill(apps, pill("TV settings", R.drawable.ic_gear) {
+            if (!Apps.openSystemSettings(this)) toast("Android settings are not available")
+        })
+
+        if (cfg.haEnabled) {
+            val home = pillRow(rows, "Home")
+            addPill(home, pill("Dashboard", R.drawable.ic_dashboard) { startActivity(Intent(this, DashboardActivity::class.java)) })
+            cfg.scenes.take(5).forEach { s -> addPill(home, pill(s.title, sceneIcon(s)) { runScene(s) }) }
+        }
+
+        val inputs = Inputs.visible(this, cfg)
+        val hasTv = Inputs.hasTv(this)
+        if (hasTv || inputs.isNotEmpty()) {
+            val row = pillRow(rows, "Inputs")
+            if (hasTv) addPill(row, pill("TV", R.drawable.ic_tv) { if (!Inputs.openTv(this)) toast("TV is not available") })
+            inputs.take(6).forEach { inp ->
+                addPill(row, pill(inp.name, null) { if (!Inputs.open(this, inp.id)) toast("Can't switch to ${inp.name}") })
             }
-            bottomRow.addView(g, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(24f) })
         }
+        bottom.addView(rows, LinearLayout.LayoutParams(0, -2, 1f))
+
         camTiles.clear()
         if (cfg.haEnabled && cfg.cameras.isNotEmpty()) {
-            val g = group("Cameras")
-            val row = g.getChildAt(1) as LinearLayout
+            val g = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; clipChildren = false }
+            g.addView(label("Cameras", 11f, C.TEXT2, bold = true), LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = dp(7f) })
+            var line: LinearLayout? = null
             cfg.cameras.take(4).forEachIndexed { i, cam ->
-                val t = CamTile(this, cam, dp(5f).toFloat(), 8f, 1.1f)
+                if (i % 2 == 0) {
+                    val l = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; clipChildren = false }
+                    line = l
+                    val lp = LinearLayout.LayoutParams(-2, -2)
+                    if (i > 0) lp.topMargin = dp(6f)
+                    g.addView(l, lp)
+                }
+                val t = CamTile(this, cam, dp(6f).toFloat(), 8f, 1.08f)
                 t.setOnClickListener {
                     startActivity(Intent(this, CamerasActivity::class.java).putExtra("index", i))
                 }
-                row.addView(t, LinearLayout.LayoutParams(dp(64f), dp(36f)).apply { if (i > 0) leftMargin = dp(6f) })
+                val lp = LinearLayout.LayoutParams(dp(88f), dp(50f))
+                if (i % 2 == 1) lp.leftMargin = dp(6f)
+                line!!.addView(t, lp)
                 camTiles.add(t)
             }
-            bottomRow.addView(g, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(24f) })
+            bottom.addView(g, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(24f) })
         }
 
         // status chips
         chipsRow.removeAllViews()
         chipViews.clear()
         if (cfg.haEnabled) {
-            cfg.status.forEachIndexed { i, s ->
-                val v = chip(statusIcon(s.icon), if (s.label.isBlank()) "–" else "${s.label} –")
+            cfg.status.take(4).forEachIndexed { i, s ->
+                val v = chip(statusIcon(s), if (s.label.isBlank()) "–" else "${s.label} –")
                 chipsRow.addView(v, LinearLayout.LayoutParams(-2, -2).apply { if (i > 0) leftMargin = dp(7f) })
                 chipViews.add(s to v)
             }
         }
         if (!cfg.haEnabled || cfg.nowPlaying == null) npCard.visibility = View.GONE
 
-        favRow.getChildAt(0)?.takeIf { it.isFocusable }?.requestFocus()
+        val idx = focusFav.coerceIn(0, maxOf(0, favRow.childCount - 1))
+        favRow.getChildAt(idx)?.takeIf { it.isFocusable }?.requestFocus()
     }
 
-    private fun group(title: String): LinearLayout = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        clipChildren = false
-        addView(label(title, 11f, C.TEXT2, bold = true), LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = dp(7f) })
-        addView(LinearLayout(this@HomeActivity).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            minimumHeight = dp(36f)
-            clipChildren = false
-        }, LinearLayout.LayoutParams(-2, -2))
+    private fun statusIcon(item: HaItem): Int {
+        val e = item.entity
+        return when {
+            item.icon == "cloud" || item.domain == "weather" || e.contains("outdoor") || e.contains("garden") || e.contains("outside") -> R.drawable.ic_cloud
+            item.icon == "lock" || item.domain == "lock" || e.contains("door") || e.contains("gate") || e.contains("security") -> R.drawable.ic_lock
+            item.icon == "bolt" || e.contains("power") || e.contains("energy") || e.contains("electric") -> R.drawable.ic_bolt
+            item.icon == "music" || item.domain == "media_player" -> R.drawable.ic_music
+            else -> R.drawable.ic_home
+        }
     }
 
-    private fun statusIcon(name: String) = when (name) {
-        "cloud", "weather" -> R.drawable.ic_cloud
-        "lock" -> R.drawable.ic_lock
-        "bolt", "power" -> R.drawable.ic_bolt
-        "music" -> R.drawable.ic_music
-        else -> R.drawable.ic_home
-    }
-
-    private fun sceneIcon(name: String) = when (name) {
-        "film", "movie" -> R.drawable.ic_film
-        "bulb", "light" -> R.drawable.ic_bulb
-        "music" -> R.drawable.ic_music
-        "lock" -> R.drawable.ic_lock
-        else -> R.drawable.ic_bolt
+    private fun sceneIcon(item: HaItem): Int {
+        val e = item.entity + " " + item.label.lowercase()
+        return when {
+            item.icon == "film" || e.contains("movie") || e.contains("cinema") -> R.drawable.ic_film
+            item.icon == "music" || e.contains("music") || e.contains("hifi") -> R.drawable.ic_music
+            item.icon == "lock" || e.contains("lock") || e.contains("security") -> R.drawable.ic_lock
+            item.icon == "bulb" || item.domain == "light" || item.domain == "scene" -> R.drawable.ic_bulb
+            else -> R.drawable.ic_bolt
+        }
     }
 
     // ---------- lifecycle ----------
 
-    private fun reload() {
+    private fun reload(focusFav: Int = 0) {
         cfg = Config.load(this)
         ha = if (cfg.haEnabled) HaClient(cfg.haUrl!!, cfg.haToken!!) else null
-        applyDim()
-        val sig = cfg.toString() + FavStore.get(this, cfg).joinToString()
+        backdrop.setDim(cfg.dim)
+        val sig = cfg.toString() + FavStore.get(this, cfg).joinToString() + Inputs.all(this).size
         if (sig != signature) {
             signature = sig
-            bgKey = null
-            rebuildDynamic()
+            rebuildDynamic(focusFav)
         }
     }
 
@@ -362,63 +386,12 @@ class HomeActivity : Activity() {
         val now = ZonedDateTime.now()
         clock.text = now.format(timeFmt)
         date.text = now.format(dateFmt)
-        val p = Prefs.phaseOverride(this) ?: Sun.phase(System.currentTimeMillis(), cfg.lat, cfg.lon)
-        val key = cfg.background + "/" + p.key
-        if (key != bgKey) {
-            val animate = bgKey != null
-            bgKey = key
-            phase = p
-            applyBackground(p, animate)
-        }
+        backdrop.show(cfg.background, Backgrounds.phase(this, cfg), true)
         // OLED: shift static content by a few pixels every minute
         val shifts = arrayOf(0 to 0, 2 to 1, -1 to 2, -2 to -1, 1 to -2, 2 to -1, -1 to -1)
         shiftIndex = (shiftIndex + 1) % shifts.size
         val (sx, sy) = shifts[shiftIndex]
         content.animate().translationX(dp(sx.toFloat()).toFloat()).translationY(dp(sy.toFloat()).toFloat()).setDuration(1500).start()
-    }
-
-    private fun applyDim() {
-        val bottom = (cfg.dim * 255).toInt().coerceIn(0, 255)
-        val top = (cfg.dim * 0.7f * 255).toInt().coerceIn(0, 255)
-        dimView.background = GradientDrawable(
-            GradientDrawable.Orientation.TOP_BOTTOM,
-            intArrayOf(Color.argb(top, 6, 7, 10), Color.argb(0, 6, 7, 10), Color.argb(bottom / 4, 6, 7, 10), Color.argb(bottom, 6, 7, 10))
-        )
-    }
-
-    private fun applyBackground(p: Phase, animate: Boolean) {
-        val bg = cfg.background
-        if (Backgrounds.isPhoto(bg)) {
-            val ctx = applicationContext
-            Bg.run({ Backgrounds.photo(ctx, bg, p) }) { bmp ->
-                if (bmp != null) showPhoto(bmp, animate) else showLandscape("alpine", p, animate)
-            }
-            return
-        }
-        showLandscape(bg, p, animate)
-    }
-
-    private fun showLandscape(style: String, p: Phase, animate: Boolean) {
-        landscape.style = if (style == "hills") "domb" else "alpesi"
-        landscape.setPhase(p, animate)
-        photoA.animate().alpha(0f).setDuration(if (animate) 3000 else 0).start()
-        photoB.animate().alpha(0f).setDuration(if (animate) 3000 else 0).start()
-        photoFront = null
-    }
-
-    private fun showPhoto(bmp: Bitmap, animate: Boolean) {
-        val next = if (photoFront === photoA) photoB else photoA
-        val prev = photoFront
-        next.setImageBitmap(bmp)
-        next.bringToFront()
-        dimView.bringToFront()
-        content.bringToFront()
-        next.alpha = 0f
-        next.animate().alpha(1f).setDuration(if (animate) 4000 else 0).withEndAction {
-            prev?.alpha = 0f
-            prev?.setImageDrawable(null)
-        }.start()
-        photoFront = next
     }
 
     // ---------- Home Assistant ----------
@@ -427,7 +400,16 @@ class HomeActivity : Activity() {
         val client = ha ?: return
         for ((item, view) in chipViews.toList()) {
             Bg.run({ client.state(item.entity) }) { s ->
-                if (s != null && resumed) view.text = HaClient.formatState(item, s)
+                if (s != null && resumed) view.text = Fmt.chip(item, s)
+            }
+        }
+    }
+
+    private fun refreshCams() {
+        val client = ha ?: return
+        for (t in camTiles.toList()) {
+            Bg.run({ client.bitmap("/api/camera_proxy/" + t.item.entity, 320) }) { b ->
+                if (b != null && resumed) t.image.setImageBitmap(b)
             }
         }
     }
@@ -477,15 +459,6 @@ class HomeActivity : Activity() {
         }
     }
 
-    private fun refreshCams() {
-        val client = ha ?: return
-        for (t in camTiles.toList()) {
-            Bg.run({ client.bitmap("/api/camera_proxy/" + t.item.entity, 320) }) { b ->
-                if (b != null && resumed) t.image.setImageBitmap(b)
-            }
-        }
-    }
-
     private fun togglePlay() {
         val client = ha ?: return
         val entity = cfg.nowPlaying ?: return
@@ -496,10 +469,8 @@ class HomeActivity : Activity() {
 
     private fun runScene(s: HaItem) {
         val client = ha ?: return
-        val domain = s.entity.substringBefore('.')
-        val service = if (domain in setOf("light", "switch", "input_boolean", "fan")) "toggle" else "turn_on"
-        Bg.run({ client.call(domain, service, s.entity); true }) { ok ->
-            toast(if (ok == true) "${s.label} ✓" else "Couldn't run ${s.label}")
+        Bg.run({ Actions.fire(client, s); true }) { ok ->
+            toast(if (ok == true) "${s.title} ✓" else "Couldn't run ${s.title}")
         }
     }
 
@@ -509,30 +480,16 @@ class HomeActivity : Activity() {
         val favs = FavStore.get(this, cfg)
         val idx = favs.indexOf(app.pkg)
         if (idx < 0) return
-        val items = arrayOf("Move left", "Move right", "Remove from favorites")
-        AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-            .setTitle(app.label)
-            .setItems(items) { _, which ->
-                when (which) {
-                    0 -> if (idx > 0) { favs.removeAt(idx); favs.add(idx - 1, app.pkg) }
-                    1 -> if (idx < favs.size - 1) { favs.removeAt(idx); favs.add(idx + 1, app.pkg) }
-                    2 -> favs.removeAt(idx)
-                }
-                FavStore.set(this, favs)
-                signature = ""
-                reload()
-                onMinute()
-                val newIdx = favs.indexOf(app.pkg).coerceAtLeast(0)
-                favRow.getChildAt(newIdx)?.takeIf { it.isFocusable }?.requestFocus()
+        Popup.menu(this, app.label, listOf("Move left", "Move right", "Remove from favorites")) { which ->
+            when (which) {
+                0 -> if (idx > 0) { favs.removeAt(idx); favs.add(idx - 1, app.pkg) }
+                1 -> if (idx < favs.size - 1) { favs.removeAt(idx); favs.add(idx + 1, app.pkg) }
+                2 -> favs.removeAt(idx)
             }
-            .show()
-    }
-
-    private fun openSystemSettings() {
-        try {
-            startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        } catch (e: Exception) {
-            toast("Android settings are not available")
+            FavStore.set(this, favs)
+            signature = ""
+            val shown = favs.mapNotNull { Apps.one(this, it) }.map { it.pkg }
+            reload(shown.indexOf(app.pkg).coerceAtLeast(0))
         }
     }
 

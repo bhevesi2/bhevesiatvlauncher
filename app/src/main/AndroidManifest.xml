@@ -45,6 +45,17 @@
         </activity>
 
         <activity
+            android:name=".DashboardActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
+        <activity
+            android:name=".PickEntityActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustNothing|stateHidden"
+            android:screenOrientation="landscape" />
+
+        <activity
             android:name=".CamerasActivity"
             android:exported="false"
             android:screenOrientation="landscape" />
