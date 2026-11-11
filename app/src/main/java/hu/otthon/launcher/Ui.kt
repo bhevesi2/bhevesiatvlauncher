@@ -154,6 +154,21 @@ object Apps {
         }
     }
 
+    private const val STOCK = "com.google.android.tvlauncher"
+
+    fun stockHomeIntent(ctx: Context): Intent? {
+        val i = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).setPackage(STOCK)
+        val ri = ctx.packageManager.resolveActivity(i, 0) ?: return null
+        return Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+            .setClassName(ri.activityInfo.packageName, ri.activityInfo.name)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+
+    fun openStockHome(ctx: Context): Boolean {
+        val i = stockHomeIntent(ctx) ?: return false
+        return try { ctx.startActivity(i); true } catch (e: Exception) { false }
+    }
+
     fun launch(ctx: Context, pkg: String): Boolean {
         val pm = ctx.packageManager
         val i = pm.getLeanbackLaunchIntentForPackage(pkg) ?: pm.getLaunchIntentForPackage(pkg) ?: return false

@@ -47,3 +47,17 @@ Minden mező opcionális:
 - `background`: `alpesi`, `domb` (beépített vektoros tájképek) vagy `foto:<név>`. Az utóbbi a
   `files/backgrounds/<név>/hajnal.jpg`, `nappal.jpg`, `alkony.jpg`, `ejszaka.jpg` képeket használja.
 - `favorites`: a kezdeti kedvenclista. A távirányítóval végzett módosítások a launcherben tárolódnak.
+
+## Background photos
+
+The `matterhorn` set is downloaded at build time (`tools/fetch_backgrounds.sh`) from Unsplash, under the Unsplash License:
+
+| Phase | Photo |
+|---|---|
+| Dawn | Nadine Marfurt – Fluhalp, Zermatt (`FLfNL6XuOEM`) |
+| Day | Tomi Blasic – Riffelsee, Zermatt (`tDbCVk4bffM`) |
+| Dusk | Marc Wieland – Swiss alpine lake at dusk (`1Kcgpq1ap9E`) |
+| Night | Pascal Debrunner – Milky Way with Matterhorn (`xu9ck-3xTvI`) |
+
+To swap photos, edit `tools/backgrounds.txt` (set, phase, Unsplash photo id).
+Your own photos can also be placed on the TV in `files/backgrounds/<name>/hajnal|nappal|alkony|ejszaka.jpg`.

@@ -23,6 +23,9 @@ jobs:
         with:
           gradle-version: "8.7"
 
+      - name: Fetch background photos
+        run: bash tools/fetch_backgrounds.sh
+
       - name: Build release APK
         run: gradle :app:assembleRelease --no-daemon --stacktrace
 

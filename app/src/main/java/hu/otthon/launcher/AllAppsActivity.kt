@@ -27,9 +27,9 @@ class AllAppsActivity : Activity() {
             setPadding(dp(48f), dp(30f), dp(48f), 0)
         }
         val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.BOTTOM }
-        header.addView(label("Minden alkalmazás", 22f, C.TEXT, bold = true))
+        header.addView(label("All apps", 22f, C.TEXT, bold = true))
         header.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
-        header.addView(label("Hosszan nyomott OK: kedvencekhez adás", 11f, C.TEXT3))
+        header.addView(label("Long-press OK to add to favorites", 11f, C.TEXT3))
         root.addView(header)
 
         val scroll = ScrollView(this).apply {
@@ -59,7 +59,7 @@ class AllAppsActivity : Activity() {
             }
             val cell = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; clipChildren = false }
             val tile = AppTile(this, app)
-            tile.setOnClickListener { if (!Apps.launch(this, app.pkg)) toast("Nem indítható: ${app.label}") }
+            tile.setOnClickListener { if (!Apps.launch(this, app.pkg)) toast("Can't open ${app.label}") }
             tile.setOnLongClickListener { menu(app); true }
             cell.addView(tile, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(76f)))
             cell.addView(label(app.label, 10f, C.TEXT2).apply {
@@ -80,14 +80,14 @@ class AllAppsActivity : Activity() {
     private fun menu(app: AppEntry) {
         val favs = FavStore.get(this, cfg)
         val isFav = favs.contains(app.pkg)
-        val items = arrayOf(if (isFav) "Eltávolítás a kedvencek közül" else "Hozzáadás a kedvencekhez", "Megnyitás")
+        val items = arrayOf(if (isFav) "Remove from favorites" else "Add to favorites", "Open")
         AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
             .setTitle(app.label)
             .setItems(items) { _, which ->
                 if (which == 0) {
                     if (isFav) favs.remove(app.pkg) else favs.add(app.pkg)
                     FavStore.set(this, favs)
-                    toast(if (isFav) "Eltávolítva" else "Hozzáadva a kedvencekhez")
+                    toast(if (isFav) "Removed from favorites" else "Added to favorites")
                 } else {
                     Apps.launch(this, app.pkg)
                 }

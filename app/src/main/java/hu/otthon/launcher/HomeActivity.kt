@@ -61,9 +61,8 @@ class HomeActivity : Activity() {
     private var resumed = false
     private var shiftIndex = 0
 
-    private val hu = Locale("hu", "HU")
-    private val timeFmt = DateTimeFormatter.ofPattern("HH:mm", hu)
-    private val dateFmt = DateTimeFormatter.ofPattern("EEEE, MMMM d.", hu)
+    private val timeFmt = DateTimeFormatter.ofPattern("HH:mm", Locale.ENGLISH)
+    private val dateFmt = DateTimeFormatter.ofPattern("EEEE, MMMM d", Locale.ENGLISH)
 
     private val tick = object : BroadcastReceiver() {
         override fun onReceive(c: Context?, i: Intent?) = onMinute()
@@ -127,14 +126,14 @@ class HomeActivity : Activity() {
             setPadding(dp(8f), dp(8f), dp(8f), dp(8f))
             isFocusable = true
             isClickable = true
-            contentDescription = "Beállítások"
+            contentDescription = "Launcher settings"
             fun paint(f: Boolean) {
                 background = if (f) rounded(C.FOCUS_FILL, dp(20f).toFloat()) else rounded(C.GLASS_SOFT, dp(20f).toFloat(), 1, C.BORDER)
                 setColorFilter(if (f) C.DARK else C.TEXT)
             }
             paint(false)
             setOnFocusChangeListener { _, f -> paint(f) }
-            setOnClickListener { openSystemSettings() }
+            setOnClickListener { startActivity(Intent(this@HomeActivity, SettingsActivity::class.java)) }
         }
         top.addView(gear, LinearLayout.LayoutParams(dp(30f), dp(30f)).apply { leftMargin = dp(7f) })
         content.addView(top)
@@ -144,7 +143,7 @@ class HomeActivity : Activity() {
 
         content.addView(View(this), LinearLayout.LayoutParams(1, 0, 1f))
 
-        content.addView(label("Kedvencek", 11f, C.TEXT2, bold = true), LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = dp(9f) })
+        content.addView(label("Favorites", 11f, C.TEXT2, bold = true), LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = dp(9f) })
         favRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; clipChildren = false }
         content.addView(favRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(76f)))
 
@@ -184,7 +183,7 @@ class HomeActivity : Activity() {
             setPadding(dp(8f), dp(8f), dp(8f), dp(8f))
             isFocusable = true
             isClickable = true
-            contentDescription = "Lejátszás / szünet"
+            contentDescription = "Play / pause"
             fun paint(f: Boolean) {
                 background = if (f) rounded(C.FOCUS_FILL, dp(16f).toFloat()) else rounded(0x33FFFFFF, dp(16f).toFloat())
                 setColorFilter(if (f) C.DARK else C.TEXT)
@@ -203,7 +202,7 @@ class HomeActivity : Activity() {
         val entries = favs.mapNotNull { Apps.one(this, it) }
         entries.forEachIndexed { i, app ->
             val tile = AppTile(this, app)
-            tile.setOnClickListener { if (!Apps.launch(this, app.pkg)) toast("Nem indítható: ${app.label}") }
+            tile.setOnClickListener { if (!Apps.launch(this, app.pkg)) toast("Can't open ${app.label}") }
             tile.setOnLongClickListener { favMenu(app); true }
             favRow.addView(tile, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply {
                 if (i > 0) leftMargin = dp(12f)
@@ -217,13 +216,22 @@ class HomeActivity : Activity() {
 
         // bottom row
         bottomRow.removeAllViews()
-        val appsGroup = group("Alkalmazások")
-        (appsGroup.getChildAt(1) as LinearLayout).addView(pill("Minden app", R.drawable.ic_grid) {
+        val appsGroup = group("Apps")
+        val appsRow = appsGroup.getChildAt(1) as LinearLayout
+        appsRow.addView(pill("All apps", R.drawable.ic_grid) {
             startActivity(Intent(this, AllAppsActivity::class.java))
         })
+        if (Apps.stockHomeIntent(this) != null) {
+            appsRow.addView(pill("Google TV home", R.drawable.ic_home) {
+                if (!Apps.openStockHome(this)) toast("Google TV home is not available")
+            }, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(6f) })
+        }
+        appsRow.addView(pill("Settings", R.drawable.ic_gear) {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(6f) })
         bottomRow.addView(appsGroup)
         if (cfg.haEnabled && cfg.scenes.isNotEmpty()) {
-            val g = group("Otthon")
+            val g = group("Scenes")
             val row = g.getChildAt(1) as LinearLayout
             cfg.scenes.forEachIndexed { i, s ->
                 row.addView(pill(s.label, sceneIcon(s.icon)) { runScene(s) }, LinearLayout.LayoutParams(-2, -2).apply {
@@ -327,8 +335,8 @@ class HomeActivity : Activity() {
     private fun onMinute() {
         val now = ZonedDateTime.now()
         clock.text = now.format(timeFmt)
-        date.text = now.format(dateFmt).replaceFirstChar { it.titlecase(hu) }
-        val p = Sun.phase(System.currentTimeMillis(), cfg.lat, cfg.lon)
+        date.text = now.format(dateFmt)
+        val p = Prefs.phaseOverride(this) ?: Sun.phase(System.currentTimeMillis(), cfg.lat, cfg.lon)
         val key = cfg.background + "/" + p.key
         if (key != bgKey) {
             val animate = bgKey != null
@@ -354,15 +362,18 @@ class HomeActivity : Activity() {
 
     private fun applyBackground(p: Phase, animate: Boolean) {
         val bg = cfg.background
-        if (bg.startsWith("foto:")) {
-            val dir = File(getExternalFilesDir("backgrounds"), bg.removePrefix("foto:"))
-            val f = listOf("jpg", "jpeg", "png", "webp").map { File(dir, "${p.key}.$it") }.firstOrNull { it.exists() }
-            if (f != null) {
-                Bg.run({ decodeScaled(f, 1920, 1080) }) { bmp -> if (bmp != null) showPhoto(bmp, animate) }
-                return
+        if (Backgrounds.isPhoto(bg)) {
+            val ctx = applicationContext
+            Bg.run({ Backgrounds.photo(ctx, bg, p) }) { bmp ->
+                if (bmp != null) showPhoto(bmp, animate) else showLandscape("alpine", p, animate)
             }
+            return
         }
-        landscape.style = if (bg == "domb") "domb" else "alpesi"
+        showLandscape(bg, p, animate)
+    }
+
+    private fun showLandscape(style: String, p: Phase, animate: Boolean) {
+        landscape.style = if (style == "hills") "domb" else "alpesi"
         landscape.setPhase(p, animate)
         photoA.animate().alpha(0f).setDuration(if (animate) 3000 else 0).start()
         photoB.animate().alpha(0f).setDuration(if (animate) 3000 else 0).start()
@@ -382,17 +393,6 @@ class HomeActivity : Activity() {
             prev?.setImageDrawable(null)
         }.start()
         photoFront = next
-    }
-
-    private fun decodeScaled(f: File, w: Int, h: Int): Bitmap? {
-        val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(f.absolutePath, o)
-        var sample = 1
-        while (o.outWidth / (sample * 2) >= w && o.outHeight / (sample * 2) >= h) sample *= 2
-        return BitmapFactory.decodeFile(f.absolutePath, BitmapFactory.Options().apply {
-            inSampleSize = sample
-            inPreferredConfig = Bitmap.Config.RGB_565
-        })
     }
 
     // ---------- Home Assistant ----------
@@ -464,7 +464,7 @@ class HomeActivity : Activity() {
         val domain = s.entity.substringBefore('.')
         val service = if (domain in setOf("light", "switch", "input_boolean", "fan")) "toggle" else "turn_on"
         Bg.run({ client.call(domain, service, s.entity); true }) { ok ->
-            toast(if (ok == true) "${s.label} ✓" else "Nem sikerült: ${s.label}")
+            toast(if (ok == true) "${s.label} ✓" else "Couldn't run ${s.label}")
         }
     }
 
@@ -474,7 +474,7 @@ class HomeActivity : Activity() {
         val favs = FavStore.get(this, cfg)
         val idx = favs.indexOf(app.pkg)
         if (idx < 0) return
-        val items = arrayOf("Mozgatás balra", "Mozgatás jobbra", "Eltávolítás a kedvencek közül")
+        val items = arrayOf("Move left", "Move right", "Remove from favorites")
         AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
             .setTitle(app.label)
             .setItems(items) { _, which ->
@@ -497,7 +497,7 @@ class HomeActivity : Activity() {
         try {
             startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         } catch (e: Exception) {
-            toast("A beállítások nem nyithatók meg")
+            toast("Android settings are not available")
         }
     }
 

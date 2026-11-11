@@ -56,6 +56,17 @@ class HaClient(private val base: String, private val token: String) {
         }
     }
 
+    /** Returns the HA version string if the API answers, else throws. */
+    fun ping(): String {
+        val c = open("/api/config")
+        try {
+            if (c.responseCode != 200) throw IllegalStateException("HTTP ${c.responseCode}")
+            return JSONObject(c.inputStream.bufferedReader().readText()).optString("version", "?")
+        } finally {
+            c.disconnect()
+        }
+    }
+
     fun bitmap(path: String): Bitmap? {
         val c = open(path)
         try {
@@ -74,9 +85,9 @@ class HaClient(private val base: String, private val token: String) {
             val domain = item.entity.substringBefore('.')
             val value = when {
                 state == "unavailable" || state == "unknown" -> "–"
-                domain == "lock" -> when (state) { "locked" -> "zárva"; "unlocked" -> "nyitva"; else -> state }
-                domain == "binary_sensor" -> when (state) { "on" -> "nyitva"; "off" -> "zárva"; else -> state }
-                domain == "cover" -> when (state) { "open" -> "nyitva"; "closed" -> "zárva"; else -> state }
+                domain == "lock" -> when (state) { "locked" -> "locked"; "unlocked" -> "unlocked"; else -> state }
+                domain == "binary_sensor" -> when (state) { "on" -> "open"; "off" -> "closed"; else -> state }
+                domain == "cover" -> state
                 unit.isNotEmpty() -> {
                     val num = state.toDoubleOrNull()
                     val txt = if (num != null) {
