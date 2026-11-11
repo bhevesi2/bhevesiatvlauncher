@@ -35,6 +35,10 @@ class HomeActivity : Activity() {
     private lateinit var favScroll: RowScroller
     private lateinit var favRow: LinearLayout
     private lateinit var bottom: LinearLayout
+    private lateinit var rootView: FrameLayout
+    private lateinit var topButtons: LinearLayout
+    private lateinit var hint: TextView
+    private var hintFor: View? = null
 
     private lateinit var npCard: LinearLayout
     private lateinit var npCover: ImageView
@@ -47,7 +51,6 @@ class HomeActivity : Activity() {
     private var npPicture: String? = null
 
     private val chipViews = mutableListOf<Pair<HaItem, TextView>>()
-    private val camTiles = mutableListOf<CamTile>()
     private var resumed = false
     private var shiftIndex = 0
 
@@ -70,12 +73,6 @@ class HomeActivity : Activity() {
             Bg.main.postDelayed(this, 5_000)
         }
     }
-    private val camLoop = object : Runnable {
-        override fun run() {
-            refreshCams()
-            Bg.main.postDelayed(this, 30_000)
-        }
-    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -87,6 +84,7 @@ class HomeActivity : Activity() {
     private fun buildUi() {
         val side = dp(48f)
         val root = FrameLayout(this)
+        rootView = root
         root.setBackgroundColor(Color.BLACK)
         backdrop = Backdrop(this)
         root.addView(backdrop, FrameLayout.LayoutParams(-1, -1))
@@ -110,21 +108,8 @@ class HomeActivity : Activity() {
         top.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         chipsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         top.addView(chipsRow)
-        val gear = ImageView(this).apply {
-            setImageResource(R.drawable.ic_gear)
-            setPadding(dp(8f), dp(8f), dp(8f), dp(8f))
-            isFocusable = true
-            isClickable = true
-            contentDescription = "Launcher settings"
-            fun paint(f: Boolean) {
-                background = if (f) rounded(C.FOCUS_FILL, dp(20f).toFloat()) else rounded(C.GLASS_SOFT, dp(20f).toFloat(), 1, C.BORDER)
-                setColorFilter(if (f) C.DARK else C.TEXT)
-            }
-            paint(false)
-            setOnFocusChangeListener { _, f -> paint(f) }
-            setOnClickListener { startActivity(Intent(this@HomeActivity, SettingsActivity::class.java)) }
-        }
-        top.addView(gear, LinearLayout.LayoutParams(dp(30f), dp(30f)).apply { leftMargin = dp(7f) })
+        topButtons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        top.addView(topButtons)
         content.addView(top, LinearLayout.LayoutParams(-1, -2).apply { leftMargin = side; rightMargin = side })
 
         buildNowPlaying()
@@ -141,14 +126,22 @@ class HomeActivity : Activity() {
 
         bottom = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.BOTTOM
+            gravity = Gravity.CENTER_VERTICAL
             clipChildren = false
         }
         content.addView(bottom, LinearLayout.LayoutParams(-1, -2).apply {
             leftMargin = side
             rightMargin = side
-            topMargin = dp(9f)
+            topMargin = dp(18f)
         })
+
+        // name of the focused icon button
+        hint = label("", 10f, C.DARK, bold = true).apply {
+            background = rounded(C.FOCUS_FILL, dp(6f).toFloat())
+            setPadding(dp(8f), dp(4f), dp(8f), dp(4f))
+            visibility = View.INVISIBLE
+        }
+        root.addView(hint, FrameLayout.LayoutParams(-2, -2))
 
         setContentView(root)
     }
@@ -195,23 +188,61 @@ class HomeActivity : Activity() {
         npCard.addView(npButton, LinearLayout.LayoutParams(dp(32f), dp(32f)))
     }
 
-    private fun pillRow(parent: LinearLayout, title: String): LinearLayout {
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            clipChildren = false
+    /** Round icon-only button; its name shows in a small label while it has focus. */
+    private fun iconButton(icon: Int, name: String, above: Boolean, onClick: () -> Unit): ImageView {
+        val v = ImageView(this)
+        v.setImageResource(icon)
+        v.setPadding(dp(9f), dp(9f), dp(9f), dp(9f))
+        v.isFocusable = true
+        v.isClickable = true
+        v.contentDescription = name
+        val normal = rounded(C.GLASS_SOFT, dp(18f).toFloat(), 1, C.BORDER)
+        val focused = rounded(C.FOCUS_FILL, dp(18f).toFloat())
+        v.background = normal
+        v.setColorFilter(C.TEXT)
+        v.setOnFocusChangeListener { _, f ->
+            v.background = if (f) focused else normal
+            v.setColorFilter(if (f) C.DARK else C.TEXT)
+            if (f) showHint(v, name, above) else hideHint(v)
         }
-        row.addView(label(title, 11f, C.TEXT2, bold = true), LinearLayout.LayoutParams(dp(50f), -2))
-        val lp = LinearLayout.LayoutParams(-2, -2)
-        if (parent.childCount > 0) lp.topMargin = dp(7f)
-        parent.addView(row, lp)
-        return row
+        v.setOnClickListener { onClick() }
+        return v
     }
 
-    private fun addPill(row: LinearLayout, v: View) {
-        val lp = LinearLayout.LayoutParams(-2, -2)
-        if (row.childCount > 1) lp.leftMargin = dp(6f)
+    private fun addIcon(row: LinearLayout, v: View) {
+        val lp = LinearLayout.LayoutParams(dp(36f), dp(36f))
+        if (row.childCount > 0) lp.leftMargin = dp(8f)
         row.addView(v, lp)
+    }
+
+    private fun showHint(v: View, text: String, above: Boolean) {
+        hintFor = v
+        hint.animate().cancel()
+        hint.text = text
+        hint.alpha = 0f
+        hint.visibility = View.VISIBLE
+        hint.post {
+            if (hintFor !== v) return@post
+            hint.measure(View.MeasureSpec.UNSPECIFIED, View.MeasureSpec.UNSPECIFIED)
+            val w = hint.measuredWidth
+            val h = hint.measuredHeight
+            val loc = IntArray(2)
+            v.getLocationInWindow(loc)
+            val maxX = maxOf(dp(8f), rootView.width - w - dp(8f))
+            val x = (loc[0] + v.width / 2 - w / 2).coerceIn(dp(8f), maxX)
+            val y = if (above) loc[1] - h - dp(5f) else loc[1] + v.height + dp(5f)
+            hint.translationX = x.toFloat()
+            hint.translationY = y.toFloat()
+            hint.animate().alpha(1f).setDuration(120).start()
+        }
+    }
+
+    private fun hideHint(v: View) {
+        if (hintFor === v) {
+            hintFor = null
+            hint.animate().cancel()
+            hint.visibility = View.INVISIBLE
+        }
     }
 
     private fun rebuildDynamic(focusFav: Int = 0) {
@@ -233,62 +264,69 @@ class HomeActivity : Activity() {
             }, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER_VERTICAL })
         }
 
-        // bottom block: labelled rows on the left, cameras on the right
-        bottom.removeAllViews()
-        val rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; clipChildren = false }
-
-        val apps = pillRow(rows, "Apps")
-        addPill(apps, pill("All apps", R.drawable.ic_grid) { startActivity(Intent(this, AllAppsActivity::class.java)) })
+        // top right: Google TV home and launcher settings, icon only
+        topButtons.removeAllViews()
         if (Apps.stockHomeIntent(this) != null) {
-            addPill(apps, pill("Google TV home", R.drawable.ic_home) {
+            val g = iconButton(R.drawable.ic_exit, "Google TV home", false) {
                 if (!Apps.openStockHome(this)) toast("Google TV home is not available")
-            })
+            }
+            topButtons.addView(g, LinearLayout.LayoutParams(dp(36f), dp(36f)).apply { leftMargin = dp(7f) })
         }
-        addPill(apps, pill("TV settings", R.drawable.ic_gear) {
+        val gear = iconButton(R.drawable.ic_gear, "Launcher settings", false) {
+            startActivity(Intent(this, SettingsActivity::class.java))
+        }
+        topButtons.addView(gear, LinearLayout.LayoutParams(dp(36f), dp(36f)).apply { leftMargin = dp(7f) })
+
+        // bottom row: icon buttons and quick actions on the left, inputs on the right
+        bottom.removeAllViews()
+        val icons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        addIcon(icons, iconButton(R.drawable.ic_grid, "All apps", true) {
+            startActivity(Intent(this, AllAppsActivity::class.java))
+        })
+        addIcon(icons, iconButton(R.drawable.ic_tv_gear, "TV settings", true) {
             if (!Apps.openSystemSettings(this)) toast("Android settings are not available")
         })
-
         if (cfg.haEnabled) {
-            val home = pillRow(rows, "Home")
-            addPill(home, pill("Dashboard", R.drawable.ic_dashboard) { startActivity(Intent(this, DashboardActivity::class.java)) })
-            cfg.scenes.take(5).forEach { s -> addPill(home, pill(s.title, sceneIcon(s)) { runScene(s) }) }
+            addIcon(icons, iconButton(R.drawable.ic_dashboard, "Home Assistant dashboard", true) {
+                startActivity(Intent(this, DashboardActivity::class.java))
+            })
+            if (cfg.cameras.isNotEmpty()) {
+                addIcon(icons, iconButton(R.drawable.ic_camera, "Cameras", true) {
+                    startActivity(Intent(this, CamerasActivity::class.java))
+                })
+            }
         }
+        bottom.addView(icons)
+
+        val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        if (cfg.haEnabled) {
+            cfg.scenes.take(6).forEachIndexed { i, sc ->
+                val lp = LinearLayout.LayoutParams(-2, -2)
+                if (i > 0) lp.leftMargin = dp(6f)
+                actions.addView(pill(sc.title, sceneIcon(sc)) { runScene(sc) }, lp)
+            }
+        }
+        val actionScroll = RowScroller(this)
+        actionScroll.clipToPadding = true
+        actionScroll.clipChildren = true
+        actionScroll.isFocusable = false
+        actionScroll.addView(actions)
+        bottom.addView(actionScroll, LinearLayout.LayoutParams(0, -2, 1f).apply {
+            leftMargin = dp(16f)
+            rightMargin = dp(16f)
+        })
 
         val inputs = Inputs.visible(this, cfg)
-        val hasTv = Inputs.hasTv(this)
-        if (hasTv || inputs.isNotEmpty()) {
-            val row = pillRow(rows, "Inputs")
-            if (hasTv) addPill(row, pill("TV", R.drawable.ic_tv) { if (!Inputs.openTv(this)) toast("TV is not available") })
-            inputs.take(6).forEach { inp ->
-                addPill(row, pill(inp.name, null) { if (!Inputs.open(this, inp.id)) toast("Can't switch to ${inp.name}") })
-            }
+        val inputRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        if (Inputs.hasTv(this)) {
+            inputRow.addView(pill("TV", R.drawable.ic_tv) { if (!Inputs.openTv(this)) toast("TV is not available") })
         }
-        bottom.addView(rows, LinearLayout.LayoutParams(0, -2, 1f))
-
-        camTiles.clear()
-        if (cfg.haEnabled && cfg.cameras.isNotEmpty()) {
-            val g = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; clipChildren = false }
-            g.addView(label("Cameras", 11f, C.TEXT2, bold = true), LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = dp(7f) })
-            var line: LinearLayout? = null
-            cfg.cameras.take(4).forEachIndexed { i, cam ->
-                if (i % 2 == 0) {
-                    val l = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; clipChildren = false }
-                    line = l
-                    val lp = LinearLayout.LayoutParams(-2, -2)
-                    if (i > 0) lp.topMargin = dp(6f)
-                    g.addView(l, lp)
-                }
-                val t = CamTile(this, cam, dp(6f).toFloat(), 8f, 1.08f)
-                t.setOnClickListener {
-                    startActivity(Intent(this, CamerasActivity::class.java).putExtra("index", i))
-                }
-                val lp = LinearLayout.LayoutParams(dp(88f), dp(50f))
-                if (i % 2 == 1) lp.leftMargin = dp(6f)
-                line!!.addView(t, lp)
-                camTiles.add(t)
-            }
-            bottom.addView(g, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(24f) })
+        inputs.take(6).forEach { inp ->
+            val lp = LinearLayout.LayoutParams(-2, -2)
+            if (inputRow.childCount > 0) lp.leftMargin = dp(6f)
+            inputRow.addView(pill(inp.name, null) { if (!Inputs.open(this, inp.id)) toast("Can't switch to ${inp.name}") }, lp)
         }
+        bottom.addView(inputRow)
 
         // status chips
         chipsRow.removeAllViews()
@@ -350,7 +388,6 @@ class HomeActivity : Activity() {
         if (ha != null) {
             Bg.main.post(statusLoop)
             if (cfg.nowPlaying != null) Bg.main.post(npLoop)
-            if (camTiles.isNotEmpty()) Bg.main.post(camLoop)
         }
     }
 
@@ -360,7 +397,6 @@ class HomeActivity : Activity() {
         try { unregisterReceiver(tick) } catch (e: Exception) { }
         Bg.main.removeCallbacks(statusLoop)
         Bg.main.removeCallbacks(npLoop)
-        Bg.main.removeCallbacks(camLoop)
     }
 
     override fun onNewIntent(intent: Intent?) {
@@ -401,15 +437,6 @@ class HomeActivity : Activity() {
         for ((item, view) in chipViews.toList()) {
             Bg.run({ client.state(item.entity) }) { s ->
                 if (s != null && resumed) view.text = Fmt.chip(item, s)
-            }
-        }
-    }
-
-    private fun refreshCams() {
-        val client = ha ?: return
-        for (t in camTiles.toList()) {
-            Bg.run({ client.bitmap("/api/camera_proxy/" + t.item.entity, 320) }) { b ->
-                if (b != null && resumed) t.image.setImageBitmap(b)
             }
         }
     }

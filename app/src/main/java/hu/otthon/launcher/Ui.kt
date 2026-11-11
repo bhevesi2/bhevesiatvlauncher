@@ -411,6 +411,67 @@ class Backdrop(ctx: Context) : FrameLayout(ctx) {
     }
 }
 
+/**
+ * The shared look of every secondary screen: the live background with the clock on the left
+ * and a floating glass panel docked to the right, like the settings screen.
+ */
+class PanelFrame(private val act: Activity, title: String, hint: String? = null) {
+    val root = FrameLayout(act)
+    val backdrop = Backdrop(act)
+    val left = LinearLayout(act)
+    val panel = LinearLayout(act)
+    val titleView: TextView = act.label(title, 17f, C.TEXT, bold = true)
+    private val clock = act.label("", 62f, C.TEXT, light = true)
+    private val date = act.label("", 15f, C.TEXT2)
+
+    init {
+        root.addView(backdrop, FrameLayout.LayoutParams(-1, -1))
+
+        left.orientation = LinearLayout.VERTICAL
+        clock.letterSpacing = -0.02f
+        date.setPadding(act.dp(2f), act.dp(6f), 0, 0)
+        left.addView(clock, LinearLayout.LayoutParams(-2, -2))
+        left.addView(date, LinearLayout.LayoutParams(-2, -2))
+        root.addView(left, FrameLayout.LayoutParams(act.dp(272f), -2).apply {
+            leftMargin = act.dp(48f)
+            topMargin = act.dp(34f)
+        })
+
+        panel.orientation = LinearLayout.VERTICAL
+        panel.background = rounded(C.PANEL, act.dp(20f).toFloat(), 1, C.BORDER)
+        panel.clipToOutline = true
+        panel.outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
+        val header = LinearLayout(act).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.BOTTOM
+        }
+        header.addView(titleView, LinearLayout.LayoutParams(0, -2, 1f))
+        if (hint != null) header.addView(act.label(hint, 10f, C.TEXT3))
+        panel.addView(header, LinearLayout.LayoutParams(-1, -2).apply {
+            leftMargin = act.dp(22f)
+            rightMargin = act.dp(22f)
+            topMargin = act.dp(20f)
+        })
+        root.addView(panel, FrameLayout.LayoutParams(act.dp(610f), -1, Gravity.END).apply {
+            topMargin = act.dp(26f)
+            bottomMargin = act.dp(26f)
+            rightMargin = act.dp(30f)
+        })
+    }
+
+    fun tick() {
+        val now = java.time.ZonedDateTime.now()
+        clock.text = now.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm", java.util.Locale.ENGLISH))
+        date.text = now.format(java.time.format.DateTimeFormatter.ofPattern("EEEE, MMMM d", java.util.Locale.ENGLISH))
+    }
+
+    fun update(cfg: Config) {
+        tick()
+        backdrop.setDim(cfg.dim)
+        backdrop.show(cfg.background, Backgrounds.phase(act, cfg), false)
+    }
+}
+
 data class AppEntry(val pkg: String, val label: String, val banner: Drawable?, val icon: Drawable)
 
 object Apps {

@@ -15,6 +15,7 @@ import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import java.util.concurrent.Executors
@@ -53,26 +54,14 @@ class CamerasActivity : Activity() {
         pending = BooleanArray(cams.size)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
-        val root = FrameLayout(this)
-        root.setBackgroundColor(0xFF0C0D10.toInt())
+        val frame = PanelFrame(this, "Cameras", "OK: full screen")
+        frame.update(cfg)
+        val root = frame.root
 
         val grid = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(36f), dp(22f), dp(36f), dp(24f))
             clipChildren = false
-            clipToPadding = false
         }
-        val header = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.BOTTOM
-        }
-        header.addView(label("Cameras", 22f, C.TEXT, bold = true))
-        header.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
-        header.addView(label("OK: full screen   ·   Back: home", 11f, C.TEXT3))
-        grid.addView(header, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, -2).apply {
-            bottomMargin = dp(14f)
-        })
-
         var row: LinearLayout? = null
         cams.forEachIndexed { i, cam ->
             if (i % 2 == 0) {
@@ -81,21 +70,29 @@ class CamerasActivity : Activity() {
                     clipChildren = false
                 }
                 row = r
-                grid.addView(r, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f).apply {
-                    if (i > 0) topMargin = dp(12f)
-                })
+                val lp = LinearLayout.LayoutParams(-1, dp(156f))
+                if (i > 0) lp.topMargin = dp(12f)
+                grid.addView(r, lp)
             }
-            val t = CamTile(this, cam, dp(10f).toFloat(), 13f, 1.02f)
+            val t = CamTile(this, cam, dp(10f).toFloat(), 11f, 1.03f)
             t.setOnClickListener { showFull(i) }
-            row!!.addView(t, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f).apply {
-                if (i % 2 == 1) leftMargin = dp(12f)
-            })
+            val lp = LinearLayout.LayoutParams(0, -1, 1f)
+            if (i % 2 == 1) lp.leftMargin = dp(12f)
+            row!!.addView(t, lp)
             tiles.add(t)
         }
         if (cams.size % 2 == 1) {
             row!!.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f).apply { leftMargin = dp(12f) })
         }
-        root.addView(grid, FrameLayout.LayoutParams(-1, -1))
+        val scroll = ScrollView(this).apply {
+            isVerticalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            clipToPadding = false
+            clipChildren = false
+            setPadding(dp(22f), dp(14f), dp(22f), dp(22f))
+        }
+        scroll.addView(grid)
+        frame.panel.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
 
         full = FrameLayout(this)
         full.setBackgroundColor(Color.BLACK)
@@ -205,7 +202,7 @@ class CamerasActivity : Activity() {
     private fun gridTick(gen: Int) {
         if (!active || gen != generation || fullIndex >= 0) return
         for (i in tiles.indices) {
-            fetch(i, 960) { b ->
+            fetch(i, 640) { b ->
                 if (b != null && active && fullIndex < 0) tiles[i].image.setImageBitmap(b)
             }
         }

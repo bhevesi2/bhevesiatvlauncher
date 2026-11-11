@@ -36,7 +36,7 @@ class DashRow(ctx: Context, val item: HaItem) : LinearLayout(ctx) {
         gravity = Gravity.CENTER_VERTICAL
         isFocusable = true
         isClickable = true
-        setPadding(ctx.dp(10f), ctx.dp(7f), ctx.dp(10f), ctx.dp(7f))
+        setPadding(ctx.dp(11f), ctx.dp(8f), ctx.dp(11f), ctx.dp(8f))
         name.maxLines = 1
         name.ellipsize = android.text.TextUtils.TruncateAt.END
         addView(name, LayoutParams(0, -2, 1f))
@@ -68,7 +68,7 @@ class DashRow(ctx: Context, val item: HaItem) : LinearLayout(ctx) {
     }
 
     private fun paint(f: Boolean) {
-        background = if (f) rounded(C.FOCUS_FILL, context.dp(7f).toFloat()) else null
+        background = if (f) rounded(C.FOCUS_FILL, context.dp(8f).toFloat()) else rounded(C.ROW, context.dp(8f).toFloat())
         name.setTextColor(if (f) C.DARK2 else C.TEXT2)
         value.setTextColor(if (f) C.DARK else tone)
         dot?.dark = f
@@ -90,8 +90,7 @@ class DashboardActivity : Activity() {
     private var active = false
     private var gen = 0
 
-    private lateinit var backdrop: Backdrop
-    private lateinit var clockView: TextView
+    private lateinit var frame: PanelFrame
     private lateinit var weatherBox: LinearLayout
     private lateinit var weatherIconView: ImageView
     private lateinit var weatherTemp: TextView
@@ -119,78 +118,53 @@ class DashboardActivity : Activity() {
 
     private val ranges = intArrayOf(6, 24, 72, 168)
     private val rangeNames = listOf("6 hours", "24 hours", "3 days", "7 days")
-    private val timeFmt = DateTimeFormatter.ofPattern("HH:mm", Locale.ENGLISH)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val side = dp(40f)
-        val root = FrameLayout(this)
-        backdrop = Backdrop(this)
-        root.addView(backdrop, FrameLayout.LayoutParams(-1, -1))
+        frame = PanelFrame(this, "Home", "OK: switch or statistics   ·   Hold OK: statistics")
 
-        val page = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(0, dp(24f), 0, 0)
-        }
-
-        // header: title on the left, weather on the right
-        val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        val titleCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        val titleRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.BOTTOM }
-        titleRow.addView(label("Home", 24f, C.TEXT, bold = true))
-        clockView = label("", 14f, C.TEXT2).apply { setPadding(dp(12f), 0, 0, dp(2f)) }
-        titleRow.addView(clockView)
-        titleCol.addView(titleRow)
-        titleCol.addView(label("OK: switch or open statistics   ·   Hold OK: statistics   ·   Back: home", 10f, C.TEXT3).apply {
-            setPadding(0, dp(6f), 0, 0)
-        })
-        header.addView(titleCol)
-        header.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
-
+        // weather card under the clock, on the open left side
         weatherBox = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(14f), dp(9f), dp(14f), dp(9f))
-            background = rounded(C.CARD, dp(12f).toFloat(), 1, C.BORDER)
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14f), dp(11f), dp(14f), dp(11f))
+            background = rounded(C.GLASS, dp(12f).toFloat(), 1, C.BORDER)
             visibility = View.GONE
         }
+        val nowRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         weatherIconView = ImageView(this).apply { setColorFilter(C.TEXT) }
-        weatherBox.addView(weatherIconView, LinearLayout.LayoutParams(dp(28f), dp(28f)))
-        weatherTemp = label("", 26f, C.TEXT, light = true).apply { setPadding(dp(8f), 0, dp(10f), 0) }
-        weatherBox.addView(weatherTemp)
-        val wCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        weatherText = label("", 12f, C.TEXT, bold = true)
-        weatherSub = label("", 10f, C.TEXT3).apply { setPadding(0, dp(3f), 0, 0) }
-        wCol.addView(weatherText)
-        wCol.addView(weatherSub)
-        weatherBox.addView(wCol)
-        forecastRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; setPadding(dp(8f), 0, 0, 0) }
-        weatherBox.addView(forecastRow)
-        header.addView(weatherBox)
-        page.addView(header, LinearLayout.LayoutParams(-1, -2).apply { leftMargin = side; rightMargin = side })
+        nowRow.addView(weatherIconView, LinearLayout.LayoutParams(dp(30f), dp(30f)))
+        weatherTemp = label("", 28f, C.TEXT, light = true).apply { setPadding(dp(8f), 0, dp(10f), 0) }
+        nowRow.addView(weatherTemp)
+        weatherText = label("", 13f, C.TEXT, bold = true).apply { maxLines = 1 }
+        nowRow.addView(weatherText)
+        weatherBox.addView(nowRow, LinearLayout.LayoutParams(-2, -2))
+        weatherSub = label("", 10f, C.TEXT3).apply { maxLines = 1 }
+        weatherBox.addView(weatherSub, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(5f) })
+        forecastRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        weatherBox.addView(forecastRow, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(11f) })
+        frame.left.addView(weatherBox, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(22f) })
 
-        message = label("", 13f, C.TEXT2).apply { setPadding(side, dp(30f), side, 0); visibility = View.GONE }
-        page.addView(message)
+        message = label("", 12f, C.TEXT2).apply { setPadding(dp(22f), dp(20f), dp(22f), 0); visibility = View.GONE }
+        frame.panel.addView(message)
 
         val scroll = ScrollView(this).apply {
             isVerticalScrollBarEnabled = false
             overScrollMode = View.OVER_SCROLL_NEVER
             clipToPadding = false
-            setPadding(side, dp(16f), side, dp(24f))
+            setPadding(dp(22f), dp(8f), dp(22f), dp(20f))
         }
         val body = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        for (i in 0 until 3) {
+        for (i in 0 until 2) {
             val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
             columns.add(col)
-            body.addView(col, LinearLayout.LayoutParams(0, -2, 1f).apply { if (i > 0) leftMargin = dp(12f) })
+            body.addView(col, LinearLayout.LayoutParams(0, -2, 1f).apply { if (i > 0) leftMargin = dp(14f) })
         }
         scroll.addView(body)
-        page.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
-        root.addView(page, FrameLayout.LayoutParams(-1, -1))
+        frame.panel.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
 
         buildOverlay()
-        root.addView(overlay, FrameLayout.LayoutParams(-1, -1))
-        setContentView(root)
+        frame.root.addView(overlay, FrameLayout.LayoutParams(-1, -1))
+        setContentView(frame.root)
     }
 
     private fun buildOverlay() {
@@ -239,9 +213,7 @@ class DashboardActivity : Activity() {
         active = true
         val g = ++gen
         cfg = Config.load(this)
-        backdrop.setDim(0.78f, flat = true)
-        backdrop.show(cfg.background, Backgrounds.phase(this, cfg), false)
-        clockView.text = ZonedDateTime.now().format(timeFmt)
+        frame.update(cfg)
         val client = if (cfg.haEnabled) HaClient(cfg.haUrl!!, cfg.haToken!!) else null
         ha = client
         if (client == null) {
@@ -296,22 +268,19 @@ class DashboardActivity : Activity() {
         for (sec in visible) {
             var col = 0
             for (i in heights.indices) if (heights[i] < heights[col]) col = i
-            val card = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                background = rounded(C.CARD, dp(12f).toFloat(), 1, C.BORDER)
-                setPadding(dp(6f), dp(10f), dp(6f), dp(6f))
-            }
-            card.addView(label(sec.title, 11f, C.TEXT3, bold = true).apply { setPadding(dp(10f), 0, dp(10f), dp(5f)) })
+            val column = columns[col]
+            val titleLp = LinearLayout.LayoutParams(-2, -2)
+            titleLp.topMargin = if (column.childCount > 0) dp(16f) else dp(6f)
+            titleLp.bottomMargin = dp(2f)
+            titleLp.leftMargin = dp(2f)
+            column.addView(label(sec.title, 11f, C.TEXT2, bold = true), titleLp)
             for (item in sec.items) {
                 val r = DashRow(this, item)
                 r.setOnClickListener { onRowClick(r) }
                 r.setOnLongClickListener { showStats(r); true }
-                card.addView(r, LinearLayout.LayoutParams(-1, -2))
+                column.addView(r, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(3f) })
                 rows.add(r)
             }
-            val lp = LinearLayout.LayoutParams(-1, -2)
-            if (columns[col].childCount > 0) lp.topMargin = dp(12f)
-            columns[col].addView(card, lp)
             heights[col] += sec.items.size + 2
         }
         rows.firstOrNull()?.requestFocus()
@@ -321,7 +290,7 @@ class DashboardActivity : Activity() {
 
     private fun tick(g: Int) {
         if (!active || g != gen) return
-        clockView.text = ZonedDateTime.now().format(timeFmt)
+        frame.tick()
         for (r in rows.toList()) refreshRow(r)
         refreshWeather()
         main.postDelayed({ tick(g) }, 10_000L)
@@ -358,7 +327,7 @@ class DashboardActivity : Activity() {
                     val hum = a.optDouble("humidity", Double.NaN)
                     val wind = a.optDouble("wind_speed", Double.NaN)
                     if (!hum.isNaN()) parts.add("Humidity " + Fmt.num(hum, "%"))
-                    if (!wind.isNaN()) parts.add("Wind " + Fmt.num(wind, a.optString("wind_speed_unit", "km/h")))
+                    if (!wind.isNaN()) parts.add("Wind " + Fmt.num(Math.round(wind).toDouble(), a.optString("wind_speed_unit", "km/h")))
                     weatherSub.text = parts.joinToString("  ·  ")
                     if (fc != null) {
                         lastForecast = System.currentTimeMillis()
@@ -378,7 +347,7 @@ class DashboardActivity : Activity() {
             val col = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER_HORIZONTAL
-                setPadding(dp(10f), 0, dp(2f), 0)
+                setPadding(0, 0, dp(13f), 0)
             }
             col.addView(label(dayFmt.format(Instant.ofEpochMilli(f.time)), 10f, C.TEXT3), LinearLayout.LayoutParams(-2, -2))
             col.addView(ImageView(this).apply {
