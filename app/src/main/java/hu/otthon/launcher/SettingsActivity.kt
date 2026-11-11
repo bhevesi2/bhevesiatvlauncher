@@ -254,6 +254,9 @@ class SettingsActivity : Activity() {
         section("Scenes")
         if (cfg.scenes.isEmpty()) row("None", null)
         cfg.scenes.forEach { row(it.label.ifBlank { it.entity }, it.entity) }
+        section("Cameras")
+        if (cfg.cameras.isEmpty()) row("None", null)
+        cfg.cameras.forEach { row(it.label.ifBlank { it.entity }, it.entity) }
         section("Config file")
         row(Config.file(this).absolutePath, null)
     }

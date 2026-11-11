@@ -86,7 +86,7 @@ fun Context.pill(text: String, iconRes: Int?, onClick: () -> Unit): TextView {
 /** App tile with banner (or icon + name) and focus zoom. */
 class AppTile(ctx: Context, val app: AppEntry) : FrameLayout(ctx) {
     private val normalBg = rounded(C.GLASS, ctx.dp(8f).toFloat(), 1, C.BORDER)
-    private val focusBg = rounded(C.GLASS, ctx.dp(8f).toFloat(), ctx.dp(1.5f), C.TEXT)
+    private val ring = rounded(0, ctx.dp(8f).toFloat(), ctx.dp(2f), C.TEXT)
 
     init {
         isFocusable = true
@@ -115,7 +115,7 @@ class AppTile(ctx: Context, val app: AppEntry) : FrameLayout(ctx) {
         }
         contentDescription = app.label
         setOnFocusChangeListener { v, f ->
-            background = if (f) focusBg else normalBg
+            foreground = if (f) ring else null
             v.animate().scaleX(if (f) 1.08f else 1f).scaleY(if (f) 1.08f else 1f)
                 .translationZ(if (f) ctx.dp(6f).toFloat() else 0f).setDuration(140).start()
         }
@@ -178,3 +178,30 @@ object Apps {
 }
 
 fun View.lp(w: Int, h: Int) = LinearLayout.LayoutParams(w, h)
+
+/** Camera tile: latest snapshot with the camera name along the bottom edge. */
+class CamTile(ctx: Context, val item: HaItem, radius: Float, labelSp: Float, zoom: Float) : FrameLayout(ctx) {
+    val image = ImageView(ctx).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
+    private val ring = rounded(0, radius, ctx.dp(2f), C.TEXT)
+
+    init {
+        isFocusable = true
+        isClickable = true
+        background = rounded(0xFF22262C.toInt(), radius)
+        clipToOutline = true
+        outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
+        addView(image, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        val name = item.label.ifBlank { item.entity.substringAfter('.') }
+        val caption = ctx.label(name, labelSp, C.TEXT, bold = true)
+        caption.maxLines = 1
+        caption.setPadding(ctx.dp(labelSp * 0.6f), ctx.dp(labelSp * 0.3f), ctx.dp(labelSp * 0.6f), ctx.dp(labelSp * 0.35f))
+        caption.setBackgroundColor(0x99060709.toInt())
+        addView(caption, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
+        contentDescription = "$name camera"
+        setOnFocusChangeListener { v, f ->
+            foreground = if (f) ring else null
+            v.animate().scaleX(if (f) zoom else 1f).scaleY(if (f) zoom else 1f)
+                .translationZ(if (f) ctx.dp(6f).toFloat() else 0f).setDuration(140).start()
+        }
+    }
+}

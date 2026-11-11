@@ -67,11 +67,19 @@ class HaClient(private val base: String, private val token: String) {
         }
     }
 
-    fun bitmap(path: String): Bitmap? {
+    /** Fetches an image; with maxW > 0 it is downsampled to roughly that width. */
+    fun bitmap(path: String, maxW: Int = 0): Bitmap? {
         val c = open(path)
         try {
             if (c.responseCode != 200) return null
-            return BitmapFactory.decodeStream(c.inputStream)
+            val bytes = c.inputStream.use { it.readBytes() }
+            if (maxW <= 0) return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+            var sample = 1
+            while (bounds.outWidth / (sample * 2) >= maxW) sample *= 2
+            val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+            return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
         } finally {
             c.disconnect()
         }

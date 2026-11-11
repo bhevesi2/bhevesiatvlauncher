@@ -18,6 +18,7 @@ data class Config(
     val favorites: List<String>,
     val status: List<HaItem>,
     val scenes: List<HaItem>,
+    val cameras: List<HaItem>,
     val nowPlaying: String?,
     val nowPlayingLabel: String,
     val background: String,
@@ -26,7 +27,7 @@ data class Config(
     val haEnabled: Boolean get() = !haUrl.isNullOrBlank() && !haToken.isNullOrBlank()
 
     override fun toString(): String =
-        "Config(ha=$haUrl, fav=$favorites, status=$status, scenes=$scenes, np=$nowPlaying/$nowPlayingLabel, bg=$background, dim=$dim, $lat,$lon)"
+        "Config(ha=$haUrl, fav=$favorites, status=$status, scenes=$scenes, cams=$cameras, np=$nowPlaying/$nowPlayingLabel, bg=$background, dim=$dim, $lat,$lon)"
 
     companion object {
         val DEFAULT_FAVORITES = listOf(
@@ -56,6 +57,7 @@ data class Config(
                 favorites = strings(json.optJSONArray("favorites")).ifEmpty { DEFAULT_FAVORITES },
                 status = items(json.optJSONArray("status")),
                 scenes = items(json.optJSONArray("scenes")),
+                cameras = items(json.optJSONArray("cameras")),
                 nowPlaying = json.optString("now_playing", "").ifBlank { null },
                 nowPlayingLabel = json.optString("now_playing_label", "Now playing"),
                 background = Backgrounds.normalize(p.getString("background", null) ?: json.optString("background", "alpine")),

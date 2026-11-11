@@ -37,6 +37,9 @@ Minden mező opcionális:
   ],
   "now_playing": "media_player.nappali",
   "now_playing_label": "Roon · Nappali hi-fi",
+  "cameras": [
+    { "entity": "camera.bejarat", "label": "Entrance" }
+  ],
   "scenes": [
     { "entity": "scene.mozi", "label": "Mozi", "icon": "film" },
     { "entity": "light.nappali", "label": "Fények", "icon": "bulb" }

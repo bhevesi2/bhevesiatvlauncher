@@ -58,6 +58,7 @@ class HomeActivity : Activity() {
     private var phase: Phase? = null
     private var bgKey: String? = null
     private val chipViews = mutableListOf<Pair<HaItem, TextView>>()
+    private val camTiles = mutableListOf<CamTile>()
     private var resumed = false
     private var shiftIndex = 0
 
@@ -78,6 +79,13 @@ class HomeActivity : Activity() {
         override fun run() {
             refreshNowPlaying()
             Bg.main.postDelayed(this, 5_000)
+        }
+    }
+
+    private val camLoop = object : Runnable {
+        override fun run() {
+            refreshCams()
+            Bg.main.postDelayed(this, 30_000)
         }
     }
 
@@ -226,9 +234,6 @@ class HomeActivity : Activity() {
                 if (!Apps.openStockHome(this)) toast("Google TV home is not available")
             }, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(6f) })
         }
-        appsRow.addView(pill("Settings", R.drawable.ic_gear) {
-            startActivity(Intent(this, SettingsActivity::class.java))
-        }, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(6f) })
         bottomRow.addView(appsGroup)
         if (cfg.haEnabled && cfg.scenes.isNotEmpty()) {
             val g = group("Scenes")
@@ -238,7 +243,21 @@ class HomeActivity : Activity() {
                     if (i > 0) leftMargin = dp(6f)
                 })
             }
-            bottomRow.addView(g, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(28f) })
+            bottomRow.addView(g, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(24f) })
+        }
+        camTiles.clear()
+        if (cfg.haEnabled && cfg.cameras.isNotEmpty()) {
+            val g = group("Cameras")
+            val row = g.getChildAt(1) as LinearLayout
+            cfg.cameras.take(4).forEachIndexed { i, cam ->
+                val t = CamTile(this, cam, dp(5f).toFloat(), 8f, 1.1f)
+                t.setOnClickListener {
+                    startActivity(Intent(this, CamerasActivity::class.java).putExtra("index", i))
+                }
+                row.addView(t, LinearLayout.LayoutParams(dp(64f), dp(36f)).apply { if (i > 0) leftMargin = dp(6f) })
+                camTiles.add(t)
+            }
+            bottomRow.addView(g, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(24f) })
         }
 
         // status chips
@@ -260,7 +279,12 @@ class HomeActivity : Activity() {
         orientation = LinearLayout.VERTICAL
         clipChildren = false
         addView(label(title, 11f, C.TEXT2, bold = true), LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = dp(7f) })
-        addView(LinearLayout(this@HomeActivity).apply { orientation = LinearLayout.HORIZONTAL; clipChildren = false })
+        addView(LinearLayout(this@HomeActivity).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            minimumHeight = dp(36f)
+            clipChildren = false
+        }, LinearLayout.LayoutParams(-2, -2))
     }
 
     private fun statusIcon(name: String) = when (name) {
@@ -302,6 +326,7 @@ class HomeActivity : Activity() {
         if (ha != null) {
             Bg.main.post(statusLoop)
             if (cfg.nowPlaying != null) Bg.main.post(npLoop)
+            if (camTiles.isNotEmpty()) Bg.main.post(camLoop)
         }
     }
 
@@ -311,6 +336,7 @@ class HomeActivity : Activity() {
         try { unregisterReceiver(tick) } catch (e: Exception) { }
         Bg.main.removeCallbacks(statusLoop)
         Bg.main.removeCallbacks(npLoop)
+        Bg.main.removeCallbacks(camLoop)
     }
 
     override fun onNewIntent(intent: Intent?) {
@@ -448,6 +474,15 @@ class HomeActivity : Activity() {
                 npCover.setPadding(dp(12f), dp(12f), dp(12f), dp(12f))
             }
             if (pic.isNotBlank()) npCover.setPadding(0, 0, 0, 0)
+        }
+    }
+
+    private fun refreshCams() {
+        val client = ha ?: return
+        for (t in camTiles.toList()) {
+            Bg.run({ client.bitmap("/api/camera_proxy/" + t.item.entity, 320) }) { b ->
+                if (b != null && resumed) t.image.setImageBitmap(b)
+            }
         }
     }
 
