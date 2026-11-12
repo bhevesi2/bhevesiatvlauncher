@@ -82,6 +82,21 @@ night (`bGWu7lcoZqY`).
 To swap photos, edit `tools/backgrounds.txt` (set, phase, images.unsplash.com photo path), run `python tools/fetch_backgrounds.py` (needs Pillow) and commit the new files.
 Your own photos can also be placed on the TV in `files/backgrounds/<name>/hajnal|nappal|alkony|ejszaka.jpg`.
 
+## Making it the default home app
+
+Settings › Home screen › Home button opens. Android TV only allows this over ADB, so the launcher
+asks Home Assistant's Android TV (ADB) integration to run the commands on the TV:
+
+    pm disable-user --user 0 com.google.android.tvlauncher     # hand Home to this launcher
+    cmd package set-home-activity hu.otthon.launcher/.HomeActivity
+
+    pm enable com.google.android.tvlauncher                    # give it back to Google TV home
+
+Google's home app has a higher priority than any installed launcher, so the TV always picks it
+while it is switched on; that is why it is switched off rather than just outranked. It stays
+installed. The TV's player in Home Assistant is found by the TV's address, or set it as
+`"adb_entity"` in the settings.
+
 ## Building on a Windows PC
 
 Needs JDK 17. One-time setup, in PowerShell (installs Git if missing, the Android SDK

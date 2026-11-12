@@ -64,8 +64,8 @@ class HaClient(private val base: String, private val token: String) {
         call(domain, service, JSONObject().put("entity_id", entity))
     }
 
-    fun call(domain: String, service: String, data: JSONObject) {
-        val c = open("/api/services/$domain/$service")
+    fun call(domain: String, service: String, data: JSONObject, readMs: Int = 6000) {
+        val c = open("/api/services/$domain/$service", readMs)
         try {
             c.requestMethod = "POST"
             c.doOutput = true

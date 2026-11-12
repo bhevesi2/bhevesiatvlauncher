@@ -39,7 +39,9 @@ data class Config(
     val sections: List<DashSection>,
     val inputsHidden: Set<String>,
     val inputNames: Map<String, String>,
-    val animations: String
+    val animations: String,
+    /** This TV's Android TV (ADB) media player in Home Assistant; null = find it by the TV's address. */
+    val adbEntity: String?
 ) {
     val haEnabled: Boolean get() = !haUrl.isNullOrBlank() && !haToken.isNullOrBlank()
 
@@ -78,7 +80,8 @@ data class Config(
                 sections = sections(dash.optJSONArray("sections")),
                 inputsHidden = strings(json.optJSONArray("inputs_hidden")).toSet(),
                 inputNames = names,
-                animations = animations
+                animations = animations,
+                adbEntity = json.optString("adb_entity", "").ifBlank { null }
             )
         }
 

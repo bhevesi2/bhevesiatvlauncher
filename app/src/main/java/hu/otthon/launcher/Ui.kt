@@ -941,7 +941,42 @@ object Apps {
         }
     }
 
-    private const val STOCK = "com.google.android.tvlauncher"
+    const val STOCK = "com.google.android.tvlauncher"
+
+    /** The package the Home button opens now; "android" means the TV would ask. */
+    fun defaultHome(ctx: Context): String? {
+        val i = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+        return ctx.packageManager.resolveActivity(i, android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)?.activityInfo?.packageName
+    }
+
+    /** True when the Google TV home app is on the TV at all, switched on or off. */
+    fun stockInstalled(ctx: Context): Boolean = try {
+        ctx.packageManager.getApplicationInfo(STOCK, android.content.pm.PackageManager.MATCH_DISABLED_COMPONENTS)
+        true
+    } catch (e: Exception) {
+        false
+    }
+
+    /**
+     * The shell commands that hand the Home button to this launcher or back to Google TV home.
+     * Google's home app is a system app with a higher priority, so while it is switched on the
+     * TV always picks it; the only way to choose another one is to switch it off (it stays
+     * installed, and switching it back on restores it).
+     */
+    fun homeCommand(ctx: Context, ours: Boolean): String {
+        val me = android.content.ComponentName(ctx, HomeActivity::class.java).flattenToShortString()
+        return if (ours) "pm disable-user --user 0 $STOCK; cmd package set-home-activity $me"
+        else "pm enable $STOCK; cmd package set-home-activity $STOCK/.MainActivity"
+    }
+
+    /** This TV's address on the local network, for finding it among Home Assistant's players. */
+    fun localIp(): String? = try {
+        java.util.Collections.list(java.net.NetworkInterface.getNetworkInterfaces())
+            .flatMap { java.util.Collections.list(it.inetAddresses) }
+            .firstOrNull { !it.isLoopbackAddress && it is java.net.Inet4Address }?.hostAddress
+    } catch (e: Exception) {
+        null
+    }
 
     fun stockHomeIntent(ctx: Context): Intent? {
         val i = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).setPackage(STOCK)

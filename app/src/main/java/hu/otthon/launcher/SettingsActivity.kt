@@ -455,7 +455,68 @@ class SettingsActivity : PanelActivity() {
         }
     }
 
+    /** Hands the Home button to this launcher or back to Google TV home, through Home Assistant's ADB connection. */
+    private fun setDefaultHome(ours: Boolean) {
+        val client = if (cfg.haEnabled) HaClient(cfg.haUrl!!, cfg.haToken!!) else null
+        if (client == null) {
+            toast("Set up Home Assistant first: the TV only lets this be changed over ADB")
+            return
+        }
+        if (!ours && !Apps.stockInstalled(this)) {
+            toast("Google TV home is not installed on this TV")
+            return
+        }
+        val want = if (ours) packageName else Apps.STOCK
+        if (Apps.defaultHome(this) == want) {
+            change(close = true) { }
+            return
+        }
+        toast("Switching…")
+        val command = Apps.homeCommand(this, ours)
+        val configured = cfg.adbEntity
+        Bg.run({
+            val entity = configured ?: run {
+                // find this TV among the players: the ADB integration names it after its address
+                val players = client.states().filter { it.domain == "media_player" }
+                val ip = Apps.localIp()?.replace('.', '_')
+                players.firstOrNull { ip != null && it.id.contains(ip) }?.id
+                    ?: players.filter { it.id.contains("android_tv") || it.id.contains("androidtv") }.singleOrNull()?.id
+            }
+            if (entity == null) {
+                "none"
+            } else {
+                client.call("androidtv", "adb_command", JSONObject().put("entity_id", entity).put("command", command), 25000)
+                Thread.sleep(700)
+                "ok"
+            }
+        }) { result ->
+            when {
+                result == "none" -> toast("Couldn't find this TV in Home Assistant. Choose it under “This TV in Home Assistant”.")
+                result == null -> toast("Home Assistant could not run the command on the TV")
+                Apps.defaultHome(this) == want -> toast(if (ours) "The Home button now opens this launcher" else "The Home button now opens Google TV home")
+                else -> toast("The TV did not switch")
+            }
+            change(close = true) { }
+        }
+    }
+
     private fun homePage() {
+        section("Home button")
+        val current = Apps.defaultHome(this)
+        val opens = when (current) {
+            packageName -> "This launcher"
+            Apps.STOCK -> "Google TV home"
+            null, "android" -> "The TV asks"
+            else -> Apps.one(this, current)?.label ?: current
+        }
+        expand("home", "Home button opens", opens) {
+            row("This launcher", null, current == packageName) { setDefaultHome(true) }
+            row("Google TV home", null, current == Apps.STOCK) { setDefaultHome(false) }
+        }
+        row("This TV in Home Assistant", cfg.adbEntity ?: "Automatic") {
+            pick("Choose this TV's Android TV (ADB) player", "media_player") { entity, _ -> edit { it.put("adb_entity", entity) } }
+        }
+        note("The TV only allows this change over ADB, so the launcher asks Home Assistant's Android TV (ADB) integration to do it. Choosing this launcher switches the Google TV home app off, because the TV otherwise always prefers it; choosing Google TV home switches it back on. Nothing is uninstalled.")
         section("Status chips  ·  top right, up to 4")
         entityList("status", { r -> ConfigStore.array(r, "status") }, cfg.status, "Add status chip", "", false)
         section("Quick actions  ·  bottom row, up to 6")
