@@ -628,8 +628,31 @@ class RowView(ctx: Context, title: String, value: String? = null, selected: Bool
     private val radio: TextView? = if (selected != null) ctx.label(if (selected) "●" else "○", 12f, C.TEXT2) else null
     val titleView: TextView = ctx.label(title, 12f, C.TEXT)
     val valueView: TextView = ctx.label(value ?: "", 11f, C.TEXT3)
+    private var dot: SwitchDot? = null
+    private var chevron: ImageView? = null
     var passive = false
         set(v) { field = v; paint(isFocused) }
+
+    /** Shows an on/off switch at the end of the row. */
+    fun switch(on: Boolean) {
+        val d = dot ?: SwitchDot(context).also {
+            dot = it
+            addView(it, LayoutParams(context.dp(26f), context.dp(14f)).apply { leftMargin = context.dp(10f) })
+        }
+        d.on = on
+        paint(isFocused)
+    }
+
+    /** Marks the row as one that opens in place; the arrow turns over while it is open. */
+    fun chevron(open: Boolean) {
+        val c = chevron ?: ImageView(context).also {
+            it.setImageResource(R.drawable.ic_chevron)
+            chevron = it
+            addView(it, LayoutParams(context.dp(12f), context.dp(12f)).apply { leftMargin = context.dp(8f) })
+        }
+        c.rotation = if (open) 180f else 0f
+        paint(isFocused)
+    }
 
     init {
         orientation = HORIZONTAL
@@ -657,6 +680,8 @@ class RowView(ctx: Context, title: String, value: String? = null, selected: Bool
         titleView.setTextColor(if (f) C.DARK else if (passive) C.TEXT3 else C.TEXT)
         valueView.setTextColor(if (f) C.DARK2 else C.TEXT3)
         radio?.setTextColor(if (f) C.DARK else C.TEXT2)
+        dot?.dark = f
+        chevron?.setColorFilter(if (f) C.DARK2 else C.TEXT3)
     }
 }
 

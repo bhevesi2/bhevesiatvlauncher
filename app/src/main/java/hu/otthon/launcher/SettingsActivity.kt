@@ -39,7 +39,12 @@ class SettingsActivity : PanelActivity() {
     private var onPicked: ((String, String) -> Unit)? = null
     private var pendingFocus = 0
 
-    private val roots = listOf("Background", "Favorites", "Home screen", "Cameras", "Inputs", "Dashboard", "Home Assistant", "About")
+    /** The row that is currently open in place, and every such row on the page by its key. */
+    private var openKey: String? = null
+    private val headers = HashMap<String, RowView>()
+    private var indent = 0
+
+    private val roots = listOf("Appearance", "Favorites", "Home screen", "Cameras", "Inputs", "Dashboard", "Home Assistant", "About")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -120,7 +125,13 @@ class SettingsActivity : PanelActivity() {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        if (stack.size > 1) {
+        val key = openKey
+        if (key != null) {
+            // Back closes the open row first
+            openKey = null
+            render(-1)
+            focusRow(headers[key]?.let { paneRows().indexOf(it) } ?: 0)
+        } else if (stack.size > 1) {
             stack.removeAt(stack.size - 1)
             render(stack.last().focus)
         } else {
@@ -154,6 +165,7 @@ class SettingsActivity : PanelActivity() {
 
     private fun showRoot(i: Int, focusPane: Boolean) {
         navIndex = i
+        openKey = null
         stack.clear()
         stack.add(rootPage(i))
         scroll.scrollTo(0, 0)
@@ -162,6 +174,7 @@ class SettingsActivity : PanelActivity() {
 
     private fun open(page: Page) {
         stack.last().focus = focusedRow() ?: 0
+        openKey = null
         stack.add(page)
         scroll.scrollTo(0, 0)
         render(0)
@@ -194,6 +207,8 @@ class SettingsActivity : PanelActivity() {
         backdrop.show(cfg.background, Backgrounds.phase(this, cfg), true)
 
         pane.removeAllViews()
+        headers.clear()
+        indent = 0
         val page = stack.last()
         crumb.text = if (stack.size > 1) "‹  " + page.title else page.title
         page.build()
@@ -202,6 +217,11 @@ class SettingsActivity : PanelActivity() {
         val navId = navViews[navIndex].id
         rows.forEach { it.nextFocusLeftId = navId }
         if (focus >= 0 && rows.isNotEmpty()) rows[focus.coerceIn(0, rows.size - 1)].requestFocus()
+    }
+
+    private fun focusRow(i: Int) {
+        val rows = paneRows()
+        if (rows.isNotEmpty()) rows[i.coerceIn(0, rows.size - 1)].requestFocus()
     }
 
     private fun paintNav() {
@@ -233,18 +253,71 @@ class SettingsActivity : PanelActivity() {
         })
     }
 
+    private fun add(v: View) {
+        pane.addView(v, LinearLayout.LayoutParams(-1, -2).apply {
+            topMargin = dp(4f)
+            leftMargin = dp(16f) * indent
+        })
+    }
+
     private fun row(title: String, value: String? = null, selected: Boolean? = null, onClick: (() -> Unit)? = null): RowView {
         val r = RowView(this, title, value, selected)
         if (onClick == null) r.passive = true else r.setOnClickListener { onClick() }
-        pane.addView(r, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4f) })
+        add(r)
         return r
     }
 
-    private fun edit(block: (JSONObject) -> Unit) {
-        pendingFocus = focusedRow() ?: pendingFocus
-        if (!ConfigStore.edit(this, block)) toast("Couldn't save the settings")
-        refresh()
+    /** A row with a switch: OK flips it. [onLong] is an optional second action on Hold OK. */
+    private fun toggle(title: String, on: Boolean, onLong: (() -> Unit)? = null, onChange: (Boolean) -> Unit): RowView {
+        val r = row(title) { onChange(!on) }
+        r.switch(on)
+        if (onLong != null) r.setOnLongClickListener { onLong(); true }
+        return r
     }
+
+    /** A row that opens in place, like a drop-down: [children] adds its choices or actions. */
+    private fun expand(key: String, title: String, value: String?, children: () -> Unit) {
+        val open = openKey == key
+        val r = row(title, value) {
+            openKey = if (open) null else key
+            render(-1)
+            val h = headers[key]?.let { paneRows().indexOf(it) } ?: 0
+            focusRow(if (open) h else h + 1)
+        }
+        r.chevron(open)
+        headers[key] = r
+        if (open) {
+            indent++
+            children()
+            indent--
+        }
+    }
+
+    /**
+     * Applies a change and rebuilds the page, keeping focus where the user is: on the same
+     * action of the open row (which may have moved to [moveTo]), or on its header once closed.
+     */
+    private fun change(close: Boolean = false, moveTo: String? = null, work: () -> Unit) {
+        val f = focusedRow() ?: pendingFocus
+        pendingFocus = f
+        val before = paneRows()
+        val h = openKey?.let { headers[it] }?.let { before.indexOf(it) } ?: -1
+        val offset = if (h >= 0) f - h else 0
+        if (close) openKey = null else if (moveTo != null) openKey = moveTo
+        work()
+        render(-1)
+        val nh = openKey?.let { headers[it] }?.let { paneRows().indexOf(it) } ?: -1
+        focusRow(
+            when {
+                nh >= 0 -> nh + offset
+                h >= 0 -> h
+                else -> f
+            }
+        )
+    }
+
+    private fun edit(close: Boolean = false, moveTo: String? = null, block: (JSONObject) -> Unit) =
+        change(close, moveTo) { if (!ConfigStore.edit(this, block)) toast("Couldn't save the settings") }
 
     private fun pick(title: String, domains: String, cb: (String, String) -> Unit) {
         if (!cfg.haEnabled) {
@@ -256,10 +329,21 @@ class SettingsActivity : PanelActivity() {
         open(Intent(this, PickEntityActivity::class.java).putExtra("title", title).putExtra("domains", domains), 7)
     }
 
-    /** An editable list of entities stored in a JSON array. */
-    private fun entityList(arr: (JSONObject) -> JSONArray, items: List<HaItem>, addTitle: String, domains: String, allowRo: Boolean) {
+    /** An editable list of entities stored in a JSON array. Each one opens in place for its actions. */
+    private fun entityList(id: String, arr: (JSONObject) -> JSONArray, items: List<HaItem>, addTitle: String, domains: String, allowRo: Boolean) {
+        val last = items.size - 1
         items.forEachIndexed { i, item ->
-            row(item.title, item.entity + if (item.ro) "  ·  read-only" else "") { itemMenu(arr, i, item, allowRo) }
+            expand("$id:$i", item.title, item.entity) {
+                row("Rename") {
+                    Popup.text(this, "Name", item.label) { v -> edit { r -> arr(r).getJSONObject(i).put("label", v) } }
+                }
+                if (allowRo) toggle("Can be switched from the TV", !item.ro) { on ->
+                    edit { r -> arr(r).getJSONObject(i).put("ro", !on) }
+                }
+                row("Move up", onClick = if (i > 0) ({ edit(moveTo = "$id:${i - 1}") { r -> ConfigStore.swap(arr(r), i, i - 1) } }) else null)
+                row("Move down", onClick = if (i < last) ({ edit(moveTo = "$id:${i + 1}") { r -> ConfigStore.swap(arr(r), i, i + 1) } }) else null)
+                row("Remove") { edit(close = true) { r -> arr(r).remove(i) } }
+            }
         }
         row("+  $addTitle") {
             pick(addTitle, domains) { entity, name ->
@@ -268,131 +352,115 @@ class SettingsActivity : PanelActivity() {
         }
     }
 
-    private fun itemMenu(arr: (JSONObject) -> JSONArray, i: Int, item: HaItem, allowRo: Boolean) {
-        val opts = arrayListOf("Rename", "Move up", "Move down", "Remove")
-        if (allowRo) opts.add(if (item.ro) "Allow control from the TV" else "Make read-only")
-        Popup.menu(this, item.title, opts) { which ->
-            when (which) {
-                0 -> Popup.text(this, "Name", item.label) { v -> edit { r -> arr(r).getJSONObject(i).put("label", v) } }
-                1 -> edit { r -> ConfigStore.swap(arr(r), i, i - 1) }
-                2 -> edit { r -> ConfigStore.swap(arr(r), i, i + 1) }
-                3 -> edit { r -> arr(r).remove(i) }
-                else -> edit { r -> arr(r).getJSONObject(i).put("ro", !item.ro) }
-            }
-        }
-    }
-
     // ---------- pages ----------
 
     private fun backgroundPage() {
-        note("Each set has four pictures. The launcher switches between them at dawn, during the day, at dusk and at night, following the real sunrise and sunset. The picture behind this panel is a live preview.")
-        section("Set")
-        for (o in Backgrounds.options(this)) {
-            row(o.title, o.subtitle, o.key == cfg.background) { edit { it.put("background", o.key) } }
+        note("Each picture set has four pictures. The launcher switches between them at dawn, during the day, at dusk and at night, following the real sunrise and sunset. The picture behind this panel is a live preview.")
+        section("Background")
+        val options = Backgrounds.options(this)
+        expand("set", "Picture set", options.firstOrNull { it.key == cfg.background }?.title ?: cfg.background) {
+            for (o in options) {
+                row(o.title, o.subtitle, o.key == cfg.background) { edit(close = true) { it.put("background", o.key) } }
+            }
         }
-        section("Darkening")
-        row("Behind the clock and tiles", "${Math.round(cfg.dim * 100)}%") {
-            var d = Math.round(cfg.dim * 10) / 10f + 0.1f
-            if (d > 0.91f) d = 0.3f
-            edit { it.put("dim", (Math.round(d * 10) / 10.0)) }
-        }
-        section("Preview a time of day")
-        val ov = Prefs.phaseOverride(this)
-        row("Automatic", "sunrise and sunset", ov == null) { Prefs.setPhaseOverride(this, null); refresh() }
-        val names = listOf(Phase.HAJNAL to "Dawn", Phase.NAPPAL to "Day", Phase.ALKONY to "Dusk", Phase.EJSZAKA to "Night")
-        for ((p, n) in names) {
-            row(n, "for 10 minutes", ov == p) { Prefs.setPhaseOverride(this, p); refresh() }
-        }
+        add(SliderRow(this, "Darkening", cfg.dim, 0f, 0.9f, 0.05f, { "${Math.round(it * 100)}%" }) { v ->
+            backdrop.setDim(v)
+            ConfigStore.edit(this) { it.put("dim", Math.round(v * 100) / 100.0) }
+        })
+        val phases = listOf(Phase.HAJNAL, Phase.NAPPAL, Phase.ALKONY, Phase.EJSZAKA)
+        val previewed = Prefs.phaseOverride(this)
+        add(SegmentRow(this, "Preview", listOf("Auto", "Dawn", "Day", "Dusk", "Night"), if (previewed == null) 0 else phases.indexOf(previewed) + 1) { i ->
+            Prefs.setPhaseOverride(this, if (i == 0) null else phases[i - 1])
+            backdrop.show(cfg.background, Backgrounds.phase(this, cfg), true)
+        })
+        note("A preview lasts 10 minutes, then the picture follows the sun again.")
+        section("Motion")
+        val levels = listOf("full", "reduced", "off")
+        add(SegmentRow(this, "Animations", listOf("Full", "Reduced", "Off"), levels.indexOf(cfg.animations).coerceAtLeast(0)) { i ->
+            ConfigStore.edit(this) { it.put("animations", levels[i]) }
+            cfg = Config.load(this)
+        })
+        note("Reduced keeps only short fades. Off also stops the gliding cursor and the smooth scrolling.")
     }
 
     private fun favoritesPage() {
         note("The scrolling row of apps on the home screen. You can also hold OK on a tile there.")
         section("Order")
         val favs = FavStore.get(this, cfg)
+        val last = favs.size - 1
         favs.forEachIndexed { i, pkg ->
             val name = Apps.one(this, pkg)?.label ?: pkg
-            row("${i + 1}.  $name") {
-                Popup.menu(this, name, listOf("Move up", "Move down", "Remove")) { which ->
-                    when (which) {
-                        0 -> if (i > 0) { favs.removeAt(i); favs.add(i - 1, pkg) }
-                        1 -> if (i < favs.size - 1) { favs.removeAt(i); favs.add(i + 1, pkg) }
-                        else -> favs.removeAt(i)
+            fun move(to: Int) = change(moveTo = "fav:$to") {
+                favs.removeAt(i)
+                favs.add(to, pkg)
+                FavStore.set(this, favs)
+            }
+            expand("fav:$i", "${i + 1}.  $name", null) {
+                row("Move up", onClick = if (i > 0) ({ move(i - 1) }) else null)
+                row("Move down", onClick = if (i < last) ({ move(i + 1) }) else null)
+                row("Remove") {
+                    change(close = true) {
+                        favs.removeAt(i)
+                        FavStore.set(this, favs)
                     }
-                    FavStore.set(this, favs)
-                    render(when (which) { 0 -> i - 1; 1 -> i + 1; else -> i })
                 }
             }
         }
         section("More")
         row("+  Add apps", "All apps") { open(Intent(this, AllAppsActivity::class.java)) }
         row("Reset to the default favorites") {
-            FavStore.reset(this)
+            change(close = true) { FavStore.reset(this) }
             toast("Favorites reset")
-            refresh()
         }
     }
 
     private fun homePage() {
         section("Status chips  ·  top right, up to 4")
-        entityList({ r -> ConfigStore.array(r, "status") }, cfg.status, "Add status chip", "", false)
-        section("Quick actions  ·  Home row, up to 5")
+        entityList("status", { r -> ConfigStore.array(r, "status") }, cfg.status, "Add status chip", "", false)
+        section("Quick actions  ·  bottom row, up to 6")
         entityList(
-            { r -> ConfigStore.array(r, "scenes") }, cfg.scenes, "Add quick action",
+            "scenes", { r -> ConfigStore.array(r, "scenes") }, cfg.scenes, "Add quick action",
             "scene,script,light,switch,input_boolean,button,input_button,automation,fan", false
         )
         section("Now playing card")
-        row("Media player", cfg.nowPlaying ?: "Off") {
-            Popup.menu(this, "Now playing card", listOf("Choose media player", "Rename the card", "Turn off")) { which ->
-                when (which) {
-                    0 -> pick("Choose media player", "media_player") { entity, name ->
-                        edit { r -> r.put("now_playing", entity); if (r.optString("now_playing_label").isBlank()) r.put("now_playing_label", name) }
-                    }
-                    1 -> Popup.text(this, "Card label", cfg.nowPlayingLabel) { v -> edit { it.put("now_playing_label", v) } }
-                    else -> edit { it.remove("now_playing") }
-                }
+        row("Media player", cfg.nowPlaying ?: "None") {
+            pick("Choose media player", "media_player") { entity, name ->
+                edit { r -> r.put("now_playing", entity); if (r.optString("now_playing_label").isBlank()) r.put("now_playing_label", name) }
             }
         }
-        if (cfg.nowPlaying != null) row("Card label", cfg.nowPlayingLabel)
-        section("Animations")
-        val levels = listOf("full" to "Full", "reduced" to "Reduced", "off" to "Off")
-        row("Animations", levels.first { it.first == cfg.animations }.second) {
-            Popup.menu(this, "Animations", levels.map { it.second }, levels.indexOfFirst { it.first == cfg.animations }) { which ->
-                edit { it.put("animations", levels[which].first) }
+        if (cfg.nowPlaying != null) {
+            row("Card label", cfg.nowPlayingLabel) {
+                Popup.text(this, "Card label", cfg.nowPlayingLabel) { v -> edit { it.put("now_playing_label", v) } }
             }
+            row("Remove the card") { edit { it.remove("now_playing") } }
         }
     }
 
     private fun camerasPage() {
-        note("The first four cameras appear on the home screen. All of them are on the camera wall.")
+        note("Every camera listed here is on the camera wall, in this order.")
         section("Cameras")
-        entityList({ r -> ConfigStore.array(r, "cameras") }, cfg.cameras, "Add camera", "camera", false)
+        entityList("cameras", { r -> ConfigStore.array(r, "cameras") }, cfg.cameras, "Add camera", "camera", false)
     }
 
     private fun inputsPage() {
         val all = Inputs.all(this)
-        note("The TV's HDMI inputs, shown in the Inputs row on the home screen.")
-        section("Inputs")
+        note("The TV's HDMI inputs, at the bottom right of the home screen. OK shows or hides one, Hold OK renames it.")
+        section("Show on the home screen")
         if (all.isEmpty()) row("This TV reports no HDMI inputs")
         for (inp in all) {
             val hidden = inp.id in cfg.inputsHidden
             val custom = cfg.inputNames[inp.id]
-            row(custom ?: inp.name, if (hidden) "Hidden" else "Shown") {
-                val opts = arrayListOf(if (hidden) "Show on the home screen" else "Hide from the home screen", "Rename")
-                if (custom != null) opts.add("Use the TV's name (${inp.name})")
-                Popup.menu(this, custom ?: inp.name, opts) { which ->
-                    when (which) {
-                        0 -> edit { r ->
-                            val set = cfg.inputsHidden.toMutableSet()
-                            if (hidden) set.remove(inp.id) else set.add(inp.id)
-                            val a = JSONArray()
-                            set.forEach { a.put(it) }
-                            r.put("inputs_hidden", a)
-                        }
-                        1 -> Popup.text(this, "Input name", custom ?: inp.name) { v ->
-                            edit { r -> if (v.isBlank()) ConfigStore.obj(r, "input_names").remove(inp.id) else ConfigStore.obj(r, "input_names").put(inp.id, v) }
-                        }
-                        else -> edit { r -> ConfigStore.obj(r, "input_names").remove(inp.id) }
-                    }
+            toggle(custom ?: inp.name, !hidden, onLong = {
+                Popup.text(this, "Input name", custom ?: inp.name, "Empty: use the TV's name (${inp.name})") { v ->
+                    edit { r -> if (v.isBlank()) ConfigStore.obj(r, "input_names").remove(inp.id) else ConfigStore.obj(r, "input_names").put(inp.id, v) }
+                }
+            }) { show ->
+                edit { r ->
+                    val set = cfg.inputsHidden.toMutableSet()
+                    if (show) set.remove(inp.id) else set.add(inp.id)
+                    val a = JSONArray()
+                    set.forEach { a.put(it) }
+                    r.put("inputs_hidden", a)
                 }
             }
         }
@@ -403,13 +471,12 @@ class SettingsActivity : PanelActivity() {
     private fun dashboardPage() {
         note("The Home Assistant overview that opens from the Dashboard button.")
         section("Weather")
-        row("Weather source", cfg.weather ?: "Off") {
-            Popup.menu(this, "Weather", listOf("Choose weather source", "Turn off")) { which ->
-                if (which == 0) pick("Choose weather source", "weather") { entity, _ ->
-                    edit { r -> ConfigStore.obj(r, "dashboard").put("weather", entity) }
-                } else edit { r -> ConfigStore.obj(r, "dashboard").remove("weather") }
+        row("Weather source", cfg.weather ?: "None") {
+            pick("Choose weather source", "weather") { entity, _ ->
+                edit { r -> ConfigStore.obj(r, "dashboard").put("weather", entity) }
             }
         }
+        if (cfg.weather != null) row("Remove the weather card") { edit { r -> ConfigStore.obj(r, "dashboard").remove("weather") } }
         section("Sections")
         cfg.sections.forEachIndexed { i, s ->
             val count = if (s.items.size == 1) "1 item" else "${s.items.size} items"
@@ -432,29 +499,27 @@ class SettingsActivity : PanelActivity() {
                 Popup.text(this, "Section name", s.title) { v -> if (v.isNotBlank()) edit { r -> dashSections(r).getJSONObject(i).put("title", v) } }
             }
             row("Hide while this is on", s.hideWhen ?: "Never hidden") {
-                Popup.menu(this, "Hide the section", listOf("Choose a switch or sensor", "Never hide")) { which ->
-                    if (which == 0) pick("Hide while this is on", "input_boolean,binary_sensor,switch") { entity, _ ->
-                        edit { r -> dashSections(r).getJSONObject(i).put("hide_when", entity) }
-                    } else edit { r -> dashSections(r).getJSONObject(i).remove("hide_when") }
+                pick("Hide while this is on", "input_boolean,binary_sensor,switch") { entity, _ ->
+                    edit { r -> dashSections(r).getJSONObject(i).put("hide_when", entity) }
                 }
             }
+            if (s.hideWhen != null) row("Never hide") { edit { r -> dashSections(r).getJSONObject(i).remove("hide_when") } }
             section("Items")
-            entityList({ r -> ConfigStore.array(dashSections(r).getJSONObject(i), "items") }, s.items, "Add item", "", true)
+            entityList("sec", { r -> ConfigStore.array(dashSections(r).getJSONObject(i), "items") }, s.items, "Add item", "", true)
             section("Order")
-            if (i > 0) row("Move section up") {
+            row("Move section up", onClick = if (i > 0) ({
                 stack[stack.size - 1] = sectionPage(i - 1)
-                edit { r -> ConfigStore.swap(dashSections(r), i, i - 1) }
-            }
-            if (i < cfg.sections.size - 1) row("Move section down") {
+                edit(close = true) { r -> ConfigStore.swap(dashSections(r), i, i - 1) }
+            }) else null)
+            row("Move section down", onClick = if (i < cfg.sections.size - 1) ({
                 stack[stack.size - 1] = sectionPage(i + 1)
-                edit { r -> ConfigStore.swap(dashSections(r), i, i + 1) }
-            }
-            row("Delete section") {
-                Popup.menu(this, "Delete “${s.title}”?", listOf("Delete", "Cancel")) { which ->
-                    if (which == 0) {
-                        ConfigStore.edit(this) { r -> dashSections(r).remove(i) }
-                        onBackPressed()
-                    }
+                edit(close = true) { r -> ConfigStore.swap(dashSections(r), i, i + 1) }
+            }) else null)
+            expand("delete", "Delete section", null) {
+                row("Yes, delete “${s.title}”") {
+                    openKey = null
+                    ConfigStore.edit(this) { r -> dashSections(r).remove(i) }
+                    onBackPressed()
                 }
             }
         }
