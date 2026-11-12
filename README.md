@@ -92,6 +92,10 @@ asks Home Assistant's Android TV (ADB) integration to run the commands on the TV
 
     pm enable com.google.android.tvlauncher                    # give it back to Google TV home
 
+From a Windows PC, `home-button.bat` in the project folder does the same over ADB on its own
+(no Home Assistant needed): run it to see the current choice and pick one, or pass `launcher` or
+`google` (and optionally the TV's address).
+
 Google's home app has a higher priority than any installed launcher, so the TV always picks it
 while it is switched on; that is why it is switched off rather than just outranked. It stays
 installed. The TV's player in Home Assistant is found by the TV's address, or set it as
