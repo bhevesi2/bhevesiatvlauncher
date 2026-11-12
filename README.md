@@ -57,11 +57,11 @@ The `matterhorn` and `city` sets live in `app/src/main/assets/backgrounds/` (fet
 | Dusk | Marc Wieland – Swiss alpine lake at dusk (`1Kcgpq1ap9E`) |
 | Night | Pascal Debrunner – Milky Way with Matterhorn (`xu9ck-3xTvI`) |
 
-City set: Ahmed Nishaath – Dalian at sunrise (`Z0JVfNqv2VE`), Adrian Newell – Houston skyline
-(`oXoQ5nKUd5o`), Arto Marttinen – Tokyo at sunset (`6xh7H5tWj9c`), Andrea De Santis – London at
-night (`bGWu7lcoZqY`).
+City set: Saneet Gupta – Hong Kong in the early blue light (`Dsbim_JMpVM`), Andra C Taylor Jr –
+Washington, DC by day (`JbrFSXjST7Q`), Arto Marttinen – Tokyo at sunset (`6xh7H5tWj9c`),
+Andrea De Santis – London at night (`bGWu7lcoZqY`).
 
-To swap photos, edit `tools/backgrounds.txt` (set, phase, images.unsplash.com photo path), run `python tools/fetch_backgrounds.py` (needs Pillow) and commit the new files.
+To swap photos, edit `tools/backgrounds.txt` (set, phase, images.unsplash.com photo path) and push: the `photos` workflow downloads them and commits the new files.
 Your own photos can also be placed on the TV in `files/backgrounds/<name>/hajnal|nappal|alkony|ejszaka.jpg`.
 
 ## Building on a Windows PC
