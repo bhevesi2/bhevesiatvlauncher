@@ -82,6 +82,15 @@ night (`bGWu7lcoZqY`).
 To swap photos, edit `tools/backgrounds.txt` (set, phase, images.unsplash.com photo path), run `python tools/fetch_backgrounds.py` (needs Pillow) and commit the new files.
 Your own photos can also be placed on the TV in `files/backgrounds/<name>/hajnal|nappal|alkony|ejszaka.jpg`.
 
+## Music
+
+OK on the "Now playing" card of the home screen opens the Music panel: every Roon zone in Home
+Assistant with what it is playing (found with `integration_entities('roon')`, which needs an
+administrator's token; otherwise the players that are playing right now are listed). Moving over a
+zone shows it large on the left with previous / play-pause / next, which the remote's own media
+keys also control; OK on a zone puts it on the home screen card. The card stays on the home
+screen while its zone is idle, so the panel can always be opened.
+
 ## Making it the default home app
 
 Settings › Home screen › Home button opens. Android TV only allows this over ADB, so the launcher

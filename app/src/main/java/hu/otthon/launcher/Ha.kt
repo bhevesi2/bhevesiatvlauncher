@@ -77,6 +77,20 @@ class HaClient(private val base: String, private val token: String) {
         }
     }
 
+    /** Renders a template in Home Assistant and returns the text. Needs an administrator's token. */
+    fun template(template: String): String {
+        val c = open("/api/template", 10000)
+        try {
+            c.requestMethod = "POST"
+            c.doOutput = true
+            c.outputStream.use { it.write(JSONObject().put("template", template).toString().toByteArray()) }
+            if (c.responseCode != 200) throw IllegalStateException("HTTP ${c.responseCode}")
+            return c.inputStream.bufferedReader().readText()
+        } finally {
+            c.disconnect()
+        }
+    }
+
     /** Server info: version, latitude, longitude. Throws if the API does not answer. */
     fun config(): JSONObject = getJson("/api/config")
 

@@ -155,6 +155,13 @@ class HomeActivity : Activity() {
             setPadding(dp(9f), dp(9f), dp(11f), dp(9f))
             background = rounded(C.GLASS, dp(9f).toFloat(), 1, C.BORDER)
             visibility = View.GONE
+            // the whole card opens the Music panel; the round button on it only plays and pauses
+            isFocusable = true
+            isClickable = true
+            contentDescription = "Music"
+            FocusGlide.shape(this, dp(9f).toFloat())
+            setOnFocusChangeListener { _, f -> paintNowPlaying(f) }
+            setOnClickListener { open(MusicActivity::class.java) }
         }
         npCover = ImageView(this).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
@@ -189,6 +196,14 @@ class HomeActivity : Activity() {
             setOnClickListener { togglePlay() }
         }
         npCard.addView(npButton, LinearLayout.LayoutParams(dp(32f), dp(32f)))
+    }
+
+    private fun paintNowPlaying(f: Boolean) {
+        npCard.background = if (f) FocusGlide.fill(npCard, dp(9f).toFloat()) else rounded(C.GLASS, dp(9f).toFloat(), 1, C.BORDER)
+        npLabel.setTextColor(if (f) C.DARK2 else C.TEXT3)
+        npTitle.setTextColor(if (f) C.DARK else C.TEXT)
+        npArtist.setTextColor(if (f) C.DARK2 else C.TEXT2)
+        npProgress.background = rounded(if (f) C.DARK else C.TEXT, dp(1f).toFloat())
     }
 
     /** Round icon-only button; its name shows in a small label while it has focus. */
@@ -480,13 +495,22 @@ class HomeActivity : Activity() {
             val state = s.optString("state")
             val a = s.optJSONObject("attributes")
             val active = (state == "playing" || state == "paused") && a != null
-            if (!active) {
-                if (npCard.hasFocus()) favRow.getChildAt(0)?.requestFocus()
-                npCard.visibility = View.GONE
-                return@run
-            }
             npCard.visibility = View.VISIBLE
             npLabel.text = cfg.nowPlayingLabel
+            if (!active) {
+                // stays on screen, so the Music panel can still be opened to pick another zone
+                if (npButton.hasFocus()) npCard.requestFocus()
+                npButton.visibility = View.GONE
+                npProgressTrack.visibility = View.INVISIBLE
+                npTitle.text = if (state == "unavailable") "Not available" else "Nothing playing"
+                npArtist.text = "OK: choose a zone"
+                npPicture = null
+                npCover.setImageResource(R.drawable.ic_disc)
+                npCover.setPadding(dp(12f), dp(12f), dp(12f), dp(12f))
+                return@run
+            }
+            npButton.visibility = View.VISIBLE
+            npProgressTrack.visibility = View.VISIBLE
             npTitle.text = a!!.optString("media_title", "")
             val artist = a.optString("media_artist", "")
             val album = a.optString("media_album_name", "")

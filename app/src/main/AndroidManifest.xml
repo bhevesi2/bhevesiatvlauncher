@@ -66,6 +66,11 @@
             android:screenOrientation="landscape" />
 
         <activity
+            android:name=".MusicActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
+        <activity
             android:name=".AllAppsActivity"
             android:exported="false"
             android:screenOrientation="landscape" />
