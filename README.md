@@ -84,7 +84,7 @@ Your own photos can also be placed on the TV in `files/backgrounds/<name>/hajnal
 
 ## Music
 
-OK on the "Now playing" card of the home screen opens the Music panel: every Roon zone in Home
+On the "Now playing" card of the home screen OK plays or pauses, and holding OK opens the Music panel: every Roon zone in Home
 Assistant with what it is playing (found with `integration_entities('roon')`, which needs an
 administrator's token; otherwise the players that are playing right now are listed). Moving over a
 zone shows it large on the left with previous / play-pause / next, which the remote's own media

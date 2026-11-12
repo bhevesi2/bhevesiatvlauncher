@@ -155,13 +155,15 @@ class HomeActivity : Activity() {
             setPadding(dp(9f), dp(9f), dp(11f), dp(9f))
             background = rounded(C.GLASS, dp(9f).toFloat(), 1, C.BORDER)
             visibility = View.GONE
-            // the whole card opens the Music panel; the round button on it only plays and pauses
+            // OK plays or pauses; holding OK opens the Music panel with every zone
             isFocusable = true
             isClickable = true
-            contentDescription = "Music"
+            isLongClickable = true
+            contentDescription = "Play / pause. Hold for music zones"
             FocusGlide.shape(this, dp(9f).toFloat())
             setOnFocusChangeListener { _, f -> paintNowPlaying(f) }
-            setOnClickListener { open(MusicActivity::class.java) }
+            setOnClickListener { togglePlay() }
+            setOnLongClickListener { open(MusicActivity::class.java); true }
         }
         npCover = ImageView(this).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
@@ -181,19 +183,12 @@ class HomeActivity : Activity() {
         col.addView(npProgressTrack, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(2f)).apply { topMargin = dp(6f) })
         npCard.addView(col, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         npButton = ImageView(this).apply {
+            // only shows the state now: the whole card is the button
             setImageResource(R.drawable.ic_pause)
             setPadding(dp(8f), dp(8f), dp(8f), dp(8f))
-            isFocusable = true
-            isClickable = true
-            contentDescription = "Play / pause"
-            FocusGlide.shape(this, -1f)
-            fun paint(f: Boolean) {
-                background = if (f) FocusGlide.fill(this, dp(16f).toFloat()) else rounded(0x33FFFFFF, dp(16f).toFloat())
-                setColorFilter(if (f) C.DARK else C.TEXT)
-            }
-            paint(false)
-            setOnFocusChangeListener { _, f -> paint(f) }
-            setOnClickListener { togglePlay() }
+            isFocusable = false
+            background = rounded(0x33FFFFFF, dp(16f).toFloat())
+            setColorFilter(C.TEXT)
         }
         npCard.addView(npButton, LinearLayout.LayoutParams(dp(32f), dp(32f)))
     }
@@ -204,6 +199,8 @@ class HomeActivity : Activity() {
         npTitle.setTextColor(if (f) C.DARK else C.TEXT)
         npArtist.setTextColor(if (f) C.DARK2 else C.TEXT2)
         npProgress.background = rounded(if (f) C.DARK else C.TEXT, dp(1f).toFloat())
+        npButton.background = rounded(if (f) 0x26141413 else 0x33FFFFFF, dp(16f).toFloat())
+        npButton.setColorFilter(if (f) C.DARK else C.TEXT)
     }
 
     /** Round icon-only button; its name shows in a small label while it has focus. */

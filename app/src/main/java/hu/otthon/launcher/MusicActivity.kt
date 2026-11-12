@@ -147,7 +147,12 @@ class MusicActivity : PanelActivity() {
         buttons.addView(playButton, LinearLayout.LayoutParams(dp(52f), dp(52f)).apply { leftMargin = dp(14f) })
         buttons.addView(nextButton, LinearLayout.LayoutParams(dp(40f), dp(40f)).apply { leftMargin = dp(14f) })
         left.addView(buttons, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(10f) })
+        // left and right walk through the three buttons; only the last one leads back to the list
         prevButton.nextFocusLeftId = prevButton.id
+        prevButton.nextFocusRightId = playButton.id
+        playButton.nextFocusLeftId = prevButton.id
+        playButton.nextFocusRightId = nextButton.id
+        nextButton.nextFocusLeftId = playButton.id
     }
 
     private fun roundButton(icon: Int, name: String, sizeDp: Float, onClick: () -> Unit): ImageView = ImageView(this).apply {
@@ -335,10 +340,7 @@ class MusicActivity : PanelActivity() {
         message.visibility = if (players.isEmpty()) View.VISIBLE else View.GONE
         if (players.isEmpty()) message.text = "No Roon zones found in Home Assistant."
         val target = rows[shown] ?: rows.values.firstOrNull()
-        val playId = target?.id ?: View.NO_ID
-        prevButton.nextFocusRightId = playId
-        playButton.nextFocusRightId = playId
-        nextButton.nextFocusRightId = playId
+        nextButton.nextFocusRightId = target?.id ?: View.NO_ID
         // the first time, start on the zone that is on the home screen, whatever Android focused meanwhile
         if (!listedOnce || currentFocus == null || currentFocus === window.decorView) target?.requestFocus()
         listedOnce = true
