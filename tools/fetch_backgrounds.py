@@ -3,7 +3,11 @@
 
 Each line of tools/backgrounds.txt: <set> <phase> <photo>[,<photo>...]
 where <photo> is an images.unsplash.com photo path. When several are listed, the first one
-that is landscape-shaped is used, so a portrait photo is never squeezed into a wide crop."""
+that is landscape-shaped is used, so a portrait photo is never squeezed into a wide crop.
+
+A set may have several lines for the same phase: they become <phase>.jpg, <phase>2.jpg,
+<phase>3.jpg ... and the launcher shows them in turn. A picture that is already there is
+left alone; delete the file to fetch it again."""
 import io, os, urllib.request
 from PIL import Image, ImageOps
 
@@ -18,11 +22,17 @@ def fetch(pid):
     return ImageOps.exif_transpose(Image.open(io.BytesIO(data))).convert("RGB")
 
 
+seen = {}
 for line in open("tools/backgrounds.txt"):
     parts = line.split()
-    if len(parts) != 3:
+    if len(parts) != 3 or parts[0].startswith("#"):
         continue
     s, phase, candidates = parts
+    n = seen[(s, phase)] = seen.get((s, phase), 0) + 1
+    path = f"{OUT}/{s}/{phase}{'' if n == 1 else n}.jpg"
+    if os.path.exists(path):
+        print(f"{path}: already there")
+        continue
     chosen = None
     first = None
     for pid in candidates.split(","):
@@ -43,6 +53,5 @@ for line in open("tools/backgrounds.txt"):
     pid, img = chosen
     img = ImageOps.fit(img, (W, H), method=Image.LANCZOS, centering=(0.5, 0.5))
     os.makedirs(f"{OUT}/{s}", exist_ok=True)
-    path = f"{OUT}/{s}/{phase}.jpg"
     img.save(path, "JPEG", quality=84, optimize=True, progressive=True)
     print(f"{path} <- {pid} ({os.path.getsize(path)} bytes)")

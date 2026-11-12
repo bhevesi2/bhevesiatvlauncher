@@ -62,6 +62,11 @@ The `matterhorn` and `city` sets live in `app/src/main/assets/backgrounds/` (fet
 | Dusk | Marc Wieland – Swiss alpine lake at dusk (`1Kcgpq1ap9E`) |
 | Night | Pascal Debrunner – Milky Way with Matterhorn (`xu9ck-3xTvI`) |
 
+Landscapes set (several pictures per time of day, a new one every hour): Alessio Soggetti,
+Boris Baldinger, Colin Lloyd (dawn); Christopher Politano, Tobias Keller, Josef Stepanek,
+John O'Nolan (day); Simon Berger, Craig Melville, Alexander Slash (dusk); Benjamin Voros,
+Vincent Guth, Colin Watts, Joshua Kettle (night).
+
 City set: Ahmed Nishaath – Dalian at sunrise (`Z0JVfNqv2VE`), Adrian Newell – Houston skyline
 (`oXoQ5nKUd5o`), Arto Marttinen – Tokyo at sunset (`6xh7H5tWj9c`), Andrea De Santis – London at
 night (`bGWu7lcoZqY`).
