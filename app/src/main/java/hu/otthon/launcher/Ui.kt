@@ -802,7 +802,8 @@ class Backdrop(ctx: Context) : FrameLayout(ctx) {
     }
 
     fun show(bg: String, phase: Phase, animate: Boolean) {
-        val k = bg + "/" + phase.key
+        val turn = if (Backgrounds.isPhoto(bg)) Backgrounds.variant(context, bg, phase) ?: "" else ""
+        val k = bg + "/" + phase.key + "/" + turn
         if (k == key) return
         val anim = animate && key != null
         key = k

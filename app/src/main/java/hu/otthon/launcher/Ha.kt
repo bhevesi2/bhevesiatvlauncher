@@ -37,11 +37,13 @@ data class Forecast(val time: Long, val condition: String, val hi: Double, val l
 class HaClient(private val base: String, private val token: String) {
 
     private fun open(path: String, readMs: Int = 6000): HttpURLConnection {
+        val foreign = path.startsWith("http") && !path.startsWith(base)
         val url = if (path.startsWith("http")) path else base + path
         val c = URL(url).openConnection() as HttpURLConnection
         c.connectTimeout = 4000
         c.readTimeout = readMs
-        c.setRequestProperty("Authorization", "Bearer $token")
+        // the token is for Home Assistant only: a picture hosted elsewhere must not receive it
+        if (!foreign) c.setRequestProperty("Authorization", "Bearer $token")
         c.setRequestProperty("Content-Type", "application/json")
         return c
     }
@@ -188,8 +190,8 @@ class HaClient(private val base: String, private val token: String) {
     }
 
     /** Fetches an image; with maxW > 0 it is downsampled to roughly that width. */
-    fun bitmap(path: String, maxW: Int = 0): Bitmap? {
-        val c = open(path)
+    fun bitmap(path: String, maxW: Int = 0, readMs: Int = 6000): Bitmap? {
+        val c = open(path, readMs)
         try {
             if (c.responseCode != 200) return null
             val bytes = c.inputStream.use { it.readBytes() }

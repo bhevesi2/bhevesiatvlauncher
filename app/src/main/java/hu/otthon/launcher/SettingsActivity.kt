@@ -44,6 +44,13 @@ class SettingsActivity : PanelActivity() {
     private val headers = HashMap<String, RowView>()
     private var indent = 0
 
+    /**
+     * True while the page is being rebuilt. Removing the focused row makes Android hand focus
+     * to the first focusable view, which is the first menu entry; without this flag that entry
+     * would take it as "the user moved here" and switch the page back to Appearance.
+     */
+    private var rendering = false
+
     private val roots = listOf("Appearance", "Favorites", "Home screen", "Cameras", "Inputs", "Dashboard", "Home Assistant", "About")
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -83,7 +90,7 @@ class SettingsActivity : PanelActivity() {
                 setPadding(dp(10f), dp(8f), dp(10f), dp(8f))
                 FocusGlide.shape(this, dp(8f).toFloat())
                 setOnFocusChangeListener { _, f ->
-                    if (f && i != navIndex) showRoot(i, false)
+                    if (f && i != navIndex && !rendering) showRoot(i, false)
                     paintNav()
                 }
                 setOnClickListener { showRoot(i, true) }
@@ -206,17 +213,26 @@ class SettingsActivity : PanelActivity() {
         backdrop.setDim(cfg.dim)
         backdrop.show(cfg.background, Backgrounds.phase(this, cfg), true)
 
-        pane.removeAllViews()
-        headers.clear()
-        indent = 0
-        val page = stack.last()
-        crumb.text = if (stack.size > 1) "‹  " + page.title else page.title
-        page.build()
+        // Remember whether a row had focus: it is about to be removed, and focus must come back
+        // to the pane afterwards even if the caller does not ask for a particular row.
+        val hadRowFocus = focusedRow()
+        rendering = true
+        try {
+            pane.removeAllViews()
+            headers.clear()
+            indent = 0
+            val page = stack.last()
+            crumb.text = if (stack.size > 1) "‹  " + page.title else page.title
+            page.build()
+        } finally {
+            rendering = false
+        }
         paintNav()
         val rows = paneRows()
         val navId = navViews[navIndex].id
         rows.forEach { it.nextFocusLeftId = navId }
-        if (focus >= 0 && rows.isNotEmpty()) rows[focus.coerceIn(0, rows.size - 1)].requestFocus()
+        val target = if (focus >= 0) focus else hadRowFocus ?: -1
+        if (target >= 0 && rows.isNotEmpty()) rows[target.coerceIn(0, rows.size - 1)].requestFocus()
     }
 
     private fun focusRow(i: Int) {
@@ -339,6 +355,16 @@ class SettingsActivity : PanelActivity() {
                 }
                 if (allowRo) toggle("Can be switched from the TV", !item.ro) { on ->
                     edit { r -> arr(r).getJSONObject(i).put("ro", !on) }
+                }
+                if (allowRo && item.domain == "device_tracker") {
+                    row("Picture", item.picture ?: "Automatic") {
+                        pick("Choose a picture", "image,camera") { entity, _ ->
+                            edit { r -> arr(r).getJSONObject(i).put("picture", entity) }
+                        }
+                    }
+                    if (item.picture != null) row("Use the automatic picture") {
+                        edit { r -> arr(r).getJSONObject(i).remove("picture") }
+                    }
                 }
                 row("Move up", onClick = if (i > 0) ({ edit(moveTo = "$id:${i - 1}") { r -> ConfigStore.swap(arr(r), i, i - 1) } }) else null)
                 row("Move down", onClick = if (i < last) ({ edit(moveTo = "$id:${i + 1}") { r -> ConfigStore.swap(arr(r), i, i + 1) } }) else null)

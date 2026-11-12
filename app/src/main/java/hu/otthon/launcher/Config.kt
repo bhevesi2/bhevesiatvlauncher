@@ -8,7 +8,14 @@ import org.json.JSONObject
 import java.io.File
 import java.io.InputStream
 
-data class HaItem(val entity: String, val label: String, val icon: String = "", val ro: Boolean = false) {
+data class HaItem(
+    val entity: String,
+    val label: String,
+    val icon: String = "",
+    val ro: Boolean = false,
+    /** For a car: an image or camera entity, or a URL, to show as its picture. */
+    val picture: String? = null
+) {
     val domain: String get() = entity.substringBefore('.')
     val title: String get() = label.ifBlank { entity.substringAfter('.').replace('_', ' ') }
 }
@@ -86,7 +93,10 @@ data class Config(
                 val o = arr.optJSONObject(i) ?: return@mapNotNull null
                 val entity = o.optString("entity", "")
                 if (entity.isBlank()) null
-                else HaItem(entity, o.optString("label", ""), o.optString("icon", ""), o.optBoolean("ro", false))
+                else HaItem(
+                    entity, o.optString("label", ""), o.optString("icon", ""), o.optBoolean("ro", false),
+                    o.optString("picture", "").ifBlank { null }
+                )
             }
         }
 
@@ -256,22 +266,55 @@ object Backgrounds {
 
     fun isPhoto(key: String) = key.startsWith("asset:") || key.startsWith("foto:")
 
+    private val listings = HashMap<String, Pair<Long, List<String>>>()
+
+    /** File names in a set's folder. Bundled sets never change; folders on the TV are re-read every minute. */
+    @Synchronized
+    private fun files(ctx: Context, key: String): List<String> {
+        val now = System.currentTimeMillis()
+        val cached = listings[key]
+        if (cached != null && (key.startsWith("asset:") || now - cached.first < 60_000L)) return cached.second
+        val list: List<String> = try {
+            when {
+                key.startsWith("asset:") -> ctx.assets.list("backgrounds/" + key.removePrefix("asset:"))?.toList()
+                key.startsWith("foto:") -> File(ctx.getExternalFilesDir("backgrounds"), key.removePrefix("foto:")).list()?.toList()
+                else -> null
+            } ?: emptyList()
+        } catch (e: Exception) {
+            emptyList()
+        }
+        listings[key] = Pair(now, list)
+        return list
+    }
+
+    /**
+     * The picture to show for a phase right now, or null if the set has none for it. A set may
+     * hold several per phase (hajnal.jpg, hajnal2.jpg, hajnal3.jpg ...); they take turns, a new
+     * one every hour.
+     */
+    fun variant(ctx: Context, key: String, phase: Phase): String? {
+        val match = Regex("^" + phase.key + "[-_]?(\\d*)\\.(jpg|jpeg|png|webp)$")
+        val names = files(ctx, key).filter { match.matches(it.lowercase()) }
+            .sortedWith(compareBy({ match.find(it.lowercase())?.groupValues?.get(1)?.toIntOrNull() ?: 0 }, { it }))
+        if (names.isEmpty()) return null
+        val zone = java.util.TimeZone.getDefault()
+        val now = System.currentTimeMillis()
+        val hours = (now + zone.getOffset(now)) / 3_600_000L
+        return names[(hours % names.size).toInt()]
+    }
+
     /** Loads the photo for a phase, or null if the set has no such image. Call off the main thread. */
     @Synchronized
     fun photo(ctx: Context, key: String, phase: Phase, w: Int = 1920, h: Int = 1080): Bitmap? {
-        val ck = key + "/" + phase.key
+        val name = variant(ctx, key, phase) ?: return null
+        val ck = "$key/$name"
         if (ck == cacheKey && cacheBmp != null) return cacheBmp
         val opener: (() -> InputStream)? = when {
             key.startsWith("asset:") -> {
-                val dir = "backgrounds/" + key.removePrefix("asset:")
-                val files = try { ctx.assets.list(dir)?.toList() ?: emptyList() } catch (e: Exception) { emptyList() }
-                val name = EXT.map { "${phase.key}.$it" }.firstOrNull { files.contains(it) }
-                name?.let { n -> { ctx.assets.open("$dir/$n") } }
+                { ctx.assets.open("backgrounds/" + key.removePrefix("asset:") + "/" + name) }
             }
             key.startsWith("foto:") -> {
-                val dir = File(ctx.getExternalFilesDir("backgrounds"), key.removePrefix("foto:"))
-                val f = EXT.map { File(dir, "${phase.key}.$it") }.firstOrNull { it.exists() }
-                f?.let { file -> { file.inputStream() } }
+                { File(File(ctx.getExternalFilesDir("backgrounds"), key.removePrefix("foto:")), name).inputStream() }
             }
             else -> null
         }
