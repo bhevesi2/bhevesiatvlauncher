@@ -1,17 +1,15 @@
 package hu.otthon.launcher
 
-import android.app.Activity
-import android.content.Context
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
+import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import org.json.JSONObject
@@ -22,76 +20,23 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.concurrent.Executors
 
-/** One entity on the dashboard: name on the left, live value (and switch) on the right. */
-class DashRow(ctx: Context, val item: HaItem) : LinearLayout(ctx) {
-    private val name = ctx.label(item.title, 12f, C.TEXT2)
-    private val value = ctx.label("…", 12f, C.TEXT, bold = true)
-    private val dot: SwitchDot? = if (Actions.kind(item) == Actions.Kind.TOGGLE) SwitchDot(ctx) else null
-    var state: JSONObject? = null
-        private set
-    private var tone = C.TEXT
-
-    init {
-        orientation = HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
-        isFocusable = true
-        isClickable = true
-        setPadding(ctx.dp(11f), ctx.dp(8f), ctx.dp(11f), ctx.dp(8f))
-        name.maxLines = 1
-        name.ellipsize = android.text.TextUtils.TruncateAt.END
-        addView(name, LayoutParams(0, -2, 1f))
-        value.maxLines = 1
-        addView(value, LayoutParams(-2, -2).apply { leftMargin = ctx.dp(8f) })
-        dot?.let { addView(it, LayoutParams(ctx.dp(26f), ctx.dp(14f)).apply { leftMargin = ctx.dp(8f) }) }
-        FocusGlide.shape(this, ctx.dp(8f).toFloat())
-        paint(false)
-        setOnFocusChangeListener { _, f -> paint(f) }
-    }
-
-    fun bind(s: JSONObject?) {
-        state = s
-        if (s == null) {
-            value.text = "–"
-            tone = C.TEXT3
-        } else {
-            val st = s.optString("state")
-            val dc = s.optJSONObject("attributes")?.optString("device_class", "") ?: ""
-            value.text = Fmt.value(item.entity, s)
-            dot?.on = st == "on"
-            tone = when {
-                st == "unavailable" || st == "unknown" -> C.TEXT3
-                item.domain == "binary_sensor" && st == "on" && dc in ATTENTION -> AMBER
-                Fmt.isOn(item.domain, st) -> C.ON
-                else -> C.TEXT
-            }
-        }
-        paint(isFocused)
-    }
-
-    private fun paint(f: Boolean) {
-        background = if (f) FocusGlide.fill(this, context.dp(8f).toFloat()) else rounded(C.ROW, context.dp(8f).toFloat())
-        name.setTextColor(if (f) C.DARK2 else C.TEXT2)
-        value.setTextColor(if (f) C.DARK else tone)
-        dot?.dark = f
-    }
-
-    companion object {
-        const val AMBER = 0xFFFAC775.toInt()
-        val ATTENTION = setOf("door", "garage_door", "window", "opening", "lock", "problem", "safety", "smoke", "gas", "moisture", "tamper")
-    }
-}
-
-/** Home Assistant overview: weather, sections of live entities, toggles and statistics. */
+/**
+ * The Home Assistant overview: a wide panel of tiles in three columns, one block per section.
+ * OK switches what can be switched, and opens the statistics of everything else.
+ */
 class DashboardActivity : PanelActivity() {
 
     private lateinit var cfg: Config
     private var ha: HaClient? = null
     private val exec = Executors.newFixedThreadPool(4)
+    private val historyExec = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
     private var active = false
     private var gen = 0
 
-    private lateinit var frame: PanelFrame
+    private lateinit var backdrop: Backdrop
+    private lateinit var panel: LinearLayout
+    private lateinit var clock: TextView
     private lateinit var weatherBox: LinearLayout
     private lateinit var weatherIconView: ImageView
     private lateinit var weatherTemp: TextView
@@ -100,7 +45,8 @@ class DashboardActivity : PanelActivity() {
     private lateinit var forecastRow: LinearLayout
     private lateinit var message: TextView
     private val columns = ArrayList<LinearLayout>()
-    private val rows = ArrayList<DashRow>()
+    private val tiles = ArrayList<DashTile>()
+    private val sparkPending = HashSet<String>()
     private var builtFor: String? = null
     private var lastForecast = 0L
 
@@ -119,54 +65,87 @@ class DashboardActivity : PanelActivity() {
 
     private val ranges = intArrayOf(6, 24, 72, 168)
     private val rangeNames = listOf("6 hours", "24 hours", "3 days", "7 days")
+    private val clockFmt = DateTimeFormatter.ofPattern("EEEE, MMMM d   ·   HH:mm", Locale.ENGLISH)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        frame = PanelFrame(this, "Home", "OK: switch or statistics   ·   Hold OK: statistics")
+        val root = FrameLayout(this)
+        backdrop = Backdrop(this)
+        root.addView(backdrop, FrameLayout.LayoutParams(-1, -1))
 
-        // weather card under the clock, on the open left side
+        panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = rounded(C.PANEL, dp(20f).toFloat(), 1, C.BORDER)
+            clipToOutline = true
+            outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
+        }
+        FocusGlide.install(panel)
+
+        val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.BOTTOM }
+        header.addView(label("Home", 17f, C.TEXT, bold = true))
+        header.addView(
+            label("OK: switch or statistics   ·   Hold OK: statistics", 10f, C.TEXT3).apply { setPadding(dp(14f), 0, 0, dp(1f)) },
+            LinearLayout.LayoutParams(0, -2, 1f)
+        )
+        clock = label("", 12f, C.TEXT2)
+        header.addView(clock)
+        panel.addView(header, LinearLayout.LayoutParams(-1, -2).apply {
+            leftMargin = dp(22f)
+            rightMargin = dp(22f)
+            topMargin = dp(18f)
+        })
+
+        message = label("", 12f, C.TEXT2).apply { setPadding(dp(22f), dp(20f), dp(22f), 0); visibility = View.GONE }
+        panel.addView(message)
+
+        val scroll = ColScroller(this).apply {
+            clipToPadding = false
+            setPadding(dp(22f), dp(12f), dp(22f), dp(20f))
+        }
+        val body = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        for (i in 0 until 3) {
+            val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            columns.add(col)
+            body.addView(col, LinearLayout.LayoutParams(0, -2, 1f).apply { if (i > 0) leftMargin = dp(16f) })
+        }
+        scroll.addView(body, FrameLayout.LayoutParams(-1, -2))
+        panel.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        root.addView(panel, FrameLayout.LayoutParams(-1, -1).apply {
+            leftMargin = dp(30f)
+            rightMargin = dp(30f)
+            topMargin = dp(26f)
+            bottomMargin = dp(26f)
+        })
+
+        buildWeather()
+        buildOverlay()
+        root.addView(overlay, FrameLayout.LayoutParams(-1, -1))
+        setContentView(root)
+        animateIn(panel)
+    }
+
+    /** Weather card: now, and the next five days. It leads the first column when a source is set. */
+    private fun buildWeather() {
         weatherBox = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(14f), dp(11f), dp(14f), dp(11f))
-            background = rounded(C.GLASS, dp(12f).toFloat(), 1, C.BORDER)
+            setPadding(dp(14f), dp(12f), dp(14f), dp(12f))
+            background = rounded(0x14FFFFFF, dp(10f).toFloat())
             visibility = View.GONE
         }
         val nowRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         weatherIconView = ImageView(this).apply { setColorFilter(C.TEXT) }
-        nowRow.addView(weatherIconView, LinearLayout.LayoutParams(dp(30f), dp(30f)))
-        weatherTemp = label("", 28f, C.TEXT, light = true).apply { setPadding(dp(8f), 0, dp(10f), 0) }
+        nowRow.addView(weatherIconView, LinearLayout.LayoutParams(dp(34f), dp(34f)))
+        weatherTemp = label("", 30f, C.TEXT, light = true).apply { setPadding(dp(10f), 0, dp(12f), 0) }
         nowRow.addView(weatherTemp)
+        val words = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         weatherText = label("", 13f, C.TEXT, bold = true).apply { maxLines = 1 }
-        nowRow.addView(weatherText)
-        weatherBox.addView(nowRow, LinearLayout.LayoutParams(-2, -2))
-        weatherSub = label("", 10f, C.TEXT3).apply { maxLines = 1 }
-        weatherBox.addView(weatherSub, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(5f) })
+        weatherSub = label("", 10f, C.TEXT3).apply { maxLines = 1; setPadding(0, dp(3f), 0, 0) }
+        words.addView(weatherText, LinearLayout.LayoutParams(-2, -2))
+        words.addView(weatherSub, LinearLayout.LayoutParams(-2, -2))
+        nowRow.addView(words, LinearLayout.LayoutParams(0, -2, 1f))
+        weatherBox.addView(nowRow, LinearLayout.LayoutParams(-1, -2))
         forecastRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        weatherBox.addView(forecastRow, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(11f) })
-        frame.left.addView(weatherBox, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(22f) })
-
-        message = label("", 12f, C.TEXT2).apply { setPadding(dp(22f), dp(20f), dp(22f), 0); visibility = View.GONE }
-        frame.panel.addView(message)
-
-        val scroll = ColScroller(this).apply {
-            isVerticalScrollBarEnabled = false
-            overScrollMode = View.OVER_SCROLL_NEVER
-            clipToPadding = false
-            setPadding(dp(22f), dp(8f), dp(22f), dp(20f))
-        }
-        val body = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        for (i in 0 until 2) {
-            val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-            columns.add(col)
-            body.addView(col, LinearLayout.LayoutParams(0, -2, 1f).apply { if (i > 0) leftMargin = dp(14f) })
-        }
-        scroll.addView(body)
-        frame.panel.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
-
-        buildOverlay()
-        frame.root.addView(overlay, FrameLayout.LayoutParams(-1, -1))
-        setContentView(frame.root)
-        animateIn(frame.panel)
+        weatherBox.addView(forecastRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12f) })
     }
 
     private fun buildOverlay() {
@@ -215,7 +194,9 @@ class DashboardActivity : PanelActivity() {
         active = true
         val g = ++gen
         cfg = Config.load(this)
-        frame.update(cfg)
+        clock.text = ZonedDateTime.now().format(clockFmt)
+        backdrop.setDim(cfg.dim)
+        backdrop.show(cfg.background, Backgrounds.phase(this, cfg), false)
         val client = if (cfg.haEnabled) HaClient(cfg.haUrl!!, cfg.haToken!!) else null
         ha = client
         if (client == null) {
@@ -232,14 +213,17 @@ class DashboardActivity : PanelActivity() {
             val map = HashMap<String, String>()
             for (h in hides) map[h] = try { client.state(h).optString("state") } catch (e: Exception) { "" }
             main.post {
-                if (active && g == gen) {
-                    val visible = cfg.sections.filter { it.items.isNotEmpty() && (it.hideWhen == null || map[it.hideWhen] != "on") }
-                    val sig = visible.toString()
-                    if (sig != builtFor) {
-                        builtFor = sig
-                        build(visible)
+                // wait for the panel to arrive: building forty tiles in the middle of it would stutter
+                afterEnter {
+                    if (active && g == gen) {
+                        val visible = cfg.sections.filter { it.items.isNotEmpty() && (it.hideWhen == null || map[it.hideWhen] != "on") }
+                        val sig = visible.toString() + cfg.weather
+                        if (sig != builtFor) {
+                            builtFor = sig
+                            build(visible)
+                        }
+                        tick(g)
                     }
-                    tick(g)
                 }
             }
         }
@@ -253,60 +237,147 @@ class DashboardActivity : PanelActivity() {
     override fun onDestroy() {
         super.onDestroy()
         exec.shutdownNow()
+        historyExec.shutdownNow()
     }
 
     private fun showMessage(text: String) {
         columns.forEach { it.removeAllViews() }
-        rows.clear()
+        tiles.clear()
         builtFor = null
         message.text = text
         message.visibility = View.VISIBLE
     }
 
+    /** Lays the sections out as blocks, each into the column that is shortest so far. */
     private fun build(visible: List<DashSection>) {
         columns.forEach { it.removeAllViews() }
-        rows.clear()
-        val heights = IntArray(columns.size)
+        tiles.clear()
+        val heights = FloatArray(columns.size)
+        (weatherBox.parent as? ViewGroup)?.removeView(weatherBox)
+        if (cfg.weather != null) {
+            columns[0].addView(weatherBox, LinearLayout.LayoutParams(-1, -2))
+            heights[0] += 2.6f
+        }
         for (sec in visible) {
             var col = 0
             for (i in heights.indices) if (heights[i] < heights[col]) col = i
             val column = columns[col]
-            val titleLp = LinearLayout.LayoutParams(-2, -2)
-            titleLp.topMargin = if (column.childCount > 0) dp(16f) else dp(6f)
-            titleLp.bottomMargin = dp(2f)
-            titleLp.leftMargin = dp(2f)
-            column.addView(label(sec.title, 11f, C.TEXT2, bold = true), titleLp)
-            for (item in sec.items) {
-                val r = DashRow(this, item)
-                r.setOnClickListener { onRowClick(r) }
-                r.setOnLongClickListener { showStats(r); true }
-                column.addView(r, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(3f) })
-                rows.add(r)
+            column.addView(label(sec.title, 11f, C.TEXT2, bold = true), LinearLayout.LayoutParams(-2, -2).apply {
+                topMargin = if (column.childCount > 0) dp(15f) else dp(2f)
+                leftMargin = dp(2f)
+            })
+            var used = 0.5f
+            var row: LinearLayout? = null
+            sec.items.forEachIndexed { i, item ->
+                val hero = i == 0 && DashTile.canBeHero(item)
+                val tile = DashTile(this, item, hero)
+                tile.setOnClickListener { onTileClick(tile) }
+                tile.setOnLongClickListener { showStats(tile); true }
+                tiles.add(tile)
+                if (hero) {
+                    column.addView(tile, LinearLayout.LayoutParams(-1, dp(104f)).apply { topMargin = dp(7f) })
+                    used += 1.9f
+                } else {
+                    var r = row
+                    if (r == null) {
+                        r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                        column.addView(r, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(7f) })
+                        used += 1f
+                        r.addView(tile, LinearLayout.LayoutParams(0, dp(54f), 1f))
+                        row = r
+                    } else {
+                        r.addView(tile, LinearLayout.LayoutParams(0, dp(54f), 1f).apply { leftMargin = dp(7f) })
+                        row = null
+                    }
+                }
             }
-            heights[col] += sec.items.size + 2
+            // an odd last tile keeps its half width
+            row?.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f).apply { leftMargin = dp(7f) })
+            heights[col] += used
         }
-        rows.firstOrNull()?.requestFocus()
+        tiles.firstOrNull()?.requestFocus()
     }
 
     // ---------- live data ----------
 
     private fun tick(g: Int) {
         if (!active || g != gen) return
-        frame.tick()
-        for (r in rows.toList()) refreshRow(r)
+        clock.text = ZonedDateTime.now().format(clockFmt)
+        for (t in tiles.toList()) refreshTile(t)
         refreshWeather()
         main.postDelayed({ tick(g) }, 10_000L)
     }
 
-    private fun refreshRow(r: DashRow) {
+    private fun refreshTile(t: DashTile) {
         val client = ha ?: return
         if (!active) return
         try {
             exec.execute {
-                val s = try { client.state(r.item.entity) } catch (e: Exception) { null }
-                main.post { if (active) r.bind(s) }
+                val s = try { client.state(t.item.entity) } catch (e: Exception) { null }
+                main.post {
+                    if (active) {
+                        t.bind(s)
+                        if (t.wantsSpark) loadSpark(t)
+                    }
+                }
             }
         } catch (e: Exception) { }
+    }
+
+    /** The last 24 hours of a number as a few dozen averages. Kept for ten minutes. */
+    private fun loadSpark(t: DashTile) {
+        val client = ha ?: return
+        val entity = t.item.entity
+        val now = System.currentTimeMillis()
+        val cached = sparkCache[entity]
+        if (cached != null) t.setSpark(cached.second)
+        if (cached != null && now - cached.first < 10 * 60_000L) return
+        if (!sparkPending.add(entity)) return
+        try {
+            historyExec.execute {
+                val data = try { client.history(entity, 24) } catch (e: Exception) { null }
+                val curve = if (data == null) null else averages(data, now - 24 * 3600_000L, now, 48)
+                main.post {
+                    sparkPending.remove(entity)
+                    if (curve != null) {
+                        sparkCache[entity] = Pair(now, curve)
+                        tiles.firstOrNull { it.item.entity == entity }?.setSpark(curve)
+                    } else if (data != null) {
+                        // nothing numeric in the history: do not ask again for a while
+                        sparkCache[entity] = Pair(now, FloatArray(0))
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            sparkPending.remove(entity)
+        }
+    }
+
+    private fun averages(data: List<Pair<Long, String>>, start: Long, end: Long, n: Int): FloatArray? {
+        val sum = FloatArray(n)
+        val count = IntArray(n)
+        var any = false
+        for ((time, s) in data) {
+            val v = s.toFloatOrNull() ?: continue
+            if (v.isNaN() || v.isInfinite()) continue
+            val i = ((time - start).toDouble() / (end - start) * n).toInt().coerceIn(0, n - 1)
+            sum[i] += v
+            count[i]++
+            any = true
+        }
+        if (!any) return null
+        val out = FloatArray(n)
+        var last = Float.NaN
+        for (i in 0 until n) {
+            if (count[i] > 0) last = sum[i] / count[i]
+            out[i] = last
+        }
+        // nothing known before the first reading: start the curve flat at it
+        val first = out.first { !it.isNaN() }
+        for (i in 0 until n) {
+            if (out[i].isNaN()) out[i] = first else break
+        }
+        return out
     }
 
     private fun refreshWeather() {
@@ -324,7 +395,7 @@ class DashboardActivity : PanelActivity() {
                     weatherIconView.setImageResource(weatherIcon(cond))
                     val t = a.optDouble("temperature", Double.NaN)
                     weatherTemp.text = if (t.isNaN()) "" else Fmt.num(t, "°")
-                    weatherText.text = cond.replace('-', ' ').replace("partlycloudy", "partly cloudy").replaceFirstChar { it.uppercase() }
+                    weatherText.text = cond.replace("partlycloudy", "partly cloudy").replace('-', ' ').replaceFirstChar { it.uppercase() }
                     val parts = ArrayList<String>()
                     val hum = a.optDouble("humidity", Double.NaN)
                     val wind = a.optDouble("wind_speed", Double.NaN)
@@ -349,7 +420,6 @@ class DashboardActivity : PanelActivity() {
             val col = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER_HORIZONTAL
-                setPadding(0, 0, dp(13f), 0)
             }
             col.addView(label(dayFmt.format(Instant.ofEpochMilli(f.time)), 10f, C.TEXT3), LinearLayout.LayoutParams(-2, -2))
             col.addView(ImageView(this).apply {
@@ -359,13 +429,13 @@ class DashboardActivity : PanelActivity() {
             val hi = if (f.hi.isNaN()) "–" else Fmt.num(Math.round(f.hi).toDouble(), "°")
             val lo = if (f.lo.isNaN()) "" else " " + Fmt.num(Math.round(f.lo).toDouble(), "°")
             col.addView(label(hi + lo, 10f, C.TEXT2).apply { maxLines = 1 }, LinearLayout.LayoutParams(-2, -2))
-            forecastRow.addView(col)
+            forecastRow.addView(col, LinearLayout.LayoutParams(0, -2, 1f))
         }
     }
 
     // ---------- actions ----------
 
-    private fun onRowClick(r: DashRow) {
+    private fun onTileClick(r: DashTile) {
         val client = ha ?: return
         val item = r.item
         when (Actions.kind(item)) {
@@ -397,15 +467,15 @@ class DashboardActivity : PanelActivity() {
         }
     }
 
-    private fun act(r: DashRow, okMessage: String?, work: () -> Unit) {
+    private fun act(r: DashTile, okMessage: String?, work: () -> Unit) {
         try {
             exec.execute {
                 val ok = try { work(); true } catch (e: Exception) { false }
                 main.post {
                     if (!ok) toast("Home Assistant did not accept that")
                     else if (okMessage != null) toast(okMessage)
-                    main.postDelayed({ refreshRow(r) }, 500L)
-                    main.postDelayed({ refreshRow(r) }, 2500L)
+                    main.postDelayed({ refreshTile(r) }, 500L)
+                    main.postDelayed({ refreshTile(r) }, 2500L)
                 }
             }
         } catch (e: Exception) { }
@@ -413,7 +483,7 @@ class DashboardActivity : PanelActivity() {
 
     // ---------- statistics ----------
 
-    private fun showStats(r: DashRow) {
+    private fun showStats(r: DashTile) {
         statsItem = r.item
         statsUnit = r.state?.optJSONObject("attributes")?.optString("unit_of_measurement", "") ?: ""
         statsTitle.text = r.item.title
@@ -508,4 +578,9 @@ class DashboardActivity : PanelActivity() {
     }
 
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+
+    companion object {
+        /** Curves survive closing and reopening the dashboard. */
+        private val sparkCache = HashMap<String, Pair<Long, FloatArray>>()
+    }
 }

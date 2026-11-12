@@ -38,6 +38,11 @@ also be written over ADB. Main keys: `ha_url`, `ha_token`, `lat`, `lon`, `backgr
 }
 ```
 
+The dashboard draws every entity as a tile: numbers with a curve of their last 24 hours,
+percentages with a level bar, everything else with a badge that lights up while it is on, open or
+home. The first entity of a section becomes a tall tile when it is a thermostat (a dial), a power
+sensor (a big curve), a selector, an alarm panel or a vacuum.
+
 On the dashboard, OK toggles switches, lights and helpers, runs scenes and scripts, and opens
 statistics (history chart) for everything else; holding OK always opens statistics. `"ro": true`
 makes an item display-only. A section with `hide_when` disappears while that entity is `on`.
