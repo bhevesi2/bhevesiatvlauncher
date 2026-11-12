@@ -6,7 +6,8 @@ import android.media.tv.TvContract
 import android.media.tv.TvInputInfo
 import android.media.tv.TvInputManager
 
-data class TvInput(val id: String, val name: String)
+/** An HDMI input; [device] is the name the device plugged into it announces over HDMI-CEC, if any. */
+data class TvInput(val id: String, val name: String, val device: String? = null)
 
 /** The TV's physical HDMI inputs and the built-in tuner. */
 object Inputs {
@@ -16,12 +17,17 @@ object Inputs {
     fun all(ctx: Context): List<TvInput> {
         val tim = ctx.getSystemService(Context.TV_INPUT_SERVICE) as? TvInputManager ?: return emptyList()
         return try {
-            tim.tvInputList
-                .filter { it.isPassthroughInput && it.type == TvInputInfo.TYPE_HDMI && it.parentId == null }
+            val list = tim.tvInputList
+            // a device that speaks HDMI-CEC (a console, a player, a receiver) is listed as a child of its port
+            val devices = list.filter { it.parentId != null }.groupBy { it.parentId }
+            list.filter { it.isPassthroughInput && it.type == TvInputInfo.TYPE_HDMI && it.parentId == null }
                 .sortedBy { it.id }
                 .mapIndexed { i, info ->
                     val own = try { info.loadLabel(ctx)?.toString() } catch (e: Exception) { null }
-                    TvInput(info.id, if (own.isNullOrBlank()) "HDMI ${i + 1}" else own)
+                    val device = devices[info.id]?.mapNotNull { d ->
+                        try { d.loadLabel(ctx)?.toString()?.ifBlank { null } } catch (e: Exception) { null }
+                    }?.firstOrNull()
+                    TvInput(info.id, if (own.isNullOrBlank()) "HDMI ${i + 1}" else own, device)
                 }
         } catch (e: Exception) {
             emptyList()
@@ -30,7 +36,7 @@ object Inputs {
 
     /** Inputs to show on the home screen: hidden ones removed, custom names applied. */
     fun visible(ctx: Context, cfg: Config): List<TvInput> =
-        all(ctx).filter { it.id !in cfg.inputsHidden }.map { TvInput(it.id, cfg.inputNames[it.id] ?: it.name) }
+        all(ctx).filter { it.id !in cfg.inputsHidden }.map { TvInput(it.id, cfg.inputNames[it.id] ?: it.name, it.device) }
 
     fun open(ctx: Context, id: String): Boolean = try {
         val i = Intent(Intent.ACTION_VIEW, TvContract.buildChannelUriForPassthroughInput(id))

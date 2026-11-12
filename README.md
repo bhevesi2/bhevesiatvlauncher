@@ -91,6 +91,28 @@ zone shows it large on the left with previous / play-pause / next, which the rem
 keys also control; OK on a zone puts it on the home screen card. The card only shows while its
 zone is playing or paused; the panel is also under Settings › Home screen › Music zones.
 
+## Camera pop-ups
+
+When one of the chosen sensors turns on (by default: Frigate seeing a person on any camera of the
+camera wall except indoor ones), that camera appears in the bottom right corner for a while, over
+whatever is playing, without taking focus. A background service checks the sensors every two
+seconds while the TV is on. Settings › Cameras › Pop-ups switches it off, sets how long it stays,
+and edits the sensors. Drawing over other apps is allowed over ADB:
+`appops set hu.otthon.launcher SYSTEM_ALERT_WINDOW allow` (the settings do it through Home Assistant).
+
+## Today
+
+The calendar button next to the settings opens a panel with what needs a look at home (open doors
+and gates, unlocked cars, low fuel or batteries among the dashboard items), the next twelve hours
+of weather, the calendars of the coming week, the to-do lists (OK marks an item done) and who is
+at home; sunrise, sunset and whether it is a workday sit under the clock.
+
+## Updates on the TV
+
+Settings › About › Check for updates looks at the latest GitHub release; OK downloads it and has
+Home Assistant install it over ADB. The home screen checks every six hours and puts a dot on the
+settings button when there is something newer.
+
 ## Making it the default home app
 
 Settings › Home screen › Home button opens. Android TV only allows this over ADB, so the launcher

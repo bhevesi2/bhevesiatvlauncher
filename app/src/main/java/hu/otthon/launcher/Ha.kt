@@ -31,7 +31,7 @@ data class EntityInfo(val id: String, val name: String, val state: String) {
     val domain: String get() = id.substringBefore('.')
 }
 
-data class Forecast(val time: Long, val condition: String, val hi: Double, val lo: Double)
+data class Forecast(val time: Long, val condition: String, val hi: Double, val lo: Double, val rain: Double = Double.NaN)
 
 /** Minimal Home Assistant REST client. Call only from background threads. */
 class HaClient(private val base: String, private val token: String) {
@@ -179,13 +179,79 @@ class HaClient(private val base: String, private val token: String) {
         }
     }
 
+    /** Calendars: entity id and name. */
+    fun calendars(): List<Pair<String, String>> {
+        val c = open("/api/calendars")
+        try {
+            if (c.responseCode != 200) throw IllegalStateException("HTTP ${c.responseCode}")
+            val arr = org.json.JSONArray(c.inputStream.bufferedReader().readText())
+            return (0 until arr.length()).mapNotNull { i ->
+                val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                Pair(o.optString("entity_id"), o.optString("name"))
+            }
+        } finally {
+            c.disconnect()
+        }
+    }
+
+    data class Event(val summary: String, val start: java.time.LocalDateTime, val allDay: Boolean, val calendar: String)
+
+    /** Events of a calendar between two times, in the TV's time zone. */
+    fun events(calendar: String, name: String, from: Instant, to: Instant): List<Event> {
+        val c = open("/api/calendars/$calendar?start=$from&end=$to", 10000)
+        try {
+            if (c.responseCode != 200) throw IllegalStateException("HTTP ${c.responseCode}")
+            val arr = org.json.JSONArray(c.inputStream.bufferedReader().readText())
+            val zone = java.time.ZoneId.systemDefault()
+            return (0 until arr.length()).mapNotNull { i ->
+                val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                val st = o.optJSONObject("start") ?: return@mapNotNull null
+                val date = st.optString("date", "")
+                val time = st.optString("dateTime", "")
+                val start = when {
+                    date.isNotBlank() -> java.time.LocalDate.parse(date).atStartOfDay()
+                    time.isNotBlank() -> OffsetDateTime.parse(time).atZoneSameInstant(zone).toLocalDateTime()
+                    else -> return@mapNotNull null
+                }
+                Event(o.optString("summary", ""), start, date.isNotBlank(), name)
+            }
+        } finally {
+            c.disconnect()
+        }
+    }
+
+    data class TodoItem(val uid: String, val summary: String)
+
+    /** Items still to do on a to-do list. */
+    fun todoItems(entity: String): List<TodoItem> {
+        val c = open("/api/services/todo/get_items?return_response", 10000)
+        try {
+            c.requestMethod = "POST"
+            c.doOutput = true
+            val body = JSONObject().put("entity_id", entity).put("status", org.json.JSONArray().put("needs_action"))
+            c.outputStream.use { it.write(body.toString().toByteArray()) }
+            if (c.responseCode != 200) throw IllegalStateException("HTTP ${c.responseCode}")
+            val root = JSONObject(c.inputStream.bufferedReader().readText())
+            val arr = root.optJSONObject("service_response")?.optJSONObject(entity)?.optJSONArray("items") ?: return emptyList()
+            return (0 until arr.length()).mapNotNull { i ->
+                val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                TodoItem(o.optString("uid"), o.optString("summary"))
+            }
+        } finally {
+            c.disconnect()
+        }
+    }
+
     /** Daily forecast from a weather entity. */
-    fun forecast(entity: String): List<Forecast> {
+    fun forecast(entity: String): List<Forecast> = forecast(entity, "daily")
+
+    /** Forecast of a weather entity: "daily" or "hourly". */
+    fun forecast(entity: String, type: String): List<Forecast> {
         val c = open("/api/services/weather/get_forecasts?return_response", 12000)
         try {
             c.requestMethod = "POST"
             c.doOutput = true
-            val body = JSONObject().put("entity_id", entity).put("type", "daily")
+            val body = JSONObject().put("entity_id", entity).put("type", type)
             c.outputStream.use { it.write(body.toString().toByteArray()) }
             if (c.responseCode != 200) throw IllegalStateException("HTTP ${c.responseCode}")
             val root = JSONObject(c.inputStream.bufferedReader().readText())
@@ -195,7 +261,7 @@ class HaClient(private val base: String, private val token: String) {
             for (i in 0 until arr.length()) {
                 val o = arr.optJSONObject(i) ?: continue
                 val ms = try { OffsetDateTime.parse(o.optString("datetime")).toInstant().toEpochMilli() } catch (e: Exception) { continue }
-                out.add(Forecast(ms, o.optString("condition", ""), o.optDouble("temperature", Double.NaN), o.optDouble("templow", Double.NaN)))
+                out.add(Forecast(ms, o.optString("condition", ""), o.optDouble("temperature", Double.NaN), o.optDouble("templow", Double.NaN), o.optDouble("precipitation", Double.NaN)))
             }
             return out
         } finally {

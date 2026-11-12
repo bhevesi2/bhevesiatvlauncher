@@ -37,6 +37,8 @@ class HomeActivity : Activity() {
     private lateinit var bottom: LinearLayout
     private lateinit var rootView: FrameLayout
     private lateinit var topButtons: LinearLayout
+    private var gearButton: ImageView? = null
+    private var weatherChipView: TextView? = null
     private lateinit var hint: TextView
     private var hintFor: View? = null
 
@@ -294,9 +296,15 @@ class HomeActivity : Activity() {
             }
             topButtons.addView(g, LinearLayout.LayoutParams(dp(36f), dp(36f)).apply { leftMargin = dp(7f) })
         }
+        if (cfg.haEnabled) {
+            val today = iconButton(R.drawable.ic_today, "Today", false) { open(TodayActivity::class.java) }
+            topButtons.addView(today, LinearLayout.LayoutParams(dp(36f), dp(36f)).apply { leftMargin = dp(7f) })
+        }
         val gear = iconButton(R.drawable.ic_gear, "Launcher settings", false) {
             open(SettingsActivity::class.java)
         }
+        gearButton = gear
+        markUpdate()
         topButtons.addView(gear, LinearLayout.LayoutParams(dp(36f), dp(36f)).apply { leftMargin = dp(7f) })
 
         // bottom row: icon buttons on the left, quick actions in the middle, inputs on the right
@@ -350,17 +358,24 @@ class HomeActivity : Activity() {
         inputs.take(6).forEach { inp ->
             val lp = LinearLayout.LayoutParams(-2, -2)
             if (inputRow.childCount > 0) lp.leftMargin = dp(6f)
-            inputRow.addView(pill(inp.name, null) { if (!Inputs.open(this, inp.id)) toast("Can't switch to ${inp.name}") }, lp)
+            val text = if (inp.device != null) "${inp.name} · ${inp.device}" else inp.name
+            inputRow.addView(pill(text, null) { if (!Inputs.open(this, inp.id)) toast("Can't switch to ${inp.name}") }, lp)
         }
         bottom.addView(inputRow)
 
         // status chips
         chipsRow.removeAllViews()
         chipViews.clear()
+        weatherChipView = null
         if (cfg.haEnabled) {
-            cfg.status.take(4).forEachIndexed { i, s ->
+            if (cfg.weatherChip && cfg.weather != null) {
+                val w = chip(R.drawable.ic_cloud, "–")
+                weatherChipView = w
+                chipsRow.addView(w, LinearLayout.LayoutParams(-2, -2))
+            }
+            cfg.status.take(4).forEach { s ->
                 val v = chip(statusIcon(s), if (s.label.isBlank()) "–" else "${s.label} –")
-                chipsRow.addView(v, LinearLayout.LayoutParams(-2, -2).apply { if (i > 0) leftMargin = dp(7f) })
+                chipsRow.addView(v, LinearLayout.LayoutParams(-2, -2).apply { if (chipsRow.childCount > 0) leftMargin = dp(7f) })
                 chipViews.add(s to v)
             }
         }
@@ -428,6 +443,9 @@ class HomeActivity : Activity() {
         }
         registerReceiver(tick, IntentFilter(Intent.ACTION_TIME_TICK))
         onMinute()
+        PopupService.sync(this)
+        markUpdate()
+        checkUpdates()
         if (ha != null) {
             Bg.main.post(statusLoop)
             if (cfg.nowPlaying != null) Bg.main.post(npLoop)
@@ -481,6 +499,34 @@ class HomeActivity : Activity() {
             Bg.run({ client.state(item.entity) }) { s ->
                 if (s != null && resumed) view.text = Fmt.chip(item, s)
             }
+        }
+        val w = weatherChipView
+        val entity = cfg.weather
+        if (w != null && entity != null) {
+            Bg.run({ client.state(entity) }) { s ->
+                if (s == null || !resumed || weatherChipView !== w) return@run
+                val t = s.optJSONObject("attributes")?.optDouble("temperature", Double.NaN) ?: Double.NaN
+                w.text = if (t.isNaN()) "–" else Fmt.num(Math.round(t).toDouble(), "°")
+                val d = getDrawable(weatherIcon(s.optString("state")))!!.mutate()
+                d.setBounds(0, 0, dp(14f), dp(14f))
+                d.setTint(C.TEXT)
+                w.setCompoundDrawables(d, null, null, null)
+            }
+        }
+    }
+
+    /** A small dot on the settings button while a newer version waits on GitHub. */
+    private fun markUpdate() {
+        val g = gearButton ?: return
+        g.foreground = if (Updates.pending(this) != null) UpdateDot(dp(4f).toFloat(), dp(3f).toFloat()) else null
+    }
+
+    /** Looks for a newer version at most every six hours. */
+    private fun checkUpdates() {
+        if (Updates.checkedAgo(this) < 6 * 3600_000L) return
+        Bg.run({ Updates.latest() }) { r ->
+            Updates.remember(this, r)
+            markUpdate()
         }
     }
 
@@ -565,4 +611,19 @@ class HomeActivity : Activity() {
     }
 
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+}
+
+/** The dot in the corner of a round button. */
+private class UpdateDot(private val r: Float, private val inset: Float) : android.graphics.drawable.Drawable() {
+    private val p = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = C.ON }
+
+    override fun draw(c: android.graphics.Canvas) {
+        val b = bounds
+        c.drawCircle(b.right - inset - r, b.top + inset + r, r, p)
+    }
+
+    override fun setAlpha(alpha: Int) {}
+    override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) {}
+    @Deprecated("Deprecated in Java")
+    override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
 }

@@ -472,31 +472,15 @@ class SettingsActivity : PanelActivity() {
             return
         }
         toast("Switching…")
-        val command = Apps.homeCommand(this, ours)
-        val configured = cfg.adbEntity
-        Bg.run({
-            val entity = configured ?: run {
-                // find this TV among the players: the ADB integration names it after its address
-                val players = client.states().filter { it.domain == "media_player" }
-                val ip = Apps.localIp()?.replace('.', '_')
-                players.firstOrNull { ip != null && it.id.contains(ip) }?.id
-                    ?: players.filter { it.id.contains("android_tv") || it.id.contains("androidtv") }.singleOrNull()?.id
-            }
-            if (entity == null) {
-                "none"
-            } else {
-                client.call("androidtv", "adb_command", JSONObject().put("entity_id", entity).put("command", command), 25000)
-                Thread.sleep(700)
-                "ok"
-            }
-        }) { result ->
-            when {
-                result == "none" -> toast("Couldn't find this TV in Home Assistant. Choose it under “This TV in Home Assistant”.")
-                result == null -> toast("Home Assistant could not run the command on the TV")
-                Apps.defaultHome(this) == want -> toast(if (ours) "The Home button now opens this launcher" else "The Home button now opens Google TV home")
-                else -> toast("The TV did not switch")
-            }
-            change(close = true) { }
+        Adb.run(this, cfg, Apps.homeCommand(this, ours)) { r ->
+            Bg.main.postDelayed({
+                when {
+                    r != Adb.Result.OK -> toast(Adb.explain(r))
+                    Apps.defaultHome(this) == want -> toast(if (ours) "The Home button now opens this launcher" else "The Home button now opens Google TV home")
+                    else -> toast("The TV did not switch")
+                }
+                change(close = true) { }
+            }, 700)
         }
     }
 
@@ -517,6 +501,14 @@ class SettingsActivity : PanelActivity() {
             pick("Choose this TV's Android TV (ADB) player", "media_player") { entity, _ -> edit { it.put("adb_entity", entity) } }
         }
         note("The TV only allows this change over ADB, so the launcher asks Home Assistant's Android TV (ADB) integration to do it. Choosing this launcher switches the Google TV home app off, because the TV otherwise always prefers it; choosing Google TV home switches it back on. Nothing is uninstalled.")
+        section("Weather chip")
+        toggle("Show the weather before the status chips", cfg.weatherChip) { on -> edit { it.put("weather_chip", on) } }
+        if (cfg.weather == null) note("Choose a weather source under Dashboard › Weather first.")
+        section("Today panel  ·  to-do lists")
+        entityList("todo", { r ->
+            if (!r.has("todo_lists")) r.put("todo_lists", JSONArray().put(JSONObject().put("entity", "todo.shopping_list").put("label", "")))
+            ConfigStore.array(r, "todo_lists")
+        }, cfg.todoLists, "Add to-do list", "todo", false)
         section("Status chips  ·  top right, up to 4")
         entityList("status", { r -> ConfigStore.array(r, "status") }, cfg.status, "Add status chip", "", false)
         section("Quick actions  ·  bottom row, up to 6")
@@ -544,6 +536,65 @@ class SettingsActivity : PanelActivity() {
         note("Every camera listed here is on the camera wall, in this order.")
         section("Cameras")
         entityList("cameras", { r -> ConfigStore.array(r, "cameras") }, cfg.cameras, "Add camera", "camera", false)
+
+        section("Pop-ups")
+        toggle("Show cameras over other apps", cfg.popups) { on ->
+            edit { r -> ConfigStore.obj(r, "popups").put("enabled", on) }
+            PopupService.sync(this)
+        }
+        note("When one of the sensors below turns on, its camera appears in the bottom right corner for a while, over whatever is on. It takes no focus: the remote keeps working in the app.")
+        if (cfg.popups) {
+            if (!PopupService.allowed(this)) {
+                row("Allow pop-ups over other apps", "needs Home Assistant") {
+                    Adb.run(this, cfg, PopupService.allowCommand(this)) { r ->
+                        Bg.main.postDelayed({
+                            toast(if (r == Adb.Result.OK && PopupService.allowed(this)) "Pop-ups allowed" else Adb.explain(r))
+                            change { }
+                        }, 600)
+                    }
+                }
+            }
+            val lengths = listOf(10, 20, 30, 60)
+            add(SegmentRow(this, "Show for", lengths.map { "$it s" }, lengths.indexOf(cfg.popupSeconds).let { if (it < 0) 1 else it }) { i ->
+                ConfigStore.edit(this) { r -> ConfigStore.obj(r, "popups").put("seconds", lengths[i]) }
+                cfg = Config.load(this)
+                PopupService.sync(this)
+            })
+            val triggers = cfg.popupTriggers
+            // the first edit writes the automatic list into the settings file, so it can be changed
+            fun list(r: JSONObject): JSONArray {
+                val o = ConfigStore.obj(r, "popups")
+                if (!o.has("triggers")) {
+                    val a = JSONArray()
+                    triggers.forEach { a.put(JSONObject().put("entity", it.entity).put("camera", it.camera)) }
+                    o.put("triggers", a)
+                }
+                return o.getJSONArray("triggers")
+            }
+            section("Pop up when")
+            if (triggers.isEmpty()) row("No sensors yet")
+            triggers.forEachIndexed { i, t ->
+                expand("pop:$i", t.title, t.entity) {
+                    row("Camera", t.camera) {
+                        pick("Camera to show", "camera") { entity, _ ->
+                            edit { r -> list(r).getJSONObject(i).put("camera", entity) }
+                            PopupService.sync(this)
+                        }
+                    }
+                    row("Show it now") { PopupService.test(this, t.camera) }
+                    row("Remove") {
+                        edit(close = true) { r -> list(r).remove(i) }
+                        PopupService.sync(this)
+                    }
+                }
+            }
+            row("+  Add sensor", "for example a person on a camera") {
+                pick("Sensor that opens the pop-up", "binary_sensor") { entity, _ ->
+                    edit { r -> list(r).put(JSONObject().put("entity", entity).put("camera", PopupTrigger.cameraFor(entity))) }
+                    PopupService.sync(this)
+                }
+            }
+        }
     }
 
     private fun inputsPage() {
@@ -554,7 +605,7 @@ class SettingsActivity : PanelActivity() {
         for (inp in all) {
             val hidden = inp.id in cfg.inputsHidden
             val custom = cfg.inputNames[inp.id]
-            toggle(custom ?: inp.name, !hidden, onLong = {
+            toggle((custom ?: inp.name) + (inp.device?.let { "  ·  $it" } ?: ""), !hidden, onLong = {
                 Popup.text(this, "Input name", custom ?: inp.name, "Empty: use the TV's name (${inp.name})") { v ->
                     edit { r -> if (v.isBlank()) ConfigStore.obj(r, "input_names").remove(inp.id) else ConfigStore.obj(r, "input_names").put(inp.id, v) }
                 }
@@ -668,11 +719,69 @@ class SettingsActivity : PanelActivity() {
         row("Open Android TV settings") {
             if (!Apps.openSystemSettings(this)) toast("Android settings are not available")
         }
+        section("Updates")
+        updateRow()
         section("About")
         row("Version", version)
         row("Source", "github.com/bhevesi2/bhevesiatvlauncher")
         row("Photos", "Unsplash")
         row("Settings file", "Android/data/$packageName/files/config.json")
+    }
+
+    private var release: Updates.Release? = null
+    private var updating = false
+
+    /** Checks GitHub for a newer build; OK on a found one downloads it and has Home Assistant install it. */
+    private fun updateRow() {
+        val r = release
+        val newer = r != null && Updates.isNewer(this, r)
+        val status = when {
+            updating -> "Installing…"
+            r == null -> "OK: check now"
+            newer -> "${r.name} is ready  ·  OK: install"
+            else -> "Up to date  ·  ${r.name}"
+        }
+        row(if (newer) "New version available" else "Check for updates", status) {
+            when {
+                updating -> {}
+                newer -> install(r!!)
+                else -> {
+                    toast("Checking…")
+                    Bg.run({ Updates.latest() }) { found ->
+                        Updates.remember(this, found)
+                        if (found == null) toast("Couldn't reach GitHub")
+                        release = found
+                        change { }
+                    }
+                }
+            }
+        }
+        if (newer) note("The launcher closes for a few seconds while it updates, then opens again.")
+    }
+
+    private fun install(r: Updates.Release) {
+        if (!cfg.haEnabled) {
+            toast("Set up Home Assistant first, or run update.bat on the PC")
+            return
+        }
+        updating = true
+        change { }
+        toast("Downloading ${r.name}…")
+        Bg.run({ Updates.download(this, r) }) { apk ->
+            if (apk == null) {
+                updating = false
+                toast("The download did not work")
+                change { }
+                return@run
+            }
+            toast("Installing…")
+            Adb.run(this, cfg, Updates.installCommand(this, apk), 90000) { res ->
+                // if this runs at all, the install did not replace the running launcher
+                updating = false
+                if (res != Adb.Result.OK) toast(Adb.explain(res))
+                change { }
+            }
+        }
     }
 
     private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()

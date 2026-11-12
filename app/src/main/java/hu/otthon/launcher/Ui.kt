@@ -764,6 +764,10 @@ class RowView(ctx: Context, title: String, value: String? = null, selected: Bool
     var passive = false
         set(v) { field = v; paint(isFocused) }
 
+    /** Colour of the value while the row is not focused; null: the usual grey. */
+    var tone: Int? = null
+        set(v) { field = v; paint(isFocused) }
+
     /** Shows an on/off switch at the end of the row. */
     fun switch(on: Boolean) {
         val d = dot ?: SwitchDot(context).also {
@@ -809,7 +813,7 @@ class RowView(ctx: Context, title: String, value: String? = null, selected: Bool
         val r = context.dp(8f).toFloat()
         background = if (f) FocusGlide.fill(this, r) else rounded(C.ROW, r)
         titleView.setTextColor(if (f) C.DARK else if (passive) C.TEXT3 else C.TEXT)
-        valueView.setTextColor(if (f) C.DARK2 else C.TEXT3)
+        valueView.setTextColor(if (f) C.DARK2 else tone ?: C.TEXT3)
         radio?.setTextColor(if (f) C.DARK else C.TEXT2)
         dot?.dark = f
         chevron?.setColorFilter(if (f) C.DARK2 else C.TEXT3)

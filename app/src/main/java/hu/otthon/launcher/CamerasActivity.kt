@@ -125,6 +125,7 @@ class CamerasActivity : PanelActivity() {
 
     override fun onResume() {
         super.onResume()
+        PopupService.camerasOpen = true
         if (ha == null) return
         active = true
         generation++
@@ -133,6 +134,7 @@ class CamerasActivity : PanelActivity() {
 
     override fun onPause() {
         super.onPause()
+        PopupService.camerasOpen = false
         active = false
     }
 

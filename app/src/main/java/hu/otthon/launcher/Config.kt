@@ -41,7 +41,15 @@ data class Config(
     val inputNames: Map<String, String>,
     val animations: String,
     /** This TV's Android TV (ADB) media player in Home Assistant; null = find it by the TV's address. */
-    val adbEntity: String?
+    val adbEntity: String?,
+    /** Camera pop-ups over other apps. */
+    val popups: Boolean,
+    val popupSeconds: Int,
+    val popupTriggers: List<PopupTrigger>,
+    /** The outside weather as the first chip on the home screen. */
+    val weatherChip: Boolean,
+    /** To-do lists shown on the Today panel. */
+    val todoLists: List<HaItem>
 ) {
     val haEnabled: Boolean get() = !haUrl.isNullOrBlank() && !haToken.isNullOrBlank()
 
@@ -81,8 +89,31 @@ data class Config(
                 inputsHidden = strings(json.optJSONArray("inputs_hidden")).toSet(),
                 inputNames = names,
                 animations = animations,
-                adbEntity = json.optString("adb_entity", "").ifBlank { null }
+                adbEntity = json.optString("adb_entity", "").ifBlank { null },
+                popups = (json.optJSONObject("popups") ?: JSONObject()).optBoolean("enabled", true),
+                popupSeconds = (json.optJSONObject("popups") ?: JSONObject()).optInt("seconds", 20).coerceIn(5, 120),
+                popupTriggers = popupTriggers(json),
+                weatherChip = json.optBoolean("weather_chip", true),
+                todoLists = json.optJSONArray("todo_lists")?.let { items(it) } ?: listOf(HaItem("todo.shopping_list", ""))
             )
+        }
+
+        /**
+         * What opens a camera pop-up. Until the list is edited in the settings, every camera on the
+         * camera wall except indoor ones pops up when Frigate sees a person on it.
+         */
+        fun popupTriggers(json: JSONObject): List<PopupTrigger> {
+            val arr = json.optJSONObject("popups")?.optJSONArray("triggers")
+            if (arr != null) {
+                return (0 until arr.length()).mapNotNull { i ->
+                    val o = arr.optJSONObject(i) ?: return@mapNotNull null
+                    val e = o.optString("entity", "")
+                    if (e.isBlank()) null else PopupTrigger(e, o.optString("camera", "").ifBlank { null } ?: PopupTrigger.cameraFor(e))
+                }
+            }
+            return items(json.optJSONArray("cameras"))
+                .filter { !it.entity.contains("indoor") }
+                .map { cam -> PopupTrigger("binary_sensor." + cam.entity.substringAfter('.') + "_person_occupancy", cam.entity) }
         }
 
         private fun strings(arr: JSONArray?): List<String> {
@@ -113,6 +144,27 @@ data class Config(
                     items(o.optJSONArray("items"))
                 )
             }
+        }
+    }
+}
+
+/** A sensor that opens a camera pop-up when it turns on, and the camera to show. */
+data class PopupTrigger(val entity: String, val camera: String) {
+    /** "Entrance · person" from binary_sensor.entrance_camera_person_occupancy. */
+    val title: String
+        get() {
+            val cam = camera.substringAfter('.').removeSuffix("_camera").replace('_', ' ').replaceFirstChar { it.uppercase() }
+            val what = entity.substringAfter('.').removePrefix(camera.substringAfter('.')).trim('_')
+                .removeSuffix("_occupancy").removeSuffix("occupancy").replace('_', ' ').trim()
+            return if (what.isBlank()) cam else "$cam · $what"
+        }
+
+    companion object {
+        /** binary_sensor.driveway_camera_person_occupancy → camera.driveway_camera */
+        fun cameraFor(entity: String): String {
+            val name = entity.substringAfter('.')
+            val i = name.indexOf("_camera")
+            return "camera." + if (i > 0) name.substring(0, i + 7) else name.substringBeforeLast('_')
         }
     }
 }
