@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.BlurMaskFilter
 import android.graphics.Color
 import android.graphics.ColorFilter
 import android.graphics.Outline
@@ -141,7 +142,8 @@ class AppTile(ctx: Context, val app: AppEntry) : FrameLayout(ctx) {
         clipToOutline = true
         outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
         background = glass
-        FocusGlide.shape(this, ctx.dp(8f).toFloat(), ctx.dp(3f).toFloat())
+        FocusGlide.shape(this, ctx.dp(8f).toFloat(), 0f)
+        FocusGlide.glow(this, AppColors.of(app))
         val banner = app.banner
         if (banner != null) {
             addView(ImageView(ctx).apply {
@@ -167,10 +169,54 @@ class AppTile(ctx: Context, val app: AppEntry) : FrameLayout(ctx) {
             val glide = f && FocusGlide.covers(this)
             foreground = if (f && !glide) ring else null
             background = if (glide) solid else glass
-            v.animate().scaleX(if (f) 1.08f else 1f).scaleY(if (f) 1.08f else 1f)
-                .translationZ(if (f && !glide) ctx.dp(6f).toFloat() else 0f).setDuration(140).start()
+            v.animate().scaleX(if (f) 1.1f else 1f).scaleY(if (f) 1.1f else 1f)
+                .translationZ(if (f && !glide) ctx.dp(6f).toFloat() else 0f).setDuration(160).start()
             if (f) onFocused?.invoke()
         }
+    }
+}
+
+/** The colour an app's tile glows in when it has focus, taken from its banner like Google TV does. */
+object AppColors {
+    private val cache = HashMap<String, Int>()
+    private const val NEUTRAL = 0xFFE9E7E2.toInt()
+
+    fun of(app: AppEntry): Int = cache.getOrPut(app.pkg) {
+        try { pick(app.banner ?: app.icon) } catch (e: Exception) { NEUTRAL }
+    }
+
+    /** The most vivid colour of the picture, made bright enough to glow; a light grey for grey pictures. */
+    private fun pick(src: Drawable): Int {
+        val d = src.constantState?.newDrawable()?.mutate() ?: return NEUTRAL
+        val w = 40
+        val h = 22
+        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        d.setBounds(0, 0, w, h)
+        d.draw(Canvas(bmp))
+        val px = IntArray(w * h)
+        bmp.getPixels(px, 0, w, 0, 0, w, h)
+        bmp.recycle()
+        val hsv = FloatArray(3)
+        var x = 0.0
+        var y = 0.0
+        var sat = 0.0
+        var weight = 0.0
+        for (c in px) {
+            if ((c ushr 24) < 160) continue
+            Color.colorToHSV(c, hsv)
+            if (hsv[2] < 0.2f || hsv[1] < 0.18f) continue
+            val wgt = (hsv[1] * hsv[1] * hsv[2]).toDouble()
+            val rad = Math.toRadians(hsv[0].toDouble())
+            x += Math.cos(rad) * wgt
+            y += Math.sin(rad) * wgt
+            sat += hsv[1] * wgt
+            weight += wgt
+        }
+        if (weight < px.size * 0.012) return NEUTRAL
+        var hue = Math.toDegrees(Math.atan2(y, x)).toFloat()
+        if (hue < 0) hue += 360f
+        val s = (sat / weight * 1.1).toFloat().coerceIn(0.5f, 0.92f)
+        return Color.HSVToColor(floatArrayOf(hue, s, 1f))
     }
 }
 
@@ -321,7 +367,10 @@ class ColScroller(ctx: Context) : ScrollView(ctx) {
  * own background transparent and its text dark (see [fill]).
  */
 class FocusGlide private constructor(private val host: View) {
-    private class Shape(val radius: Float, val outset: Float)
+    private class Shape(val radius: Float, val outset: Float) {
+        /** 0: the light fill. Otherwise the cursor is a soft glow of this colour around the control. */
+        var glow = 0
+    }
 
     companion object {
         private val hosts: MutableSet<View> = Collections.newSetFromMap(WeakHashMap<View, Boolean>())
@@ -335,6 +384,34 @@ class FocusGlide private constructor(private val host: View) {
         /** How the cursor looks on [v]. A negative radius means fully rounded ends. */
         fun shape(v: View, radius: Float, outset: Float = 0f) {
             shapes[v] = Shape(radius, outset)
+        }
+
+        /** Makes the cursor a soft glow of [color] around [v] instead of the light fill under it. */
+        fun glow(v: View, color: Int) {
+            shapes[v]?.glow = color
+        }
+
+        private val glows = LinkedHashMap<String, Bitmap>()
+
+        /**
+         * A blurred rounded rectangle as a mask, drawn at a quarter of the size: the blur hides
+         * the scaling, and it is made once per tile size instead of being blurred every frame.
+         */
+        private fun glowMask(w: Float, h: Float, radius: Float, margin: Float): Bitmap {
+            val key = "${w.toInt()}x${h.toInt()}r${radius.toInt()}m${margin.toInt()}"
+            glows[key]?.let { return it }
+            val q = 4f
+            val bw = Math.ceil(((w + 2 * margin) / q).toDouble()).toInt().coerceAtLeast(2)
+            val bh = Math.ceil(((h + 2 * margin) / q).toDouble()).toInt().coerceAtLeast(2)
+            val bmp = Bitmap.createBitmap(bw, bh, Bitmap.Config.ALPHA_8)
+            // the blur is about half the margin, so the glow has faded out well before the mask's edge
+            val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { maskFilter = BlurMaskFilter(margin * 0.48f / q, BlurMaskFilter.Blur.NORMAL) }
+            val spread = margin * 0.08f
+            val m = (margin - spread) / q
+            Canvas(bmp).drawRoundRect(m, m, bw - m, bh - m, (radius + spread) / q, (radius + spread) / q, p)
+            glows[key] = bmp
+            while (glows.size > 12) glows.remove(glows.keys.first())
+            return bmp
         }
 
         /** True when a cursor is drawn for [v], so [v] must not paint a highlight of its own. */
@@ -354,6 +431,14 @@ class FocusGlide private constructor(private val host: View) {
     }
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = C.FOCUS_FILL }
+    private val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val margin = host.resources.displayMetrics.density * 44f
+    private val glowRect = RectF()
+    private var glowMask: Bitmap? = null
+    private var fromGlow = 0f
+    private var nowGlow = 0f
+    private var fromColor = 0
+    private var nowColor = 0
     private val from = RectF()
     private val to = RectF()
     private val now = RectF()
@@ -414,6 +499,8 @@ class FocusGlide private constructor(private val host: View) {
         } else {
             from.set(now)
             fromRadius = nowRadius
+            fromGlow = nowGlow
+            fromColor = nowColor
             t = 0f
             move = ValueAnimator.ofFloat(0f, 1f).apply {
                 duration = 200
@@ -450,6 +537,31 @@ class FocusGlide private constructor(private val host: View) {
         val bt = from.bottom + (to.bottom - from.bottom) * k
         val rad = fromRadius + (toRadius - fromRadius) * k
         var changed = false
+
+        // glow or light fill, blended while the cursor moves between the two kinds
+        val toGlow = if (s.glow != 0) 1f else 0f
+        val toColor = if (s.glow != 0) s.glow else nowColor
+        if (s.glow != 0) {
+            glowMask = glowMask(v.width + 2 * s.outset, v.height + 2 * s.outset, if (s.radius < 0) (v.height / 2f + s.outset) else s.radius + s.outset, margin)
+        }
+        val g: Float
+        val col: Int
+        if (k >= 1f || now.isEmpty) {
+            g = toGlow
+            col = toColor
+        } else {
+            g = fromGlow + (toGlow - fromGlow) * k
+            col = when {
+                fromGlow == 0f -> toColor
+                toGlow == 0f -> fromColor
+                else -> blend(fromColor, toColor, k)
+            }
+        }
+        if (g != nowGlow || col != nowColor) {
+            nowGlow = g
+            nowColor = col
+            changed = true
+        }
         if (k >= 1f) {
             if (now != to || nowRadius != toRadius) {
                 now.set(to)
@@ -489,15 +601,34 @@ class FocusGlide private constructor(private val host: View) {
         if (changed) host.invalidate()
     }
 
+    private fun blend(a: Int, b: Int, k: Float): Int {
+        fun ch(shift: Int) = (((a shr shift) and 0xFF) + ((((b shr shift) and 0xFF) - ((a shr shift) and 0xFF)) * k)).toInt()
+        return (0xFF shl 24) or (ch(16) shl 16) or (ch(8) shl 8) or ch(0)
+    }
+
     /** The host's own background with the cursor painted over it. */
     private inner class Layer(private val base: Drawable?) : Drawable() {
         override fun draw(canvas: Canvas) {
             base?.draw(canvas)
             if (!shown || now.isEmpty) return
-            val save = canvas.save()
-            if (clipped) canvas.clipRect(clip)
-            canvas.drawRoundRect(now, nowRadius, nowRadius, paint)
-            canvas.restoreToCount(save)
+            val mask = glowMask
+            if (nowGlow > 0f && mask != null) {
+                val save = canvas.save()
+                // the glow may spill over the edge of its list, as far as it reaches
+                if (clipped) canvas.clipRect(clip.left - margin, clip.top - margin, clip.right + margin, clip.bottom + margin)
+                glowRect.set(now)
+                glowRect.inset(-margin, -margin)
+                glowPaint.color = (nowColor and 0x00FFFFFF) or ((nowGlow * 0xE6).toInt() shl 24)
+                canvas.drawBitmap(mask, null, glowRect, glowPaint)
+                canvas.restoreToCount(save)
+            }
+            if (nowGlow < 1f) {
+                val save = canvas.save()
+                if (clipped) canvas.clipRect(clip)
+                paint.alpha = ((1f - nowGlow) * 255).toInt()
+                canvas.drawRoundRect(now, nowRadius, nowRadius, paint)
+                canvas.restoreToCount(save)
+            }
         }
 
         override fun onBoundsChange(bounds: Rect) {
