@@ -20,7 +20,7 @@ import java.util.Locale
  * Launcher settings: a floating panel over the live background, so background changes
  * are previewed as they are made. Everything is edited here and saved to config.json.
  */
-class SettingsActivity : Activity() {
+class SettingsActivity : PanelActivity() {
 
     private class Page(val title: String, val build: () -> Unit) {
         var focus = 0
@@ -111,6 +111,7 @@ class SettingsActivity : Activity() {
             rightMargin = dp(30f)
         })
         setContentView(root)
+        animateIn(panel)
 
         stack.add(rootPage(0))
         render(-1)
@@ -252,9 +253,7 @@ class SettingsActivity : Activity() {
         }
         pendingFocus = focusedRow() ?: 0
         onPicked = cb
-        startActivityForResult(
-            Intent(this, PickEntityActivity::class.java).putExtra("title", title).putExtra("domains", domains), 7
-        )
+        open(Intent(this, PickEntityActivity::class.java).putExtra("title", title).putExtra("domains", domains), 7)
     }
 
     /** An editable list of entities stored in a JSON array. */
@@ -325,7 +324,7 @@ class SettingsActivity : Activity() {
             }
         }
         section("More")
-        row("+  Add apps", "All apps") { startActivity(Intent(this, AllAppsActivity::class.java)) }
+        row("+  Add apps", "All apps") { open(Intent(this, AllAppsActivity::class.java)) }
         row("Reset to the default favorites") {
             FavStore.reset(this)
             toast("Favorites reset")

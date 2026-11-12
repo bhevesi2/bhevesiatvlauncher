@@ -19,6 +19,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.os.Bundle
 import android.text.InputType
 import android.view.FocusFinder
 import android.view.Gravity
@@ -506,6 +507,52 @@ class FocusGlide private constructor(private val host: View) {
     }
 }
 
+/**
+ * Base of every sub-screen. The window fades in over the home screen while the panel slides
+ * (or grows) into place, and closing plays the same thing backwards.
+ */
+open class PanelActivity : Activity() {
+    private var moving: View? = null
+    private var fromSide = true
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        overridePendingTransition(R.anim.screen_in, R.anim.screen_hold)
+    }
+
+    /** Opens another sub-screen with the same fade. */
+    fun open(intent: Intent, requestCode: Int = -1) {
+        if (requestCode >= 0) startActivityForResult(intent, requestCode) else startActivity(intent)
+        overridePendingTransition(R.anim.screen_in, R.anim.screen_hold)
+    }
+
+    /** Call once the panel is in the layout: [side] slides it in from the right, otherwise it grows. */
+    protected fun animateIn(panel: View, side: Boolean = true) {
+        moving = panel
+        fromSide = side
+        panel.alpha = 0f
+        if (side) {
+            panel.translationX = dp(72f).toFloat()
+        } else {
+            panel.scaleX = 0.94f
+            panel.scaleY = 0.94f
+        }
+        panel.animate().alpha(1f).translationX(0f).scaleX(1f).scaleY(1f)
+            .setStartDelay(60).setDuration(340).setInterpolator(DecelerateInterpolator(2f)).start()
+    }
+
+    override fun finish() {
+        moving?.let { p ->
+            p.animate().cancel()
+            val out = p.animate().alpha(0f).setStartDelay(0).setDuration(200)
+            if (fromSide) out.translationX(dp(48f).toFloat()) else out.scaleX(0.96f).scaleY(0.96f)
+            out.start()
+        }
+        super.finish()
+        overridePendingTransition(R.anim.screen_hold, R.anim.screen_out)
+    }
+}
+
 /** Small on/off indicator for toggle rows. */
 class SwitchDot(ctx: Context) : View(ctx) {
     var on = false
@@ -581,6 +628,14 @@ object Popup {
         root.addView(panel, FrameLayout.LayoutParams(act.dp(widthDp), -2, Gravity.CENTER))
         d.setContentView(root)
         d.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        d.window?.setWindowAnimations(0)
+        root.alpha = 0f
+        panel.scaleX = 0.94f
+        panel.scaleY = 0.94f
+        d.setOnShowListener {
+            root.animate().alpha(1f).setDuration(160).start()
+            panel.animate().scaleX(1f).scaleY(1f).setDuration(220).setInterpolator(DecelerateInterpolator(2f)).start()
+        }
         return Triple(d, panel, root)
     }
 

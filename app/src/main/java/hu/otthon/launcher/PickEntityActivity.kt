@@ -22,7 +22,7 @@ import android.widget.Toast
  * Lets the user pick one Home Assistant entity from a searchable list.
  * Extras in: "title", "domains" (comma separated, empty = all). Result: "entity", "name".
  */
-class PickEntityActivity : Activity() {
+class PickEntityActivity : PanelActivity() {
 
     private var all: List<EntityInfo> = emptyList()
     private var shown: List<EntityInfo> = emptyList()
@@ -143,6 +143,7 @@ class PickEntityActivity : Activity() {
 
         root.addView(panel, FrameLayout.LayoutParams(dp(700f), dp(470f), Gravity.CENTER))
         setContentView(root)
+        animateIn(panel, side = false)
 
         val client = HaClient(cfg.haUrl!!, cfg.haToken!!)
         Bg.run({ client.states() }) { list ->

@@ -24,7 +24,7 @@ import java.util.concurrent.Executors
  * Camera wall: a grid of all cameras, and a full-screen view of one.
  * Images are snapshots pulled from Home Assistant (camera_proxy), refreshed continuously.
  */
-class CamerasActivity : Activity() {
+class CamerasActivity : PanelActivity() {
 
     private lateinit var cfg: Config
     private var ha: HaClient? = null
@@ -117,6 +117,7 @@ class CamerasActivity : Activity() {
         })
         root.addView(full, FrameLayout.LayoutParams(-1, -1))
         setContentView(root)
+        animateIn(frame.panel)
 
         val start = intent.getIntExtra("index", -1)
         if (start >= 0 && start < cams.size) showFull(start) else tiles[0].requestFocus()
@@ -169,7 +170,11 @@ class CamerasActivity : Activity() {
         fullLabel.text = "● " + cam.label.ifBlank { cam.entity }
         val last = (tiles[i].image.drawable as? BitmapDrawable)?.bitmap
         if (last != null) fullImage.setImageBitmap(last) else fullImage.setImageDrawable(null)
-        full.visibility = View.VISIBLE
+        if (full.visibility != View.VISIBLE) {
+            full.alpha = 0f
+            full.visibility = View.VISIBLE
+            full.animate().alpha(1f).setDuration(220).start()
+        }
         fullTick(generation)
     }
 
@@ -177,6 +182,7 @@ class CamerasActivity : Activity() {
         val i = fullIndex
         fullIndex = -1
         generation++
+        full.animate().cancel()
         full.visibility = View.GONE
         fullImage.setImageDrawable(null)
         if (i >= 0 && i < tiles.size) tiles[i].requestFocus()

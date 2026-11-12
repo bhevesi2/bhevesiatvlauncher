@@ -211,6 +211,12 @@ class HomeActivity : Activity() {
         return v
     }
 
+    /** Opens one of the launcher's own screens with a cross-fade. */
+    private fun open(screen: Class<*>) {
+        startActivity(Intent(this, screen))
+        overridePendingTransition(R.anim.screen_in, R.anim.screen_hold)
+    }
+
     private fun addIcon(row: LinearLayout, v: View) {
         val lp = LinearLayout.LayoutParams(dp(36f), dp(36f))
         if (row.childCount > 0) lp.leftMargin = dp(8f)
@@ -262,7 +268,7 @@ class HomeActivity : Activity() {
         }
         if (entries.isEmpty()) {
             favRow.addView(pill("Add favorites", R.drawable.ic_plus) {
-                startActivity(Intent(this, AllAppsActivity::class.java))
+                open(AllAppsActivity::class.java)
             }, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER_VERTICAL })
         }
 
@@ -275,7 +281,7 @@ class HomeActivity : Activity() {
             topButtons.addView(g, LinearLayout.LayoutParams(dp(36f), dp(36f)).apply { leftMargin = dp(7f) })
         }
         val gear = iconButton(R.drawable.ic_gear, "Launcher settings", false) {
-            startActivity(Intent(this, SettingsActivity::class.java))
+            open(SettingsActivity::class.java)
         }
         topButtons.addView(gear, LinearLayout.LayoutParams(dp(36f), dp(36f)).apply { leftMargin = dp(7f) })
 
@@ -283,18 +289,18 @@ class HomeActivity : Activity() {
         bottom.removeAllViews()
         val icons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         addIcon(icons, iconButton(R.drawable.ic_grid, "All apps", true) {
-            startActivity(Intent(this, AllAppsActivity::class.java))
+            open(AllAppsActivity::class.java)
         })
         addIcon(icons, iconButton(R.drawable.ic_tv_gear, "TV settings", true) {
             if (!Apps.openSystemSettings(this)) toast("Android settings are not available")
         })
         if (cfg.haEnabled) {
             addIcon(icons, iconButton(R.drawable.ic_dashboard, "Home Assistant dashboard", true) {
-                startActivity(Intent(this, DashboardActivity::class.java))
+                open(DashboardActivity::class.java)
             })
             if (cfg.cameras.isNotEmpty()) {
                 addIcon(icons, iconButton(R.drawable.ic_camera, "Cameras", true) {
-                    startActivity(Intent(this, CamerasActivity::class.java))
+                    open(CamerasActivity::class.java)
                 })
             }
         }

@@ -82,7 +82,7 @@ class DashRow(ctx: Context, val item: HaItem) : LinearLayout(ctx) {
 }
 
 /** Home Assistant overview: weather, sections of live entities, toggles and statistics. */
-class DashboardActivity : Activity() {
+class DashboardActivity : PanelActivity() {
 
     private lateinit var cfg: Config
     private var ha: HaClient? = null
@@ -166,6 +166,7 @@ class DashboardActivity : Activity() {
         buildOverlay()
         frame.root.addView(overlay, FrameLayout.LayoutParams(-1, -1))
         setContentView(frame.root)
+        animateIn(frame.panel)
     }
 
     private fun buildOverlay() {
@@ -418,7 +419,14 @@ class DashboardActivity : Activity() {
         statsTitle.text = r.item.title
         statsValue.text = r.state?.let { Fmt.value(r.item.entity, it) } ?: ""
         overlayDownSeen = false
+        overlay.alpha = 0f
         overlay.visibility = View.VISIBLE
+        overlay.animate().alpha(1f).setDuration(180).start()
+        overlay.getChildAt(0)?.let { p ->
+            p.scaleX = 0.95f
+            p.scaleY = 0.95f
+            p.animate().scaleX(1f).scaleY(1f).setDuration(240).setInterpolator(android.view.animation.DecelerateInterpolator(2f)).start()
+        }
         loadStats()
     }
 

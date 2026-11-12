@@ -9,7 +9,7 @@ import android.widget.ScrollView
 import android.widget.Toast
 
 /** Every installed app, in the same floating panel as the settings. */
-class AllAppsActivity : Activity() {
+class AllAppsActivity : PanelActivity() {
 
     private lateinit var frame: PanelFrame
     private lateinit var list: LinearLayout
@@ -33,6 +33,7 @@ class AllAppsActivity : Activity() {
         scroll.addView(list)
         frame.panel.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(frame.root)
+        animateIn(frame.panel)
 
         Bg.run({ Apps.all(this) }) { apps -> if (apps != null) build(apps) }
     }
