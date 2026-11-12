@@ -537,12 +537,26 @@ class SettingsActivity : PanelActivity() {
         section("Cameras")
         entityList("cameras", { r -> ConfigStore.array(r, "cameras") }, cfg.cameras, "Add camera", "camera", false)
 
+        section("Live video")
+        toggle("Live video instead of pictures", cfg.liveVideo) { on ->
+            edit { r -> ConfigStore.obj(r, "live").put("enabled", on) }
+        }
+        if (cfg.liveVideo) {
+            row("Stream address", cfg.liveUrl) {
+                Popup.text(this, "Stream address", cfg.liveUrl, "{host}: Home Assistant's address, {camera}: the camera's name") { v ->
+                    edit { r -> ConfigStore.obj(r, "live").put("url", v.ifBlank { Config.DEFAULT_LIVE_URL }) }
+                }
+            }
+            cfg.cameras.firstOrNull()?.let { cam -> row("Example", cfg.stream(cam.entity) ?: "") }
+        }
+        note("Full screen and the pop-ups play the cameras' video from Frigate's RTSP restream; the camera wall stays pictures. Frigate's add-on only offers it when its port 8554 is open. If a stream does not start within ten seconds, pictures are shown as before.")
+
         section("Pop-ups")
         toggle("Show cameras over other apps", cfg.popups) { on ->
             edit { r -> ConfigStore.obj(r, "popups").put("enabled", on) }
             PopupService.sync(this)
         }
-        note("When one of the sensors below turns on, its camera appears in the bottom right corner for a while, over whatever is on. It takes no focus: the remote keeps working in the app.")
+        note("When one of the sensors below turns on, its camera appears in the bottom right corner for a while, over whatever is on. While it is up, Back closes it, OK opens the camera full screen and any other key just closes it.")
         if (cfg.popups) {
             if (!PopupService.allowed(this)) {
                 row("Allow pop-ups over other apps", "needs Home Assistant") {

@@ -49,11 +49,25 @@ data class Config(
     /** The outside weather as the first chip on the home screen. */
     val weatherChip: Boolean,
     /** To-do lists shown on the Today panel. */
-    val todoLists: List<HaItem>
+    val todoLists: List<HaItem>,
+    /** Live camera video over RTSP instead of still pictures. */
+    val liveVideo: Boolean,
+    /** Stream address; {host} is Home Assistant's address, {camera} the camera's name. */
+    val liveUrl: String
 ) {
     val haEnabled: Boolean get() = !haUrl.isNullOrBlank() && !haToken.isNullOrBlank()
 
+    /** The live stream of a camera entity, or null when live video is off. */
+    fun stream(camera: String): String? {
+        if (!liveVideo) return null
+        val host = try { android.net.Uri.parse(haUrl ?: "").host } catch (e: Exception) { null } ?: return null
+        return liveUrl.replace("{host}", host).replace("{camera}", camera.substringAfter('.'))
+    }
+
     companion object {
+        /** Frigate's RTSP restream (port 8554 of the Frigate add-on). */
+        const val DEFAULT_LIVE_URL = "rtsp://{host}:8554/{camera}"
+
         val DEFAULT_FAVORITES = listOf(
             "com.netflix.ninja",
             "com.google.android.youtube.tv",
@@ -94,7 +108,9 @@ data class Config(
                 popupSeconds = (json.optJSONObject("popups") ?: JSONObject()).optInt("seconds", 20).coerceIn(5, 120),
                 popupTriggers = popupTriggers(json),
                 weatherChip = json.optBoolean("weather_chip", true),
-                todoLists = json.optJSONArray("todo_lists")?.let { items(it) } ?: listOf(HaItem("todo.shopping_list", ""))
+                todoLists = json.optJSONArray("todo_lists")?.let { items(it) } ?: listOf(HaItem("todo.shopping_list", "")),
+                liveVideo = (json.optJSONObject("live") ?: JSONObject()).optBoolean("enabled", false),
+                liveUrl = (json.optJSONObject("live") ?: JSONObject()).optString("url", "").ifBlank { DEFAULT_LIVE_URL }
             )
         }
 

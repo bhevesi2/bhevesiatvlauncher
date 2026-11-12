@@ -34,6 +34,8 @@ class CamerasActivity : PanelActivity() {
     private lateinit var full: FrameLayout
     private lateinit var fullImage: ImageView
     private lateinit var fullLabel: TextView
+    private lateinit var live: LiveVideo
+    private var liveWarned = false
     private val tiles = mutableListOf<CamTile>()
     private var pending = BooleanArray(0)
 
@@ -100,6 +102,15 @@ class CamerasActivity : PanelActivity() {
         fullImage = ImageView(this)
         fullImage.scaleType = ImageView.ScaleType.FIT_CENTER
         full.addView(fullImage, FrameLayout.LayoutParams(-1, -1))
+        // live video lies over the still picture and shows once its first frame is ready
+        live = LiveVideo(this, crop = false)
+        live.onFailed = {
+            if (!liveWarned && fullIndex >= 0) {
+                liveWarned = true
+                Toast.makeText(this, "Live video is not available, showing pictures", Toast.LENGTH_SHORT).show()
+            }
+        }
+        full.addView(live, FrameLayout.LayoutParams(-1, -1))
 
         fullLabel = label("", 14f, C.TEXT, bold = true)
         fullLabel.setPadding(dp(12f), dp(7f), dp(14f), dp(7f))
@@ -129,13 +140,19 @@ class CamerasActivity : PanelActivity() {
         if (ha == null) return
         active = true
         generation++
-        if (fullIndex >= 0) fullTick(generation) else gridTick(generation)
+        if (fullIndex >= 0) {
+            fullTick(generation)
+            cfg.stream(cfg.cameras[fullIndex].entity)?.let { live.play(it) }
+        } else {
+            gridTick(generation)
+        }
     }
 
     override fun onPause() {
         super.onPause()
         PopupService.camerasOpen = false
         active = false
+        if (::live.isInitialized) live.stop()
     }
 
     override fun onDestroy() {
@@ -180,12 +197,15 @@ class CamerasActivity : PanelActivity() {
             }
         }
         fullTick(generation)
+        val stream = cfg.stream(cam.entity)
+        if (stream != null) live.play(stream) else live.stop()
     }
 
     private fun showGrid() {
         val i = fullIndex
         fullIndex = -1
         generation++
+        live.stop()
         full.animate().cancel()
         full.alpha = 1f
         full.visibility = View.GONE
@@ -222,6 +242,11 @@ class CamerasActivity : PanelActivity() {
 
     private fun fullTick(gen: Int) {
         if (!active || gen != generation || fullIndex < 0) return
+        if (live.playing) {
+            // the video is running: no pictures needed, just look again in a while
+            main.postDelayed({ fullTick(gen) }, 1000L)
+            return
+        }
         val i = fullIndex
         val started = fetch(i, 1920) { b ->
             if (active && gen == generation && fullIndex == i) {

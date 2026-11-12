@@ -95,10 +95,16 @@ zone is playing or paused; the panel is also under Settings › Home screen › 
 
 When one of the chosen sensors turns on (by default: Frigate seeing a person on any camera of the
 camera wall except indoor ones), that camera appears in the bottom right corner for a while, over
-whatever is playing, without taking focus. A background service checks the sensors every two
+whatever is playing. While it is up, Back closes it, OK opens the camera full screen and any other
+key just closes it (volume keys still work). A background service checks the sensors every two
 seconds while the TV is on. Settings › Cameras › Pop-ups switches it off, sets how long it stays,
 and edits the sensors. Drawing over other apps is allowed over ADB:
 `appops set hu.otthon.launcher SYSTEM_ALERT_WINDOW allow` (the settings do it through Home Assistant).
+
+Settings › Cameras › Live video plays the full-screen view and the pop-ups as video from
+Frigate's RTSP restream (`rtsp://{host}:8554/{camera}` by default, editable), with Android's own
+player; the Frigate add-on has to publish its port 8554. A stream that does not start within ten
+seconds falls back to the still pictures.
 
 ## Today
 
