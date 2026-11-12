@@ -278,7 +278,22 @@ class SettingsActivity : PanelActivity() {
 
     private fun row(title: String, value: String? = null, selected: Boolean? = null, onClick: (() -> Unit)? = null): RowView {
         val r = RowView(this, title, value, selected)
-        if (onClick == null) r.passive = true else r.setOnClickListener { onClick() }
+        if (onClick == null) {
+            // information only: the cursor skips it, so OK never lands on a row that does nothing
+            r.passive = true
+            r.isFocusable = false
+            r.isClickable = false
+        } else {
+            r.setOnClickListener { onClick() }
+        }
+        add(r)
+        return r
+    }
+
+    /** An action inside an open row. While it cannot be used it stays in place, greyed out, so the others do not jump. */
+    private fun action(title: String, enabled: Boolean, onClick: () -> Unit): RowView {
+        val r = RowView(this, title, null, null)
+        if (enabled) r.setOnClickListener { onClick() } else r.passive = true
         add(r)
         return r
     }
@@ -366,8 +381,8 @@ class SettingsActivity : PanelActivity() {
                         edit { r -> arr(r).getJSONObject(i).remove("picture") }
                     }
                 }
-                row("Move up", onClick = if (i > 0) ({ edit(moveTo = "$id:${i - 1}") { r -> ConfigStore.swap(arr(r), i, i - 1) } }) else null)
-                row("Move down", onClick = if (i < last) ({ edit(moveTo = "$id:${i + 1}") { r -> ConfigStore.swap(arr(r), i, i + 1) } }) else null)
+                action("Move up", i > 0) { edit(moveTo = "$id:${i - 1}") { r -> ConfigStore.swap(arr(r), i, i - 1) } }
+                action("Move down", i < last) { edit(moveTo = "$id:${i + 1}") { r -> ConfigStore.swap(arr(r), i, i + 1) } }
                 row("Remove") { edit(close = true) { r -> arr(r).remove(i) } }
             }
         }
@@ -422,8 +437,8 @@ class SettingsActivity : PanelActivity() {
                 FavStore.set(this, favs)
             }
             expand("fav:$i", "${i + 1}.  $name", null) {
-                row("Move up", onClick = if (i > 0) ({ move(i - 1) }) else null)
-                row("Move down", onClick = if (i < last) ({ move(i + 1) }) else null)
+                action("Move up", i > 0) { move(i - 1) }
+                action("Move down", i < last) { move(i + 1) }
                 row("Remove") {
                     change(close = true) {
                         favs.removeAt(i)
