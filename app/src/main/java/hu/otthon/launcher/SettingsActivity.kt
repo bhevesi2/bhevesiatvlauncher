@@ -353,6 +353,13 @@ class SettingsActivity : PanelActivity() {
             }
         }
         if (cfg.nowPlaying != null) row("Card label", cfg.nowPlayingLabel)
+        section("Animations")
+        val levels = listOf("full" to "Full", "reduced" to "Reduced", "off" to "Off")
+        row("Animations", levels.first { it.first == cfg.animations }.second) {
+            Popup.menu(this, "Animations", levels.map { it.second }, levels.indexOfFirst { it.first == cfg.animations }) { which ->
+                edit { it.put("animations", levels[which].first) }
+            }
+        }
     }
 
     private fun camerasPage() {

@@ -171,9 +171,11 @@ class CamerasActivity : PanelActivity() {
         val last = (tiles[i].image.drawable as? BitmapDrawable)?.bitmap
         if (last != null) fullImage.setImageBitmap(last) else fullImage.setImageDrawable(null)
         if (full.visibility != View.VISIBLE) {
-            full.alpha = 0f
             full.visibility = View.VISIBLE
-            full.animate().alpha(1f).setDuration(220).start()
+            if (Motion.level != Motion.OFF) {
+                full.alpha = 0f
+                full.animate().alpha(1f).setDuration(160).withLayer().start()
+            }
         }
         fullTick(generation)
     }
@@ -183,6 +185,7 @@ class CamerasActivity : PanelActivity() {
         fullIndex = -1
         generation++
         full.animate().cancel()
+        full.alpha = 1f
         full.visibility = View.GONE
         fullImage.setImageDrawable(null)
         if (i >= 0 && i < tiles.size) tiles[i].requestFocus()

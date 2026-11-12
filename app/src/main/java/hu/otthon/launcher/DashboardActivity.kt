@@ -419,13 +419,11 @@ class DashboardActivity : PanelActivity() {
         statsTitle.text = r.item.title
         statsValue.text = r.state?.let { Fmt.value(r.item.entity, it) } ?: ""
         overlayDownSeen = false
-        overlay.alpha = 0f
         overlay.visibility = View.VISIBLE
-        overlay.animate().alpha(1f).setDuration(180).start()
-        overlay.getChildAt(0)?.let { p ->
-            p.scaleX = 0.95f
-            p.scaleY = 0.95f
-            p.animate().scaleX(1f).scaleY(1f).setDuration(240).setInterpolator(android.view.animation.DecelerateInterpolator(2f)).start()
+        val box = overlay.getChildAt(0)
+        if (box != null && Motion.level != Motion.OFF) {
+            box.alpha = 0f
+            box.animate().alpha(1f).setDuration(160).withLayer().start()
         }
         loadStats()
     }

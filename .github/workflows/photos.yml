@@ -1,0 +1,58 @@
+name: photos
+
+# Downloads the background photo sets listed in tools/backgrounds.txt and commits them, so
+# builds (on GitHub or on a PC) need no download step. Can also fetch small previews of
+# candidate photos onto the photo-preview branch.
+on:
+  push:
+    branches: [ main ]
+    paths: [ tools/backgrounds.txt ]
+  workflow_dispatch:
+    inputs:
+      preview:
+        description: "Comma-separated images.unsplash.com photo ids to preview (empty: refresh the sets)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  photos:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Refresh the photo sets
+        if: ${{ github.event.inputs.preview == '' || github.event_name == 'push' }}
+        run: |
+          python3 -m pip install --quiet pillow
+          python3 tools/fetch_backgrounds.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/assets/backgrounds
+          if git diff --cached --quiet; then
+            echo "Photos unchanged."
+          else
+            git commit -m "Update background photos"
+            git pull --rebase origin main
+            git push origin HEAD:main
+          fi
+
+      - name: Preview candidates
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.preview != '' }}
+        env:
+          IDS: ${{ github.event.inputs.preview }}
+        run: |
+          mkdir -p /tmp/preview
+          for id in ${IDS//,/ }; do
+            curl -fsSL -A "Mozilla/5.0" -o "/tmp/preview/$id.jpg" "https://images.unsplash.com/$id?fm=jpg&q=70&w=960&fit=max" || echo "failed: $id"
+          done
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan photo-preview
+          git rm -rfq .
+          cp /tmp/preview/*.jpg .
+          git add ./*.jpg
+          git commit -qm "Photo previews"
+          git push -f origin photo-preview

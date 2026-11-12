@@ -35,7 +35,7 @@ class AllAppsActivity : PanelActivity() {
         setContentView(frame.root)
         animateIn(frame.panel)
 
-        Bg.run({ Apps.all(this) }) { apps -> if (apps != null) build(apps) }
+        Bg.run({ Apps.all(this) }) { apps -> if (apps != null) afterEnter { build(apps) } }
     }
 
     override fun onResume() {

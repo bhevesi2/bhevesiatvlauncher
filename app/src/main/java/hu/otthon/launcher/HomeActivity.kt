@@ -52,6 +52,7 @@ class HomeActivity : Activity() {
 
     private val chipViews = mutableListOf<Pair<HaItem, TextView>>()
     private var resumed = false
+    private var awayOnOwnScreen = false
     private var shiftIndex = 0
 
     private val timeFmt = DateTimeFormatter.ofPattern("HH:mm", Locale.ENGLISH)
@@ -214,7 +215,8 @@ class HomeActivity : Activity() {
     /** Opens one of the launcher's own screens with a cross-fade. */
     private fun open(screen: Class<*>) {
         startActivity(Intent(this, screen))
-        overridePendingTransition(R.anim.screen_in, R.anim.screen_hold)
+        overridePendingTransition(0, 0)
+        awayOnOwnScreen = true
     }
 
     private fun addIcon(row: LinearLayout, v: View) {
@@ -395,6 +397,23 @@ class HomeActivity : Activity() {
         super.onResume()
         resumed = true
         reload()
+        if (awayOnOwnScreen) {
+            // back from one of our own screens: let the tiles fade back instead of popping in
+            awayOnOwnScreen = false
+            if (Motion.level == Motion.FULL) {
+                // its own animator: content.animate() is shared with the slow OLED pixel shift
+                content.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                android.animation.ObjectAnimator.ofFloat(content, View.ALPHA, 0.3f, 1f).apply {
+                    duration = 200
+                    addListener(object : android.animation.AnimatorListenerAdapter() {
+                        override fun onAnimationEnd(animation: android.animation.Animator) {
+                            content.setLayerType(View.LAYER_TYPE_NONE, null)
+                        }
+                    })
+                    start()
+                }
+            }
+        }
         registerReceiver(tick, IntentFilter(Intent.ACTION_TIME_TICK))
         onMinute()
         if (ha != null) {

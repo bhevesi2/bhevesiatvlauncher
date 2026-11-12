@@ -26,6 +26,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
+import android.view.animation.AccelerateInterpolator
 import android.view.animation.DecelerateInterpolator
 import android.view.inputmethod.EditorInfo
 import android.widget.EditText
@@ -245,6 +246,10 @@ class RowScroller(ctx: Context) : HorizontalScrollView(ctx) {
         if (if (running) to == goal else to == scrollX) return
         anim?.cancel()
         goal = to
+        if (Motion.level == Motion.OFF) {
+            scrollTo(to, 0)
+            return
+        }
         anim = ValueAnimator.ofInt(scrollX, to).apply {
             duration = 260
             interpolator = DecelerateInterpolator(1.8f)
@@ -296,6 +301,10 @@ class ColScroller(ctx: Context) : ScrollView(ctx) {
         if (if (running) to == goal else to == scrollY) return
         anim?.cancel()
         goal = to
+        if (Motion.level == Motion.OFF) {
+            scrollTo(0, to)
+            return
+        }
         anim = ValueAnimator.ofInt(scrollY, to).apply {
             duration = 260
             interpolator = DecelerateInterpolator(1.8f)
@@ -400,7 +409,7 @@ class FocusGlide private constructor(private val host: View) {
             host.invalidate()
             return
         }
-        if (!shown || now.isEmpty) {
+        if (!shown || now.isEmpty || Motion.level == Motion.OFF) {
             t = 1f                              // nothing to glide from: appear in place
         } else {
             from.set(now)
@@ -508,48 +517,89 @@ class FocusGlide private constructor(private val host: View) {
 }
 
 /**
- * Base of every sub-screen. The window fades in over the home screen while the panel slides
- * (or grows) into place, and closing plays the same thing backwards.
+ * Base of every sub-screen. The window itself switches at once (the background and the clock
+ * are the same on both sides, so that is invisible, and cross-fading two full-screen windows
+ * is more than this TV can do smoothly). Only the panel moves, as one pre-rendered layer.
  */
 open class PanelActivity : Activity() {
     private var moving: View? = null
     private var fromSide = true
+    private var entering = false
+    private var closing = false
+    private val waiting = ArrayList<() -> Unit>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        overridePendingTransition(R.anim.screen_in, R.anim.screen_hold)
+        overridePendingTransition(0, 0)
     }
 
-    /** Opens another sub-screen with the same fade. */
+    /** Opens another sub-screen. */
     fun open(intent: Intent, requestCode: Int = -1) {
         if (requestCode >= 0) startActivityForResult(intent, requestCode) else startActivity(intent)
-        overridePendingTransition(R.anim.screen_in, R.anim.screen_hold)
+        overridePendingTransition(0, 0)
     }
 
     /** Call once the panel is in the layout: [side] slides it in from the right, otherwise it grows. */
     protected fun animateIn(panel: View, side: Boolean = true) {
         moving = panel
         fromSide = side
+        if (Motion.level == Motion.OFF) return
+        val full = Motion.level == Motion.FULL
+        entering = true
         panel.alpha = 0f
-        if (side) {
-            panel.translationX = dp(72f).toFloat()
-        } else {
-            panel.scaleX = 0.94f
-            panel.scaleY = 0.94f
+        if (full && side) panel.translationX = dp(56f).toFloat()
+        if (full && !side) {
+            panel.scaleX = 0.95f
+            panel.scaleY = 0.95f
         }
-        panel.animate().alpha(1f).translationX(0f).scaleX(1f).scaleY(1f)
-            .setStartDelay(60).setDuration(340).setInterpolator(DecelerateInterpolator(2f)).start()
+        // Start on the first frame, when building and laying out the screen is already done.
+        panel.viewTreeObserver.addOnPreDrawListener(object : ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw(): Boolean {
+                panel.viewTreeObserver.removeOnPreDrawListener(this)
+                panel.animate().alpha(1f).translationX(0f).scaleX(1f).scaleY(1f)
+                    .setDuration(if (full) 240L else 140L).setInterpolator(DecelerateInterpolator(2f))
+                    .withLayer().withEndAction { entered() }.start()
+                return true
+            }
+        })
+        panel.postDelayed({ entered() }, 800)
+    }
+
+    private fun entered() {
+        if (!entering) return
+        entering = false
+        val run = ArrayList(waiting)
+        waiting.clear()
+        run.forEach { it() }
+    }
+
+    /** Runs [work] when the opening animation is over, so heavy layout cannot make it stutter. */
+    protected fun afterEnter(work: () -> Unit) {
+        if (entering) waiting.add(work) else work()
+    }
+
+    private fun reallyFinish() {
+        if (isFinishing) return
+        super.finish()
+        overridePendingTransition(0, 0)
     }
 
     override fun finish() {
-        moving?.let { p ->
-            p.animate().cancel()
-            val out = p.animate().alpha(0f).setStartDelay(0).setDuration(200)
-            if (fromSide) out.translationX(dp(48f).toFloat()) else out.scaleX(0.96f).scaleY(0.96f)
-            out.start()
+        val p = moving
+        if (p == null || Motion.level == Motion.OFF || !p.isAttachedToWindow) {
+            reallyFinish()
+            return
         }
-        super.finish()
-        overridePendingTransition(R.anim.screen_hold, R.anim.screen_out)
+        if (closing) return
+        closing = true
+        val full = Motion.level == Motion.FULL
+        p.animate().cancel()
+        val out = p.animate().alpha(0f).setStartDelay(0).setDuration(if (full) 150L else 110L)
+            .setInterpolator(AccelerateInterpolator(1.5f)).withLayer()
+        if (full && fromSide) out.translationX(dp(40f).toFloat())
+        if (full && !fromSide) out.scaleX(0.96f).scaleY(0.96f)
+        out.withEndAction { reallyFinish() }.start()
+        p.postDelayed({ reallyFinish() }, 400)
     }
 }
 
@@ -629,12 +679,17 @@ object Popup {
         d.setContentView(root)
         d.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         d.window?.setWindowAnimations(0)
-        root.alpha = 0f
-        panel.scaleX = 0.94f
-        panel.scaleY = 0.94f
-        d.setOnShowListener {
-            root.animate().alpha(1f).setDuration(160).start()
-            panel.animate().scaleX(1f).scaleY(1f).setDuration(220).setInterpolator(DecelerateInterpolator(2f)).start()
+        if (Motion.level != Motion.OFF) {
+            val full = Motion.level == Motion.FULL
+            panel.alpha = 0f
+            if (full) {
+                panel.scaleX = 0.95f
+                panel.scaleY = 0.95f
+            }
+            d.setOnShowListener {
+                panel.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(if (full) 180L else 120L)
+                    .setInterpolator(DecelerateInterpolator(2f)).withLayer().start()
+            }
         }
         return Triple(d, panel, root)
     }

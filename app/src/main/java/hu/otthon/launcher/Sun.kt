@@ -44,9 +44,9 @@ object Sun {
         val (rise, set) = t
         val min = 60_000L
         return when {
-            now >= rise - 50 * min && now < rise + 70 * min -> Phase.HAJNAL
-            now >= rise + 70 * min && now < set - 70 * min -> Phase.NAPPAL
-            now >= set - 70 * min && now < set + 50 * min -> Phase.ALKONY
+            now >= rise - 40 * min && now < rise + 45 * min -> Phase.HAJNAL
+            now >= rise + 45 * min && now < set - 45 * min -> Phase.NAPPAL
+            now >= set - 45 * min && now < set + 40 * min -> Phase.ALKONY
             else -> Phase.EJSZAKA
         }
     }

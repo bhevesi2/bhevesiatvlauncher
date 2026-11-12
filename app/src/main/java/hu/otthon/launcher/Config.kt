@@ -31,7 +31,8 @@ data class Config(
     val weather: String?,
     val sections: List<DashSection>,
     val inputsHidden: Set<String>,
-    val inputNames: Map<String, String>
+    val inputNames: Map<String, String>,
+    val animations: String
 ) {
     val haEnabled: Boolean get() = !haUrl.isNullOrBlank() && !haToken.isNullOrBlank()
 
@@ -51,6 +52,8 @@ data class Config(
             val dash = json.optJSONObject("dashboard") ?: JSONObject()
             val names = HashMap<String, String>()
             json.optJSONObject("input_names")?.let { o -> o.keys().forEach { k -> names[k] = o.optString(k) } }
+            val animations = json.optString("animations", "full").let { if (it == "reduced" || it == "off") it else "full" }
+            Motion.level = when (animations) { "off" -> Motion.OFF; "reduced" -> Motion.REDUCED; else -> Motion.FULL }
             return Config(
                 haUrl = json.optString("ha_url", "").trim().trimEnd('/').ifBlank { null },
                 haToken = json.optString("ha_token", "").trim().ifBlank { null },
@@ -67,7 +70,8 @@ data class Config(
                 weather = dash.optString("weather", "").ifBlank { null },
                 sections = sections(dash.optJSONArray("sections")),
                 inputsHidden = strings(json.optJSONArray("inputs_hidden")).toSet(),
-                inputNames = names
+                inputNames = names,
+                animations = animations
             )
         }
 
@@ -98,6 +102,14 @@ data class Config(
             }
         }
     }
+}
+
+/** How much the launcher animates. Follows the "animations" setting whenever it is loaded. */
+object Motion {
+    const val OFF = 0
+    const val REDUCED = 1
+    const val FULL = 2
+    var level = FULL
 }
 
 /** The launcher's settings live in one JSON file that both the settings screens and adb can edit. */
