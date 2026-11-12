@@ -22,7 +22,7 @@ class AllAppsActivity : Activity() {
         frame = PanelFrame(this, "All apps", "Hold OK: add to or remove from favorites")
 
         // The side padding lives inside the scroller, so a zoomed tile at the edge is never cut.
-        val scroll = ScrollView(this).apply {
+        val scroll = ColScroller(this).apply {
             isVerticalScrollBarEnabled = false
             overScrollMode = View.OVER_SCROLL_NEVER
             clipChildren = false

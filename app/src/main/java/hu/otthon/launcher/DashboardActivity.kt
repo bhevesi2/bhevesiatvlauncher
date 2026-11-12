@@ -43,6 +43,7 @@ class DashRow(ctx: Context, val item: HaItem) : LinearLayout(ctx) {
         value.maxLines = 1
         addView(value, LayoutParams(-2, -2).apply { leftMargin = ctx.dp(8f) })
         dot?.let { addView(it, LayoutParams(ctx.dp(26f), ctx.dp(14f)).apply { leftMargin = ctx.dp(8f) }) }
+        FocusGlide.shape(this, ctx.dp(8f).toFloat())
         paint(false)
         setOnFocusChangeListener { _, f -> paint(f) }
     }
@@ -68,7 +69,7 @@ class DashRow(ctx: Context, val item: HaItem) : LinearLayout(ctx) {
     }
 
     private fun paint(f: Boolean) {
-        background = if (f) rounded(C.FOCUS_FILL, context.dp(8f).toFloat()) else rounded(C.ROW, context.dp(8f).toFloat())
+        background = if (f) FocusGlide.fill(this, context.dp(8f).toFloat()) else rounded(C.ROW, context.dp(8f).toFloat())
         name.setTextColor(if (f) C.DARK2 else C.TEXT2)
         value.setTextColor(if (f) C.DARK else tone)
         dot?.dark = f
@@ -147,7 +148,7 @@ class DashboardActivity : Activity() {
         message = label("", 12f, C.TEXT2).apply { setPadding(dp(22f), dp(20f), dp(22f), 0); visibility = View.GONE }
         frame.panel.addView(message)
 
-        val scroll = ScrollView(this).apply {
+        val scroll = ColScroller(this).apply {
             isVerticalScrollBarEnabled = false
             overScrollMode = View.OVER_SCROLL_NEVER
             clipToPadding = false

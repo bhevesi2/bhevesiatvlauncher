@@ -84,7 +84,7 @@ class CamerasActivity : Activity() {
         if (cams.size % 2 == 1) {
             row!!.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f).apply { leftMargin = dp(12f) })
         }
-        val scroll = ScrollView(this).apply {
+        val scroll = ColScroller(this).apply {
             isVerticalScrollBarEnabled = false
             overScrollMode = View.OVER_SCROLL_NEVER
             clipToPadding = false

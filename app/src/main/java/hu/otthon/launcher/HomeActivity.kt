@@ -96,6 +96,7 @@ class HomeActivity : Activity() {
             clipToPadding = false
         }
         root.addView(content, FrameLayout.LayoutParams(-1, -1))
+        FocusGlide.install(content)
 
         // top row
         val top = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.TOP }
@@ -177,8 +178,9 @@ class HomeActivity : Activity() {
             isFocusable = true
             isClickable = true
             contentDescription = "Play / pause"
+            FocusGlide.shape(this, -1f)
             fun paint(f: Boolean) {
-                background = if (f) rounded(C.FOCUS_FILL, dp(16f).toFloat()) else rounded(0x33FFFFFF, dp(16f).toFloat())
+                background = if (f) FocusGlide.fill(this, dp(16f).toFloat()) else rounded(0x33FFFFFF, dp(16f).toFloat())
                 setColorFilter(if (f) C.DARK else C.TEXT)
             }
             paint(false)
@@ -197,11 +199,11 @@ class HomeActivity : Activity() {
         v.isClickable = true
         v.contentDescription = name
         val normal = rounded(C.GLASS_SOFT, dp(18f).toFloat(), 1, C.BORDER)
-        val focused = rounded(C.FOCUS_FILL, dp(18f).toFloat())
         v.background = normal
         v.setColorFilter(C.TEXT)
+        FocusGlide.shape(v, -1f)
         v.setOnFocusChangeListener { _, f ->
-            v.background = if (f) focused else normal
+            v.background = if (f) FocusGlide.fill(v, dp(18f).toFloat()) else normal
             v.setColorFilter(if (f) C.DARK else C.TEXT)
             if (f) showHint(v, name, above) else hideHint(v)
         }
@@ -277,7 +279,7 @@ class HomeActivity : Activity() {
         }
         topButtons.addView(gear, LinearLayout.LayoutParams(dp(36f), dp(36f)).apply { leftMargin = dp(7f) })
 
-        // bottom row: icon buttons and quick actions on the left, inputs on the right
+        // bottom row: icon buttons on the left, quick actions in the middle, inputs on the right
         bottom.removeAllViews()
         val icons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         addIcon(icons, iconButton(R.drawable.ic_grid, "All apps", true) {
@@ -298,7 +300,10 @@ class HomeActivity : Activity() {
         }
         bottom.addView(icons)
 
-        val actions = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val actions = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_HORIZONTAL
+        }
         if (cfg.haEnabled) {
             cfg.scenes.take(6).forEachIndexed { i, sc ->
                 val lp = LinearLayout.LayoutParams(-2, -2)
@@ -310,6 +315,7 @@ class HomeActivity : Activity() {
         actionScroll.clipToPadding = true
         actionScroll.clipChildren = true
         actionScroll.isFocusable = false
+        actionScroll.isFillViewport = true      // stretches the row, so its pills sit centred
         actionScroll.addView(actions)
         bottom.addView(actionScroll, LinearLayout.LayoutParams(0, -2, 1f).apply {
             leftMargin = dp(16f)

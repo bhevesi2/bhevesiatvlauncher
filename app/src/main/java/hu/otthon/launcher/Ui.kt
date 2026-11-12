@@ -1,5 +1,6 @@
 package hu.otthon.launcher
 
+import android.animation.ValueAnimator
 import android.app.Activity
 import android.app.Dialog
 import android.content.Context
@@ -8,16 +9,23 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorFilter
+import android.graphics.Outline
 import android.graphics.Paint
+import android.graphics.PixelFormat
 import android.graphics.Rect
+import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.text.InputType
+import android.view.FocusFinder
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
+import android.view.animation.DecelerateInterpolator
 import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -26,6 +34,8 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import java.util.Collections
+import java.util.WeakHashMap
 
 object C {
     const val TEXT = 0xFFF5F3EE.toInt()
@@ -91,8 +101,9 @@ fun Context.pill(text: String, iconRes: Int?, onClick: () -> Unit): TextView {
             setCompoundDrawables(icon, null, null, null)
             compoundDrawablePadding = dp(5f)
         }
+        FocusGlide.shape(this, -1f)
         fun paint(focused: Boolean) {
-            background = if (focused) rounded(C.FOCUS_FILL, dp(20f).toFloat())
+            background = if (focused) FocusGlide.fill(this, dp(20f).toFloat())
             else rounded(C.GLASS, dp(20f).toFloat(), 1, C.BORDER)
             setTextColor(if (focused) C.DARK else C.TEXT)
             icon?.setTint(if (focused) C.DARK else C.TEXT)
@@ -118,6 +129,8 @@ fun weatherIcon(condition: String): Int = when (condition) {
 /** App tile with banner (or icon + name) and focus zoom. */
 class AppTile(ctx: Context, val app: AppEntry) : FrameLayout(ctx) {
     private val ring = rounded(0, ctx.dp(8f).toFloat(), ctx.dp(2f), C.TEXT)
+    private val glass = rounded(C.GLASS, ctx.dp(8f).toFloat(), 1, C.BORDER)
+    private val solid = rounded(0xFF17181D.toInt(), ctx.dp(8f).toFloat())
     var onFocused: (() -> Unit)? = null
 
     init {
@@ -125,7 +138,8 @@ class AppTile(ctx: Context, val app: AppEntry) : FrameLayout(ctx) {
         isClickable = true
         clipToOutline = true
         outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
-        background = rounded(C.GLASS, ctx.dp(8f).toFloat(), 1, C.BORDER)
+        background = glass
+        FocusGlide.shape(this, ctx.dp(8f).toFloat(), ctx.dp(3f).toFloat())
         val banner = app.banner
         if (banner != null) {
             addView(ImageView(ctx).apply {
@@ -147,9 +161,12 @@ class AppTile(ctx: Context, val app: AppEntry) : FrameLayout(ctx) {
         }
         contentDescription = app.label
         setOnFocusChangeListener { v, f ->
-            foreground = if (f) ring else null
+            // Under the gliding cursor the tile only needs to be opaque: the cursor is its frame.
+            val glide = f && FocusGlide.covers(this)
+            foreground = if (f && !glide) ring else null
+            background = if (glide) solid else glass
             v.animate().scaleX(if (f) 1.08f else 1f).scaleY(if (f) 1.08f else 1f)
-                .translationZ(if (f) ctx.dp(6f).toFloat() else 0f).setDuration(140).start()
+                .translationZ(if (f && !glide) ctx.dp(6f).toFloat() else 0f).setDuration(140).start()
             if (f) onFocused?.invoke()
         }
     }
@@ -174,19 +191,25 @@ class CamTile(ctx: Context, val item: HaItem, radius: Float, labelSp: Float, zoo
         caption.setBackgroundColor(0x99060709.toInt())
         addView(caption, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
         contentDescription = "$name camera"
+        FocusGlide.shape(this, radius, ctx.dp(3f).toFloat())
         setOnFocusChangeListener { v, f ->
-            foreground = if (f) ring else null
+            val glide = f && FocusGlide.covers(this)
+            foreground = if (f && !glide) ring else null
             v.animate().scaleX(if (f) zoom else 1f).scaleY(if (f) zoom else 1f)
-                .translationZ(if (f) ctx.dp(6f).toFloat() else 0f).setDuration(140).start()
+                .translationZ(if (f && !glide) ctx.dp(6f).toFloat() else 0f).setDuration(140).start()
         }
     }
 }
 
 /**
- * Horizontal row that scrolls smoothly so the focused child sits inside the side padding,
- * instead of being squeezed or cut at the screen edge.
+ * Horizontal row that glides so the focused child sits inside the side padding, instead of
+ * being squeezed or cut at the screen edge. The stock scroller jumps whenever two moves come
+ * within a quarter of a second, so this one runs its own animation and retargets it.
  */
 class RowScroller(ctx: Context) : HorizontalScrollView(ctx) {
+    private var anim: ValueAnimator? = null
+    private var goal = 0
+
     init {
         isHorizontalScrollBarEnabled = false
         overScrollMode = View.OVER_SCROLL_NEVER
@@ -195,16 +218,291 @@ class RowScroller(ctx: Context) : HorizontalScrollView(ctx) {
     }
 
     override fun computeScrollDeltaToGetChildRectOnScreen(rect: Rect): Int {
-        if (childCount == 0) return 0
-        val left = scrollX + paddingLeft
-        val right = scrollX + width - paddingRight
-        val delta = when {
-            rect.left < left -> rect.left - left
-            rect.right > right -> rect.right - right
-            else -> 0
+        if (childCount == 0 || width == 0) return 0
+        val base = if (anim?.isRunning == true) goal else scrollX
+        val left = base + paddingLeft
+        val right = base + width - paddingRight
+        val to = when {
+            rect.left < left -> base + rect.left - left
+            rect.right > right -> base + rect.right - right
+            else -> base
         }
-        if (delta != 0) smoothScrollBy(delta, 0)
+        val max = maxOf(0, getChildAt(0).width + paddingLeft + paddingRight - width)
+        glideTo(to.coerceIn(0, max))
         return 0
+    }
+
+    /** Moves focus only; the scrolling follows from the method above. */
+    override fun arrowScroll(direction: Int): Boolean {
+        val current = findFocus() ?: return false
+        val next = FocusFinder.getInstance().findNextFocus(this, current, direction) ?: return false
+        return next !== this && next.requestFocus(direction)
+    }
+
+    private fun glideTo(to: Int) {
+        val running = anim?.isRunning == true
+        if (if (running) to == goal else to == scrollX) return
+        anim?.cancel()
+        goal = to
+        anim = ValueAnimator.ofInt(scrollX, to).apply {
+            duration = 260
+            interpolator = DecelerateInterpolator(1.8f)
+            addUpdateListener { scrollTo(it.animatedValue as Int, 0) }
+            start()
+        }
+    }
+}
+
+/** Vertical list with the same gliding scroll as [RowScroller]. */
+class ColScroller(ctx: Context) : ScrollView(ctx) {
+    private var anim: ValueAnimator? = null
+    private var goal = 0
+
+    init {
+        isVerticalScrollBarEnabled = false
+        overScrollMode = View.OVER_SCROLL_NEVER
+    }
+
+    override fun computeScrollDeltaToGetChildRectOnScreen(rect: Rect): Int {
+        if (childCount == 0 || height == 0) return 0
+        val base = if (anim?.isRunning == true) goal else scrollY
+        val top = base + paddingTop
+        val bottom = base + height - paddingBottom
+        var to = when {
+            rect.top < top -> base + rect.top - top
+            rect.bottom > bottom -> base + rect.bottom - bottom
+            else -> base
+        }
+        val max = maxOf(0, getChildAt(0).height + paddingTop + paddingBottom - height)
+        // Close to either end: go all the way, so a heading above the first row is not left cut.
+        val near = context.dp(48f)
+        if (to < near && rect.bottom <= height - paddingBottom) to = 0
+        else if (to > max - near && rect.top >= max + paddingTop) to = max
+        glideTo(to.coerceIn(0, max))
+        return 0
+    }
+
+    override fun arrowScroll(direction: Int): Boolean {
+        val current = findFocus()
+        val next = if (current == null) null else FocusFinder.getInstance().findNextFocus(this, current, direction)
+        if (next != null && next !== this) return next.requestFocus(direction)
+        anim?.cancel()      // nothing more to focus: let the list scroll its last part into view
+        return super.arrowScroll(direction)
+    }
+
+    private fun glideTo(to: Int) {
+        val running = anim?.isRunning == true
+        if (if (running) to == goal else to == scrollY) return
+        anim?.cancel()
+        goal = to
+        anim = ValueAnimator.ofInt(scrollY, to).apply {
+            duration = 260
+            interpolator = DecelerateInterpolator(1.8f)
+            addUpdateListener { scrollTo(0, it.animatedValue as Int) }
+            start()
+        }
+    }
+}
+
+/**
+ * The focus cursor. One light shape per screen glides from the control that had focus to the
+ * one that has it now, instead of each control lighting up on its own. It is painted as part
+ * of the host's background, so it lies under the controls: a focused control only makes its
+ * own background transparent and its text dark (see [fill]).
+ */
+class FocusGlide private constructor(private val host: View) {
+    private class Shape(val radius: Float, val outset: Float)
+
+    companion object {
+        private val hosts: MutableSet<View> = Collections.newSetFromMap(WeakHashMap<View, Boolean>())
+        private val shapes = WeakHashMap<View, Shape>()
+
+        /** Draws a cursor for every control inside [host] that has a [shape]. */
+        fun install(host: View) {
+            if (hosts.add(host)) FocusGlide(host)
+        }
+
+        /** How the cursor looks on [v]. A negative radius means fully rounded ends. */
+        fun shape(v: View, radius: Float, outset: Float = 0f) {
+            shapes[v] = Shape(radius, outset)
+        }
+
+        /** True when a cursor is drawn for [v], so [v] must not paint a highlight of its own. */
+        fun covers(v: View): Boolean {
+            if (!shapes.containsKey(v)) return false
+            var p: View? = v.parent as? View
+            while (p != null) {
+                if (hosts.contains(p)) return true
+                p = p.parent as? View
+            }
+            return false
+        }
+
+        /** Background of a focused control: nothing under a cursor, the light fill otherwise. */
+        fun fill(v: View, radius: Float): Drawable =
+            rounded(if (covers(v)) Color.TRANSPARENT else C.FOCUS_FILL, radius)
+    }
+
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = C.FOCUS_FILL }
+    private val from = RectF()
+    private val to = RectF()
+    private val now = RectF()
+    private var fromRadius = 0f
+    private var nowRadius = 0f
+    private val clip = Rect()
+    private val nextClip = Rect()
+    private var clipped = false
+    private var target: View? = null
+    private var shown = false
+    private var t = 1f
+    private var move: ValueAnimator? = null
+    private val a = IntArray(2)
+    private val b = IntArray(2)
+
+    private val onFocus = ViewTreeObserver.OnGlobalFocusChangeListener { _, v -> focusTo(v) }
+    private val onPreDraw = ViewTreeObserver.OnPreDrawListener { track(); true }
+
+    init {
+        host.background = Layer(host.background)
+        host.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(v: View) = attach()
+            override fun onViewDetachedFromWindow(v: View) {
+                v.viewTreeObserver.removeOnGlobalFocusChangeListener(onFocus)
+                v.viewTreeObserver.removeOnPreDrawListener(onPreDraw)
+            }
+        })
+        if (host.isAttachedToWindow) attach()
+    }
+
+    private fun attach() {
+        host.viewTreeObserver.addOnGlobalFocusChangeListener(onFocus)
+        host.viewTreeObserver.addOnPreDrawListener(onPreDraw)
+        focusTo(host.findFocus())
+    }
+
+    private fun inside(v: View): Boolean {
+        var p: View? = v.parent as? View
+        while (p != null) {
+            if (p === host) return true
+            p = p.parent as? View
+        }
+        return false
+    }
+
+    private fun focusTo(v: View?) {
+        val next = v?.takeIf { shapes.containsKey(it) && inside(it) }
+        if (next === target) return
+        target = next
+        move?.cancel()
+        if (next == null) {
+            shown = false
+            host.invalidate()
+            return
+        }
+        if (!shown || now.isEmpty) {
+            t = 1f                              // nothing to glide from: appear in place
+        } else {
+            from.set(now)
+            fromRadius = nowRadius
+            t = 0f
+            move = ValueAnimator.ofFloat(0f, 1f).apply {
+                duration = 200
+                interpolator = DecelerateInterpolator(1.7f)
+                addUpdateListener { t = it.animatedValue as Float; host.invalidate() }
+                start()
+            }
+        }
+        shown = true
+        host.invalidate()
+    }
+
+    /** Runs before every frame: follows the target while it scrolls, zooms or is glided to. */
+    private fun track() {
+        val v = target ?: return
+        val s = shapes[v]
+        if (s == null || !v.isAttachedToWindow || v.width == 0 || !v.isShown) {
+            if (!now.isEmpty) {
+                now.setEmpty()
+                host.invalidate()
+            }
+            return
+        }
+        host.getLocationInWindow(b)
+        v.getLocationInWindow(a)
+        val x = (a[0] - b[0]).toFloat()
+        val y = (a[1] - b[1]).toFloat()
+        to.set(x - s.outset, y - s.outset, x + v.width * v.scaleX + s.outset, y + v.height * v.scaleY + s.outset)
+        val toRadius = if (s.radius < 0) to.height() / 2 else s.radius + s.outset
+        val k = if (now.isEmpty) 1f else t
+        val l = from.left + (to.left - from.left) * k
+        val tp = from.top + (to.top - from.top) * k
+        val r = from.right + (to.right - from.right) * k
+        val bt = from.bottom + (to.bottom - from.bottom) * k
+        val rad = fromRadius + (toRadius - fromRadius) * k
+        var changed = false
+        if (k >= 1f) {
+            if (now != to || nowRadius != toRadius) {
+                now.set(to)
+                nowRadius = toRadius
+                changed = true
+            }
+        } else if (now.left != l || now.top != tp || now.right != r || now.bottom != bt || nowRadius != rad) {
+            now.set(l, tp, r, bt)
+            nowRadius = rad
+            changed = true
+        }
+
+        // Do not paint outside the lists the target scrolls in.
+        var any = false
+        var p: ViewGroup? = v.parent as? ViewGroup
+        while (p != null && p !== host) {
+            if (p is ScrollView || p is HorizontalScrollView) {
+                p.getLocationInWindow(a)
+                var cl = a[0] - b[0]
+                var ct = a[1] - b[1]
+                var cr = cl + p.width
+                var cb = ct + p.height
+                if (p.clipToPadding) {
+                    cl += p.paddingLeft; ct += p.paddingTop; cr -= p.paddingRight; cb -= p.paddingBottom
+                }
+                if (!any) nextClip.set(cl, ct, cr, cb)
+                else nextClip.set(maxOf(nextClip.left, cl), maxOf(nextClip.top, ct), minOf(nextClip.right, cr), minOf(nextClip.bottom, cb))
+                any = true
+            }
+            p = p.parent as? ViewGroup
+        }
+        if (any != clipped || (any && nextClip != clip)) {
+            clipped = any
+            clip.set(nextClip)
+            changed = true
+        }
+        if (changed) host.invalidate()
+    }
+
+    /** The host's own background with the cursor painted over it. */
+    private inner class Layer(private val base: Drawable?) : Drawable() {
+        override fun draw(canvas: Canvas) {
+            base?.draw(canvas)
+            if (!shown || now.isEmpty) return
+            val save = canvas.save()
+            if (clipped) canvas.clipRect(clip)
+            canvas.drawRoundRect(now, nowRadius, nowRadius, paint)
+            canvas.restoreToCount(save)
+        }
+
+        override fun onBoundsChange(bounds: Rect) {
+            base?.bounds = bounds
+        }
+
+        override fun getOutline(outline: Outline) {
+            if (base != null) base.getOutline(outline) else super.getOutline(outline)
+        }
+
+        override fun getPadding(padding: Rect): Boolean = base?.getPadding(padding) ?: false
+        override fun setAlpha(alpha: Int) {}
+        override fun setColorFilter(colorFilter: ColorFilter?) {}
+        @Deprecated("Deprecated in Java")
+        override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
     }
 }
 
@@ -251,13 +549,14 @@ class RowView(ctx: Context, title: String, value: String? = null, selected: Bool
         valueView.ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
         valueView.gravity = Gravity.END
         addView(valueView, LayoutParams(-2, -2).apply { leftMargin = ctx.dp(12f) })
+        FocusGlide.shape(this, ctx.dp(8f).toFloat())
         paint(false)
         setOnFocusChangeListener { _, f -> paint(f) }
     }
 
     private fun paint(f: Boolean) {
         val r = context.dp(8f).toFloat()
-        background = if (f) rounded(C.FOCUS_FILL, r) else rounded(C.ROW, r)
+        background = if (f) FocusGlide.fill(this, r) else rounded(C.ROW, r)
         titleView.setTextColor(if (f) C.DARK else if (passive) C.TEXT3 else C.TEXT)
         valueView.setTextColor(if (f) C.DARK2 else C.TEXT3)
         radio?.setTextColor(if (f) C.DARK else C.TEXT2)
@@ -278,6 +577,7 @@ object Popup {
         panel.addView(act.label(title, 15f, C.TEXT, bold = true).apply {
             setPadding(act.dp(4f), 0, act.dp(4f), act.dp(10f))
         })
+        FocusGlide.install(panel)
         root.addView(panel, FrameLayout.LayoutParams(act.dp(widthDp), -2, Gravity.CENTER))
         d.setContentView(root)
         d.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
@@ -294,7 +594,7 @@ object Popup {
             list.addView(row, LinearLayout.LayoutParams(-1, -2).apply { if (i > 0) topMargin = act.dp(4f) })
             if (i == selected || first == null) first = row
         }
-        val scroll = ScrollView(act).apply { isVerticalScrollBarEnabled = false; addView(list) }
+        val scroll = ColScroller(act).apply { addView(list) }
         val maxH = act.dp(360f)
         val wanted = items.size * act.dp(38f)
         panel.addView(scroll, LinearLayout.LayoutParams(-1, if (wanted > maxH) maxH else -2))
@@ -441,6 +741,7 @@ class PanelFrame(private val act: Activity, title: String, hint: String? = null)
         panel.background = rounded(C.PANEL, act.dp(20f).toFloat(), 1, C.BORDER)
         panel.clipToOutline = true
         panel.outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
+        FocusGlide.install(panel)
         val header = LinearLayout(act).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.BOTTOM

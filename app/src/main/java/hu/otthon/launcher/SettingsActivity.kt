@@ -63,6 +63,7 @@ class SettingsActivity : Activity() {
             clipToOutline = true
             outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
         }
+        FocusGlide.install(panel)
         val nav = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(0x0DFFFFFF)
@@ -75,6 +76,7 @@ class SettingsActivity : Activity() {
                 isFocusable = true
                 isClickable = true
                 setPadding(dp(10f), dp(8f), dp(10f), dp(8f))
+                FocusGlide.shape(this, dp(8f).toFloat())
                 setOnFocusChangeListener { _, f ->
                     if (f && i != navIndex) showRoot(i, false)
                     paintNav()
@@ -92,7 +94,7 @@ class SettingsActivity : Activity() {
         }
         crumb = label("", 17f, C.TEXT, bold = true)
         right.addView(crumb)
-        scroll = ScrollView(this).apply {
+        scroll = ColScroller(this).apply {
             isVerticalScrollBarEnabled = false
             overScrollMode = View.OVER_SCROLL_NEVER
             clipToPadding = false
@@ -205,7 +207,7 @@ class SettingsActivity : Activity() {
         navViews.forEachIndexed { i, v ->
             val f = v.isFocused
             v.background = when {
-                f -> rounded(C.FOCUS_FILL, dp(8f).toFloat())
+                f -> FocusGlide.fill(v, dp(8f).toFloat())
                 i == navIndex -> rounded(0x1FFFFFFF, dp(8f).toFloat())
                 else -> null
             }
