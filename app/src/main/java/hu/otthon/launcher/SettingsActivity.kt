@@ -525,6 +525,8 @@ class SettingsActivity : PanelActivity() {
             "scene,script,light,switch,input_boolean,button,input_button,automation,fan", false
         )
         section("Now playing card")
+        row("Music zones", "Roon") { open(Intent(this, MusicActivity::class.java)) }
+        note("The card only shows while its zone is playing. Music zones lists every Roon zone with playback buttons; OK on one that is playing puts it on the home screen.")
         row("Media player", cfg.nowPlaying ?: "None") {
             pick("Choose media player", "media_player") { entity, name ->
                 edit { r -> r.put("now_playing", entity); if (r.optString("now_playing_label").isBlank()) r.put("now_playing_label", name) }

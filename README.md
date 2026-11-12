@@ -88,8 +88,8 @@ OK on the "Now playing" card of the home screen opens the Music panel: every Roo
 Assistant with what it is playing (found with `integration_entities('roon')`, which needs an
 administrator's token; otherwise the players that are playing right now are listed). Moving over a
 zone shows it large on the left with previous / play-pause / next, which the remote's own media
-keys also control; OK on a zone puts it on the home screen card. The card stays on the home
-screen while its zone is idle, so the panel can always be opened.
+keys also control; OK on a zone puts it on the home screen card. The card only shows while its
+zone is playing or paused; the panel is also under Settings › Home screen › Music zones.
 
 ## Making it the default home app
 

@@ -495,22 +495,14 @@ class HomeActivity : Activity() {
             val state = s.optString("state")
             val a = s.optJSONObject("attributes")
             val active = (state == "playing" || state == "paused") && a != null
-            npCard.visibility = View.VISIBLE
-            npLabel.text = cfg.nowPlayingLabel
             if (!active) {
-                // stays on screen, so the Music panel can still be opened to pick another zone
-                if (npButton.hasFocus()) npCard.requestFocus()
-                npButton.visibility = View.GONE
-                npProgressTrack.visibility = View.INVISIBLE
-                npTitle.text = if (state == "unavailable") "Not available" else "Nothing playing"
-                npArtist.text = "OK: choose a zone"
-                npPicture = null
-                npCover.setImageResource(R.drawable.ic_disc)
-                npCover.setPadding(dp(12f), dp(12f), dp(12f), dp(12f))
+                // nothing playing: no card. The Music panel is then reached from Settings › Home screen.
+                if (npCard.hasFocus()) favRow.getChildAt(0)?.requestFocus()
+                npCard.visibility = View.GONE
                 return@run
             }
-            npButton.visibility = View.VISIBLE
-            npProgressTrack.visibility = View.VISIBLE
+            npCard.visibility = View.VISIBLE
+            npLabel.text = cfg.nowPlayingLabel
             npTitle.text = a!!.optString("media_title", "")
             val artist = a.optString("media_artist", "")
             val album = a.optString("media_album_name", "")
