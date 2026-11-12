@@ -36,6 +36,17 @@ class HomeActivity : Activity() {
     private lateinit var favRow: LinearLayout
     private lateinit var bottom: LinearLayout
     private lateinit var rootView: FrameLayout
+
+    // the recommendation rows below the home screen, and the page that slides up to them
+    private lateinit var page: FrameLayout
+    private lateinit var recoBox: LinearLayout
+    private lateinit var recoScroll: ColScroller
+    private lateinit var reco: RecoPanel
+    private lateinit var recoInfo: TextView
+    private lateinit var recoDim: View
+    private var expanded = false
+    private var lastBottomFocus: View? = null
+    private var recoLoading = false
     private lateinit var topButtons: LinearLayout
     private var gearButton: ImageView? = null
     private var weatherChipView: TextView? = null
@@ -92,14 +103,20 @@ class HomeActivity : Activity() {
         backdrop = Backdrop(this)
         root.addView(backdrop, FrameLayout.LayoutParams(-1, -1))
 
+        recoDim = View(this).apply { setBackgroundColor(0xCC07080B.toInt()); alpha = 0f }
+        root.addView(recoDim, FrameLayout.LayoutParams(-1, -1))
+        page = FrameLayout(this).apply { clipChildren = false }
+        root.addView(page, FrameLayout.LayoutParams(-1, -1))
+
         content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(0, dp(34f), 0, dp(30f))
             clipChildren = false
             clipToPadding = false
         }
-        root.addView(content, FrameLayout.LayoutParams(-1, -1))
+        page.addView(content, FrameLayout.LayoutParams(-1, -1))
         FocusGlide.install(content)
+        buildReco()
 
         // top row
         val top = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.TOP }
@@ -148,6 +165,149 @@ class HomeActivity : Activity() {
         root.addView(hint, FrameLayout.LayoutParams(-2, -2))
 
         setContentView(root)
+    }
+
+    /**
+     * The recommendations live just below the bottom row, outside the screen. Down on the bottom
+     * row slides the page up so the bottom row sits at the top and the rows fill the rest.
+     */
+    private fun buildReco() {
+        recoBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            clipChildren = false
+            descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+        }
+        recoInfo = label("", 12f, C.TEXT2).apply {
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(dp(48f), 0, dp(48f), dp(6f))
+        }
+        recoBox.addView(recoInfo, LinearLayout.LayoutParams(-1, -2))
+        recoScroll = ColScroller(this).apply { clipToPadding = false; clipChildren = false }
+        reco = RecoPanel(this)
+        recoScroll.addView(reco, FrameLayout.LayoutParams(-1, -2))
+        recoBox.addView(recoScroll, LinearLayout.LayoutParams(-1, 0, 1f))
+        page.addView(recoBox, FrameLayout.LayoutParams(-1, 0))
+        FocusGlide.install(recoBox)
+
+        reco.onCard = { card ->
+            val p = card?.program
+            recoInfo.text = if (p == null) "" else listOf(p.title, p.subtitle, p.description).filter { it.isNotBlank() }.joinToString("   ·   ")
+        }
+        reco.onAllow = {
+            if (android.os.Build.VERSION.SDK_INT >= 23) requestPermissions(arrayOf(Reco.PERMISSION), 11)
+        }
+        reco.onHold = { card ->
+            val pkg = card.program.pkg
+            val app = Apps.one(this, pkg)?.label ?: pkg
+            Popup.menu(this, card.program.title, listOf("Open", "Hide recommendations from $app")) { which ->
+                if (which == 0) Reco.open(this, card.program, card.row)
+                else {
+                    ConfigStore.edit(this) { r -> ConfigStore.array(r, "reco_hidden").put(pkg) }
+                    cfg = Config.load(this)
+                    loadReco()
+                }
+            }
+        }
+        // keep the rows right under the bottom row, as tall as the screen minus the bottom row
+        page.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> placeReco() }
+        window.decorView.viewTreeObserver.addOnGlobalFocusChangeListener { _, now ->
+            if (now == null) return@addOnGlobalFocusChangeListener
+            if (expanded && isInside(now, content)) collapse(false)
+            if (!expanded && isInside(now, bottom)) lastBottomFocus = now
+        }
+    }
+
+    private fun isInside(v: View, parent: View): Boolean {
+        var p: View? = v
+        while (p != null) {
+            if (p === parent) return true
+            p = p.parent as? View
+        }
+        return false
+    }
+
+    private fun placeReco() {
+        if (bottom.height == 0) return
+        val top = bottom.bottom + content.top + dp(16f)
+        val height = page.height - (bottom.height + dp(40f))
+        val lp = recoBox.layoutParams as FrameLayout.LayoutParams
+        if (lp.topMargin != top || lp.height != height) {
+            lp.topMargin = top
+            lp.height = height
+            recoBox.layoutParams = lp
+        }
+    }
+
+    private fun expand() {
+        if (expanded || reco.firstFocusable == null) return
+        expanded = true
+        recoBox.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
+        val shift = -(bottom.top + content.top - dp(22f)).toFloat()
+        val ms = if (Motion.level == Motion.OFF) 0L else 320L
+        page.animate().translationY(shift).setDuration(ms).setInterpolator(android.view.animation.DecelerateInterpolator(2f)).start()
+        recoDim.animate().alpha(1f).setDuration(ms).start()
+        reco.firstFocusable?.requestFocus()
+        loadReco()
+    }
+
+    private fun collapse(moveFocus: Boolean) {
+        if (!expanded) return
+        expanded = false
+        val ms = if (Motion.level == Motion.OFF) 0L else 280L
+        page.animate().translationY(0f).setDuration(ms).setInterpolator(android.view.animation.DecelerateInterpolator(2f)).start()
+        recoDim.animate().alpha(0f).setDuration(ms).start()
+        if (moveFocus) (lastBottomFocus?.takeIf { it.isAttachedToWindow && isInside(it, bottom) } ?: bottom.getChildAt(0))?.requestFocus()
+        recoBox.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+        recoScroll.scrollTo(0, 0)
+        recoInfo.text = ""
+    }
+
+    /** Reads the apps' rows in the background; the first rows are the favorites' apps. */
+    private fun loadReco() {
+        if (!cfg.recommendations) {
+            recoBox.visibility = View.GONE
+            return
+        }
+        recoBox.visibility = View.VISIBLE
+        if (!Reco.allowed(this)) {
+            reco.showAsk()
+            return
+        }
+        if (recoLoading) return
+        recoLoading = true
+        val app = applicationContext
+        val order = FavStore.get(this, cfg)
+        val hidden = cfg.recoHidden
+        Bg.run({ Reco.load(app, order, hidden) }) { rows ->
+            recoLoading = false
+            if (rows.isNullOrEmpty()) reco.showEmpty()
+            else reco.show(rows) { pkg -> Apps.one(this, pkg)?.let { AppColors.of(it) } ?: 0xFFE9E7E2.toInt() }
+            if (expanded && currentFocus?.let { isInside(it, recoBox) } != true) reco.firstFocusable?.requestFocus()
+        }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 11) loadReco()
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        val down = event.action == KeyEvent.ACTION_DOWN
+        val focus = currentFocus
+        if (!expanded && down && event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN && focus != null && isInside(focus, bottom) &&
+            cfg.recommendations && reco.firstFocusable != null
+        ) {
+            lastBottomFocus = focus
+            expand()
+            return true
+        }
+        if (expanded && event.keyCode == KeyEvent.KEYCODE_BACK) {
+            if (!down) collapse(true)
+            return true
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     private fun buildNowPlaying() {
@@ -446,6 +606,7 @@ class HomeActivity : Activity() {
         PopupService.sync(this)
         markUpdate()
         checkUpdates()
+        loadReco()
         if (ha != null) {
             Bg.main.post(statusLoop)
             if (cfg.nowPlaying != null) Bg.main.post(npLoop)
@@ -462,6 +623,7 @@ class HomeActivity : Activity() {
 
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
+        collapse(false)
         favRow.getChildAt(0)?.takeIf { it.isFocusable }?.requestFocus()
     }
 

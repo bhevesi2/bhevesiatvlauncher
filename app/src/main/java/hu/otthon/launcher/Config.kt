@@ -53,7 +53,10 @@ data class Config(
     /** Live camera video over RTSP instead of still pictures. */
     val liveVideo: Boolean,
     /** Stream address; {host} is Home Assistant's address, {camera} the camera's name. */
-    val liveUrl: String
+    val liveUrl: String,
+    /** The streaming apps' recommendation rows below the home screen. */
+    val recommendations: Boolean,
+    val recoHidden: Set<String>
 ) {
     val haEnabled: Boolean get() = !haUrl.isNullOrBlank() && !haToken.isNullOrBlank()
 
@@ -110,7 +113,9 @@ data class Config(
                 weatherChip = json.optBoolean("weather_chip", true),
                 todoLists = json.optJSONArray("todo_lists")?.let { items(it) } ?: listOf(HaItem("todo.shopping_list", "")),
                 liveVideo = (json.optJSONObject("live") ?: JSONObject()).optBoolean("enabled", false),
-                liveUrl = (json.optJSONObject("live") ?: JSONObject()).optString("url", "").ifBlank { DEFAULT_LIVE_URL }
+                liveUrl = (json.optJSONObject("live") ?: JSONObject()).optString("url", "").ifBlank { DEFAULT_LIVE_URL },
+                recommendations = json.optBoolean("recommendations", true),
+                recoHidden = strings(json.optJSONArray("reco_hidden")).toSet()
             )
         }
 

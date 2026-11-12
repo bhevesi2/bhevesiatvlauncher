@@ -91,6 +91,15 @@ zone shows it large on the left with previous / play-pause / next, which the rem
 keys also control; OK on a zone puts it on the home screen card. The card only shows while its
 zone is playing or paused; the panel is also under Settings › Home screen › Music zones.
 
+## Recommendations
+
+Down on the bottom row of the home screen slides the page up: the bottom row stays at the top and
+the streaming apps' rows fill the screen, "Continue watching" first, then the favorites' apps.
+They are the preview channels and Watch Next programmes apps publish to the TV's listings provider,
+the same ones the Google TV home shows; reading them needs `READ_TV_LISTINGS`, which the launcher
+asks for the first time (Allow). OK opens a programme, Hold OK hides an app's rows, Back or Up
+returns. Settings › Home screen › Recommendations switches them off.
+
 ## Camera pop-ups
 
 When one of the chosen sensors turns on (by default: Frigate seeing a person on any camera of the

@@ -5,6 +5,8 @@
     <!-- camera pop-ups over other apps (granted over ADB) and the service that watches for them -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- the streaming apps' recommendation rows, as the Google TV home reads them -->
+    <uses-permission android:name="android.permission.READ_TV_LISTINGS" />
 
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />

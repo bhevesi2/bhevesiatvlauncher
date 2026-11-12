@@ -501,6 +501,15 @@ class SettingsActivity : PanelActivity() {
             pick("Choose this TV's Android TV (ADB) player", "media_player") { entity, _ -> edit { it.put("adb_entity", entity) } }
         }
         note("The TV only allows this change over ADB, so the launcher asks Home Assistant's Android TV (ADB) integration to do it. Choosing this launcher switches the Google TV home app off, because the TV otherwise always prefers it; choosing Google TV home switches it back on. Nothing is uninstalled.")
+        section("Recommendations")
+        toggle("Rows from the streaming apps below the home screen", cfg.recommendations) { on -> edit { it.put("recommendations", on) } }
+        if (cfg.recoHidden.isNotEmpty()) {
+            val names = cfg.recoHidden.map { Apps.one(this, it)?.label ?: it }.joinToString(", ")
+            row("Hidden", names) { edit { it.remove("reco_hidden") } }
+            note("OK shows the hidden apps' rows again. Hold OK on a recommendation to hide its app.")
+        } else {
+            note("Press Down on the bottom row of the home screen to see them. Hold OK on a recommendation to hide its app.")
+        }
         section("Weather chip")
         toggle("Show the weather before the status chips", cfg.weatherChip) { on -> edit { it.put("weather_chip", on) } }
         if (cfg.weather == null) note("Choose a weather source under Dashboard › Weather first.")
