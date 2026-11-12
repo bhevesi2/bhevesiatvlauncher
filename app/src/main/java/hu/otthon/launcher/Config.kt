@@ -251,11 +251,13 @@ object Backgrounds {
         val list = ArrayList<Option>()
         try {
             ctx.assets.list("backgrounds")?.sorted()?.forEach { name ->
-                list.add(Option("asset:$name", title(name), "Photos"))
+                val n = files(ctx, "asset:$name").size
+                list.add(Option("asset:$name", title(name), if (n > 4) "$n photos, a new one every hour" else "Photos"))
             }
         } catch (e: Exception) { }
         ctx.getExternalFilesDir("backgrounds")?.listFiles()?.filter { it.isDirectory }?.sortedBy { it.name }?.forEach {
-            list.add(Option("foto:${it.name}", title(it.name), "Your photos"))
+            val n = files(ctx, "foto:${it.name}").size
+            list.add(Option("foto:${it.name}", title(it.name), if (n > 4) "Your photos: $n, a new one every hour" else "Your photos"))
         }
         list.add(Option("alpine", "Alpine lake", "Illustration"))
         list.add(Option("hills", "Rolling hills", "Illustration"))

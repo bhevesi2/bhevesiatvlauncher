@@ -1,6 +1,7 @@
 package hu.otthon.launcher
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
@@ -18,6 +19,8 @@ object DashIcons {
     private val POWER = setOf("W", "kW", "Wh", "kWh")
     private val TIME = setOf("h", "min", "s")
     private val CARS = arrayOf("car", "xdrive", "bmw", "skoda", "ford", "tdi", "mondeo", "tesla", "audi", "vw_", "volkswagen", "toyota")
+
+    fun looksLikeCar(entity: String): Boolean = entity.lowercase().let { e -> CARS.any { e.contains(it) } }
 
     fun pick(item: HaItem, deviceClass: String, unit: String): Int {
         val e = item.entity.lowercase()
@@ -50,15 +53,23 @@ object DashIcons {
     }
 }
 
+/** Anything on the dashboard that shows live entities. */
+interface DashCell {
+    val items: List<HaItem>
+    fun bind(item: HaItem, s: JSONObject?)
+}
+
 /**
  * One entity on the dashboard, drawn as a tile.
  *
  *  - a number gets its value with a small curve of the last 24 hours,
  *  - a percentage gets a level bar,
  *  - anything with a state gets a round badge that lights up while it is on, open or home,
- *  - the first tile of a section can be a tall "hero": a thermostat dial, a big curve, a big badge.
+ *  - the first tile of a section can be a tall "hero": a thermostat dial, a big curve, a big badge,
+ *  - [control] tiles are the things you can switch: a wide row with a switch, "Run" or the choice.
  */
-class DashTile(ctx: Context, val item: HaItem, val hero: Boolean) : View(ctx) {
+class DashTile(ctx: Context, val item: HaItem, val hero: Boolean, val control: Boolean = false) : View(ctx), DashCell {
+    override val items = listOf(item)
     var state: JSONObject? = null
         private set
 
@@ -87,7 +98,9 @@ class DashTile(ctx: Context, val item: HaItem, val hero: Boolean) : View(ctx) {
     private val radius = 10f * d
 
     /** True once the tile shows a plain number, which is when a history curve makes sense. */
-    val wantsSpark: Boolean get() = numeric && fraction.isNaN() && item.domain != "climate"
+    val wantsSpark: Boolean get() = !control && numeric && fraction.isNaN() && item.domain != "climate"
+
+    override fun bind(item: HaItem, s: JSONObject?) = bind(s)
 
     init {
         isFocusable = true
@@ -164,6 +177,7 @@ class DashTile(ctx: Context, val item: HaItem, val hero: Boolean) : View(ctx) {
     override fun onDraw(c: Canvas) {
         val f = isFocused
         when {
+            control -> drawControl(c, f)
             hero && item.domain == "climate" -> drawDial(c, f)
             hero && wantsSpark -> drawBigNumber(c, f)
             hero -> drawBadge(c, f, big = true)
@@ -184,6 +198,24 @@ class DashTile(ctx: Context, val item: HaItem, val hero: Boolean) : View(ctx) {
         val shown = TextUtils.ellipsize(s, text, maxWidth, TextUtils.TruncateAt.END).toString()
         c.drawText(shown, x, baseline, text)
         return text.measureText(shown)
+    }
+
+    /** Splits a name over at most two lines at a space; what still does not fit ends in "…". */
+    private fun nameLines(s: String, maxWidth: Float, size: Float): List<String> {
+        text.textSize = size * sp
+        text.typeface = regular
+        if (maxWidth <= 0f || text.measureText(s) <= maxWidth) return listOf(s)
+        val words = s.split(' ')
+        var line = ""
+        var used = 0
+        for (word in words) {
+            val longer = if (line.isEmpty()) word else "$line $word"
+            if (text.measureText(longer) > maxWidth) break
+            line = longer
+            used++
+        }
+        if (used == 0 || used == words.size) return listOf(s)
+        return listOf(line, words.drop(used).joinToString(" "))
     }
 
     /** Round badge with the entity's icon, name and state; a level bar when there is a percentage. */
@@ -228,8 +260,15 @@ class DashTile(ctx: Context, val item: HaItem, val hero: Boolean) : View(ctx) {
             write(c, item.title, x, cy - 8f * d - lift, room, 11f, regular, ink2(f))
             write(c, value, x, cy + 15f * d - lift, room, 19f, medium, valueColor)
         } else {
-            write(c, item.title, x, cy - 3.5f * d - lift, room, 10f, regular, ink2(f))
-            write(c, value, x, cy + 11.5f * d - lift, room, 13f, medium, valueColor)
+            val name = nameLines(item.title, room, 10f)
+            if (name.size == 1) {
+                write(c, name[0], x, cy - 4f * d - lift, room, 10f, regular, ink2(f))
+                write(c, value, x, cy + 12f * d - lift, room, 13f, medium, valueColor)
+            } else {
+                write(c, name[0], x, cy - 13.5f * d - lift, room, 10f, regular, ink2(f))
+                write(c, name[1], x, cy - 2f * d - lift, room, 10f, regular, ink2(f))
+                write(c, value, x, cy + 15f * d - lift, room, 13f, medium, valueColor)
+            }
         }
         if (hasBar) {
             val top = h - (if (big) 16f else 9f) * d
@@ -247,10 +286,75 @@ class DashTile(ctx: Context, val item: HaItem, val hero: Boolean) : View(ctx) {
         val w = width.toFloat()
         val h = height.toFloat()
         val pad = 11f * d
-        write(c, item.title, pad, 20f * d, w - 2 * pad, 10f, regular, ink2(f))
-        val used = write(c, value, pad, h - 12f * d, w - 2 * pad, 14f, medium, ink(f))
+        val name = nameLines(item.title, w - 2 * pad, 10f)
+        write(c, name[0], pad, (if (name.size == 1) 19f else 17f) * d, w - 2 * pad, 10f, regular, ink2(f))
+        if (name.size > 1) write(c, name[1], pad, 28.5f * d, w - 2 * pad, 10f, regular, ink2(f))
+        val used = write(c, value, pad, h - (if (name.size == 1) 11f else 9.5f) * d, w - 2 * pad, 14f, medium, ink(f))
         val left = maxOf(pad + used + 10f * d, w * 0.5f)
-        drawCurve(c, f, left, 27f * d, w - pad, h - 10f * d, fill = false)
+        drawCurve(c, f, left, (if (name.size == 1) 27f else 35f) * d, w - pad, h - 9f * d, fill = false)
+    }
+
+    /** Something you can switch: badge and name on the left; a switch, "Run" or the current choice on the right. */
+    private fun drawControl(c: Canvas, f: Boolean) {
+        val w = width.toFloat()
+        val h = height.toFloat()
+        val pad = 10f * d
+        val r = 13f * d
+        val cx = pad + r
+        val cy = h / 2f
+        p.style = Paint.Style.FILL
+        p.color = when {
+            active && f -> C.DARK
+            active -> accent
+            f -> 0x1F141413
+            else -> 0x1FFFFFFF
+        }
+        c.drawCircle(cx, cy, r, p)
+        icon?.let { ic ->
+            val half = (7.5f * d).toInt()
+            ic.setBounds(cx.toInt() - half, cy.toInt() - half, cx.toInt() + half, cy.toInt() + half)
+            ic.setTint(if (active && f) accent else if (active) C.DARK else ink2(f))
+            ic.draw(c)
+        }
+        val x = cx + r + 10f * d
+        var right = w - pad
+        when (Actions.kind(item)) {
+            Actions.Kind.TOGGLE -> {
+                val tw = 28f * d
+                val th = 15f * d
+                val left = right - tw
+                p.color = when {
+                    dead -> faint(f)
+                    active && f -> C.DARK
+                    active -> accent
+                    f -> 0x40141413
+                    else -> 0x40FFFFFF
+                }
+                c.drawRoundRect(left, cy - th / 2, right, cy + th / 2, th / 2, th / 2, p)
+                p.color = when {
+                    active && f -> accent
+                    active -> C.DARK
+                    f -> C.DARK2
+                    else -> C.TEXT
+                }
+                val knob = th / 2 - 2.5f * d
+                c.drawCircle(if (active) right - th / 2 else left + th / 2, cy, knob, p)
+                right = left - 10f * d
+            }
+            Actions.Kind.RUN -> {
+                text.textAlign = Paint.Align.RIGHT
+                val used = write(c, "Run  ›", right, cy + 4f * d, 60f * d, 11f, medium, ink2(f))
+                text.textAlign = Paint.Align.LEFT
+                right -= used + 10f * d
+            }
+            else -> {
+                text.textAlign = Paint.Align.RIGHT
+                val used = write(c, value, right, cy + 4f * d, (w - x) * 0.5f, 11f, medium, if (f) C.DARK else C.TEXT)
+                text.textAlign = Paint.Align.LEFT
+                right -= used + 10f * d
+            }
+        }
+        write(c, item.title, x, cy + 4.3f * d, right - x, 12f, regular, ink(f))
     }
 
     /** The same on a tall tile: a big value over a wide curve. */
@@ -362,6 +466,178 @@ class DashTile(ctx: Context, val item: HaItem, val hero: Boolean) : View(ctx) {
             "climate", "input_select", "select", "alarm_control_panel", "vacuum" -> true
             "sensor" -> item.entity.contains("power")
             else -> false
+        }
+    }
+}
+
+/**
+ * A car: its picture, where it is, and the readings listed after it in the section
+ * (fuel, range, locks, windows ...). A percentage among them becomes the level bar.
+ */
+class CarCard(ctx: Context, val tracker: HaItem, val details: List<HaItem>) : View(ctx), DashCell {
+    override val items = listOf(tracker) + details
+    private val states = HashMap<String, JSONObject?>()
+    private var picture: Bitmap? = null
+    private val icons = HashMap<Int, Drawable?>()
+
+    private val d = resources.displayMetrics.density
+    private val sp = d * resources.configuration.fontScale
+    private val text = TextPaint(Paint.ANTI_ALIAS_FLAG)
+    private val p = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val box = RectF()
+    private val dst = RectF()
+    private val clip = Path()
+    private val regular = Typeface.create("sans-serif", Typeface.NORMAL)
+    private val medium = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+    private val radius = 10f * d
+
+    init {
+        isFocusable = true
+        isClickable = true
+        contentDescription = tracker.title
+        FocusGlide.shape(this, radius)
+        paintBackground(false)
+        setOnFocusChangeListener { _, f ->
+            paintBackground(f)
+            invalidate()
+        }
+    }
+
+    private fun paintBackground(f: Boolean) {
+        background = if (f) FocusGlide.fill(this, radius) else rounded(0x14FFFFFF, radius)
+    }
+
+    fun stateOf(item: HaItem): JSONObject? = states[item.entity]
+
+    fun setPicture(b: Bitmap?) {
+        picture = b
+        invalidate()
+    }
+
+    override fun bind(item: HaItem, s: JSONObject?) {
+        states[item.entity] = s
+        invalidate()
+    }
+
+    private fun icon(res: Int): Drawable? = icons.getOrPut(res) { context.getDrawable(res)?.mutate() }
+
+    private fun write(c: Canvas, s: String, x: Float, baseline: Float, maxWidth: Float, size: Float, face: Typeface, color: Int) {
+        if (maxWidth <= 0f) return
+        text.textSize = size * sp
+        text.typeface = face
+        text.color = color
+        c.drawText(TextUtils.ellipsize(s, text, maxWidth, TextUtils.TruncateAt.END).toString(), x, baseline, text)
+    }
+
+    override fun onDraw(c: Canvas) {
+        val f = isFocused
+        val w = width.toFloat()
+        val h = height.toFloat()
+        val pad = 10f * d
+        val ink = if (f) C.DARK else C.TEXT
+        val ink2 = if (f) C.DARK2 else C.TEXT2
+        val faint = if (f) 0x30141413 else 0x26FFFFFF
+
+        // picture: a cut-out render is shown whole, a photo fills the box with rounded corners
+        box.set(pad, pad, pad + 112f * d, h - pad)
+        val b = picture
+        if (b != null && b.width > 0 && b.height > 0) {
+            val cover = !b.hasAlpha()
+            val sx = box.width() / b.width
+            val sy = box.height() / b.height
+            val scale = if (cover) maxOf(sx, sy) else minOf(sx, sy)
+            val bw = b.width * scale
+            val bh = b.height * scale
+            dst.set(box.centerX() - bw / 2, box.centerY() - bh / 2, box.centerX() + bw / 2, box.centerY() + bh / 2)
+            p.alpha = 255
+            if (cover) {
+                val save = c.save()
+                clip.rewind()
+                clip.addRoundRect(box, 7f * d, 7f * d, Path.Direction.CW)
+                c.clipPath(clip)
+                c.drawBitmap(b, null, dst, p)
+                c.restoreToCount(save)
+            } else {
+                c.drawBitmap(b, null, dst, p)
+            }
+        } else {
+            p.style = Paint.Style.FILL
+            p.color = if (f) 0x14141413 else 0x12FFFFFF
+            c.drawRoundRect(box, 7f * d, 7f * d, p)
+            icon(R.drawable.ic_car)?.let { ic ->
+                val half = (22f * d).toInt()
+                ic.setBounds(box.centerX().toInt() - half, box.centerY().toInt() - half, box.centerX().toInt() + half, box.centerY().toInt() + half)
+                ic.setTint(if (f) C.DARK2 else C.TEXT3)
+                ic.draw(c)
+            }
+        }
+
+        val x = box.right + 12f * d
+        val room = w - x - pad
+        write(c, tracker.title, x, 23f * d, room, 12.5f, medium, ink)
+
+        // where it is
+        val where = states[tracker.entity]?.optString("state") ?: ""
+        val home = where == "home"
+        val place = when (where) {
+            "" -> "…"
+            "home" -> "Home"
+            "not_home" -> "Away"
+            "unavailable", "unknown" -> "–"
+            else -> where.replace('_', ' ').replaceFirstChar { it.uppercase() }
+        }
+        p.style = Paint.Style.FILL
+        p.color = if (home && !f) C.ON else ink2
+        c.drawCircle(x + 3.5f * d, 36.5f * d, 3.5f * d, p)
+        write(c, place, x + 12f * d, 40f * d, room - 12f * d, 10.5f, regular, if (home && !f) C.ON else ink2)
+
+        // readings: icon and value, two to a line
+        var fraction = Float.NaN
+        val half = room / 2f
+        var shown = 0
+        for (item in details) {
+            val s = states[item.entity]
+            val st = s?.optString("state") ?: ""
+            val a = s?.optJSONObject("attributes")
+            val unit = a?.optString("unit_of_measurement", "") ?: ""
+            val deviceClass = a?.optString("device_class", "") ?: ""
+            val n = st.toDoubleOrNull()
+            if (fraction.isNaN() && unit == "%" && n != null) fraction = (n / 100.0).toFloat().coerceIn(0f, 1f)
+            if (shown >= 4) continue
+            val low = unit == "%" && n != null && n < 15.0
+            val open = item.domain == "binary_sensor" && st == "on" && deviceClass in DashTile.ATTENTION
+            val unlocked = st.contains("unlock")
+            val warn = (low || open || unlocked) && !f
+            val cx = x + (shown % 2) * half
+            val baseline = 60f * d + (shown / 2) * 17.5f * d
+            icon(DashIcons.pick(item, deviceClass, unit))?.let { ic ->
+                val size = (12f * d).toInt()
+                val top = (baseline - 10.5f * d).toInt()
+                ic.setBounds(cx.toInt(), top, cx.toInt() + size, top + size)
+                ic.setTint(if (warn) DashTile.AMBER else ink2)
+                ic.draw(c)
+            }
+            write(c, if (s == null) "…" else Fmt.value(item.entity, s), cx + 16f * d, baseline, half - 20f * d, 10.5f, regular, if (warn) DashTile.AMBER else ink)
+            shown++
+        }
+        if (!fraction.isNaN()) {
+            val top = h - 12f * d
+            val r = 1.5f * d
+            p.color = faint
+            c.drawRoundRect(x, top, w - pad, top + 3f * d, r, r, p)
+            p.color = if (fraction < 0.15f && !f) DashTile.AMBER else ink
+            c.drawRoundRect(x, top, x + (w - pad - x) * fraction, top + 3f * d, r, r, p)
+        }
+    }
+
+    companion object {
+        private val WORDS = arrayOf("car", "vehicle", "auto")
+
+        /** A tracker is shown as a car when it is called like one, or sits in a section called like that. */
+        fun isCar(item: HaItem, section: String): Boolean {
+            if (item.domain != "device_tracker") return false
+            val title = section.lowercase()
+            return WORDS.any { title.contains(it) } || DashIcons.looksLikeCar(item.entity)
         }
     }
 }

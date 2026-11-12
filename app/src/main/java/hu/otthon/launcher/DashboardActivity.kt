@@ -1,5 +1,6 @@
 package hu.otthon.launcher
 
+import android.graphics.Bitmap
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -10,6 +11,7 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
+import android.text.TextUtils
 import android.widget.TextView
 import android.widget.Toast
 import org.json.JSONObject
@@ -46,6 +48,8 @@ class DashboardActivity : PanelActivity() {
     private lateinit var message: TextView
     private val columns = ArrayList<LinearLayout>()
     private val tiles = ArrayList<DashTile>()
+    private val cells = ArrayList<DashCell>()
+    private val cars = ArrayList<CarCard>()
     private val sparkPending = HashSet<String>()
     private var builtFor: String? = null
     private var lastForecast = 0L
@@ -84,7 +88,7 @@ class DashboardActivity : PanelActivity() {
         val header = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.BOTTOM }
         header.addView(label("Home", 17f, C.TEXT, bold = true))
         header.addView(
-            label("OK: switch or statistics   ·   Hold OK: statistics", 10f, C.TEXT3).apply { setPadding(dp(14f), 0, 0, dp(1f)) },
+            label("OK: switch, or statistics   ·   Hold OK: statistics", 10f, C.TEXT3).apply { setPadding(dp(14f), 0, 0, dp(1f)) },
             LinearLayout.LayoutParams(0, -2, 1f)
         )
         clock = label("", 12f, C.TEXT2)
@@ -134,16 +138,14 @@ class DashboardActivity : PanelActivity() {
         }
         val nowRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         weatherIconView = ImageView(this).apply { setColorFilter(C.TEXT) }
-        nowRow.addView(weatherIconView, LinearLayout.LayoutParams(dp(34f), dp(34f)))
-        weatherTemp = label("", 30f, C.TEXT, light = true).apply { setPadding(dp(10f), 0, dp(12f), 0) }
+        nowRow.addView(weatherIconView, LinearLayout.LayoutParams(dp(32f), dp(32f)))
+        weatherTemp = label("", 28f, C.TEXT, light = true).apply { setPadding(dp(10f), 0, dp(12f), 0) }
         nowRow.addView(weatherTemp)
-        val words = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        weatherText = label("", 13f, C.TEXT, bold = true).apply { maxLines = 1 }
-        weatherSub = label("", 10f, C.TEXT3).apply { maxLines = 1; setPadding(0, dp(3f), 0, 0) }
-        words.addView(weatherText, LinearLayout.LayoutParams(-2, -2))
-        words.addView(weatherSub, LinearLayout.LayoutParams(-2, -2))
-        nowRow.addView(words, LinearLayout.LayoutParams(0, -2, 1f))
+        weatherText = label("", 13f, C.TEXT, bold = true).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
+        nowRow.addView(weatherText, LinearLayout.LayoutParams(0, -2, 1f))
         weatherBox.addView(nowRow, LinearLayout.LayoutParams(-1, -2))
+        weatherSub = label("", 10f, C.TEXT3).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
+        weatherBox.addView(weatherSub, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(5f) })
         forecastRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         weatherBox.addView(forecastRow, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12f) })
     }
@@ -243,59 +245,130 @@ class DashboardActivity : PanelActivity() {
     private fun showMessage(text: String) {
         columns.forEach { it.removeAllViews() }
         tiles.clear()
+        cells.clear()
+        cars.clear()
         builtFor = null
         message.text = text
         message.visibility = View.VISIBLE
     }
 
-    /** Lays the sections out as blocks, each into the column that is shortest so far. */
+    /**
+     * Lays the dashboard out. Everything that can be switched goes into one "Switches" block
+     * at the top of the last column; what is left of each section becomes a block of tiles in
+     * whichever column is shortest so far. Cars get a card with their picture.
+     */
     private fun build(visible: List<DashSection>) {
         columns.forEach { it.removeAllViews() }
         tiles.clear()
+        cells.clear()
+        cars.clear()
         val heights = FloatArray(columns.size)
         (weatherBox.parent as? ViewGroup)?.removeView(weatherBox)
         if (cfg.weather != null) {
             columns[0].addView(weatherBox, LinearLayout.LayoutParams(-1, -2))
-            heights[0] += 2.6f
+            heights[0] += 2.5f
         }
-        for (sec in visible) {
-            var col = 0
-            for (i in heights.indices) if (heights[i] < heights[col]) col = i
-            val column = columns[col]
-            column.addView(label(sec.title, 11f, C.TEXT2, bold = true), LinearLayout.LayoutParams(-2, -2).apply {
+
+        fun title(column: LinearLayout, text: String) {
+            column.addView(label(text, 11f, C.TEXT2, bold = true), LinearLayout.LayoutParams(-2, -2).apply {
                 topMargin = if (column.childCount > 0) dp(15f) else dp(2f)
                 leftMargin = dp(2f)
             })
+        }
+
+        fun isSwitch(item: HaItem) = when (Actions.kind(item)) {
+            Actions.Kind.TOGGLE, Actions.Kind.RUN, Actions.Kind.SELECT -> true
+            else -> false
+        }
+
+        // switches first, pinned to the top of the last column
+        val last = columns.size - 1
+        if (visible.any { sec -> sec.items.any { isSwitch(it) } }) {
+            val column = columns[last]
+            title(column, "Switches")
+            var used = 0.5f
+            for (sec in visible) {
+                val switches = sec.items.filter { isSwitch(it) }
+                if (switches.isEmpty()) continue
+                column.addView(label(sec.title, 10f, C.TEXT3), LinearLayout.LayoutParams(-2, -2).apply {
+                    topMargin = dp(8f)
+                    leftMargin = dp(2f)
+                })
+                used += 0.35f
+                for (item in switches) {
+                    val tile = DashTile(this, item, hero = false, control = true)
+                    tile.setOnClickListener { onTileClick(tile) }
+                    tile.setOnLongClickListener { showStats(tile.item, tile.state); true }
+                    tiles.add(tile)
+                    cells.add(tile)
+                    column.addView(tile, LinearLayout.LayoutParams(-1, dp(46f)).apply { topMargin = dp(6f) })
+                    used += 0.85f
+                }
+            }
+            heights[last] += used
+        }
+
+        for (sec in visible) {
+            val status = sec.items.filter { !isSwitch(it) }
+            if (status.isEmpty()) continue
+            var col = 0
+            for (i in heights.indices) if (heights[i] < heights[col]) col = i
+            val column = columns[col]
+            title(column, sec.title)
             var used = 0.5f
             var row: LinearLayout? = null
-            sec.items.forEachIndexed { i, item ->
-                val hero = i == 0 && DashTile.canBeHero(item)
+            var i = 0
+            var first = true
+            while (i < status.size) {
+                val item = status[i]
+                if (CarCard.isCar(item, sec.title)) {
+                    // the readings up to the next car belong to this one
+                    var end = i + 1
+                    while (end < status.size && status[end].domain != "device_tracker") end++
+                    val card = CarCard(this, item, status.subList(i + 1, end).toList())
+                    card.setOnClickListener { onCarClick(card) }
+                    card.setOnLongClickListener { showStats(card.tracker, card.stateOf(card.tracker)); true }
+                    cells.add(card)
+                    cars.add(card)
+                    row?.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f).apply { leftMargin = dp(7f) })
+                    row = null
+                    column.addView(card, LinearLayout.LayoutParams(-1, dp(100f)).apply { topMargin = dp(7f) })
+                    used += 1.75f
+                    i = end
+                    first = false
+                    continue
+                }
+                val hero = first && DashTile.canBeHero(item)
                 val tile = DashTile(this, item, hero)
                 tile.setOnClickListener { onTileClick(tile) }
-                tile.setOnLongClickListener { showStats(tile); true }
+                tile.setOnLongClickListener { showStats(tile.item, tile.state); true }
                 tiles.add(tile)
+                cells.add(tile)
                 if (hero) {
                     column.addView(tile, LinearLayout.LayoutParams(-1, dp(104f)).apply { topMargin = dp(7f) })
-                    used += 1.9f
+                    used += 1.8f
                 } else {
-                    var r = row
+                    val r = row
                     if (r == null) {
-                        r = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-                        column.addView(r, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(7f) })
-                        used += 1f
-                        r.addView(tile, LinearLayout.LayoutParams(0, dp(54f), 1f))
-                        row = r
+                        val fresh = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+                        column.addView(fresh, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(7f) })
+                        used += 1.05f
+                        fresh.addView(tile, LinearLayout.LayoutParams(0, dp(58f), 1f))
+                        row = fresh
                     } else {
-                        r.addView(tile, LinearLayout.LayoutParams(0, dp(54f), 1f).apply { leftMargin = dp(7f) })
+                        r.addView(tile, LinearLayout.LayoutParams(0, dp(58f), 1f).apply { leftMargin = dp(7f) })
                         row = null
                     }
                 }
+                first = false
+                i++
             }
             // an odd last tile keeps its half width
             row?.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f).apply { leftMargin = dp(7f) })
             heights[col] += used
         }
-        tiles.firstOrNull()?.requestFocus()
+        for (card in cars) loadCarPicture(card)
+        (cells.firstOrNull() as? View)?.requestFocus()
     }
 
     // ---------- live data ----------
@@ -303,25 +376,95 @@ class DashboardActivity : PanelActivity() {
     private fun tick(g: Int) {
         if (!active || g != gen) return
         clock.text = ZonedDateTime.now().format(clockFmt)
-        for (t in tiles.toList()) refreshTile(t)
+        for (cell in cells.toList()) refresh(cell)
         refreshWeather()
         main.postDelayed({ tick(g) }, 10_000L)
     }
 
-    private fun refreshTile(t: DashTile) {
+    private fun refresh(cell: DashCell) {
         val client = ha ?: return
         if (!active) return
+        for (item in cell.items) {
+            try {
+                exec.execute {
+                    val s = try { client.state(item.entity) } catch (e: Exception) { null }
+                    main.post {
+                        if (active) {
+                            cell.bind(item, s)
+                            if (cell is DashTile && cell.wantsSpark) loadSpark(cell)
+                        }
+                    }
+                }
+            } catch (e: Exception) { }
+        }
+    }
+
+    /**
+     * A car's picture: the one chosen in the settings, else what Home Assistant offers for the
+     * tracker (its entity picture, or an image entity named after the car). Kept for six hours.
+     */
+    private fun loadCarPicture(card: CarCard) {
+        val client = ha ?: return
+        val key = card.tracker.entity + "|" + (card.tracker.picture ?: "")
+        val now = System.currentTimeMillis()
+        val cached = carPictures[key]
+        if (cached != null) card.setPicture(cached.second)
+        if (cached != null && now - cached.first < 6 * 3600_000L) return
         try {
             exec.execute {
-                val s = try { client.state(t.item.entity) } catch (e: Exception) { null }
+                val a = try { client.state(card.tracker.entity).optJSONObject("attributes") } catch (e: Exception) { null }
+                val candidates = ArrayList<String>()
+                card.tracker.picture?.let { candidates.add(it) }
+                a?.optString("entity_picture", "")?.takeIf { it.isNotBlank() }?.let { candidates.add(it) }
+                val vin = a?.optJSONObject("vehicle_basic_data")?.optString("vin", "")?.ifBlank { null } ?: a?.optString("vin", "")
+                if (!vin.isNullOrBlank()) candidates.add("image." + vin.lowercase())
+                candidates.add("image." + card.tracker.entity.substringAfter('.'))
+                var found: Bitmap? = null
+                for (c in candidates) {
+                    val path = when {
+                        c.startsWith("http") || c.startsWith("/") -> c
+                        c.startsWith("camera.") -> "/api/camera_proxy/$c"
+                        c.startsWith("image.") -> "/api/image_proxy/$c"
+                        else -> null
+                    } ?: continue
+                    found = try { client.bitmap(path, 520, 15000) } catch (e: Exception) { null }
+                    if (found != null) break
+                }
+                val picture = found?.let { trimmed(it) }
                 main.post {
-                    if (active) {
-                        t.bind(s)
-                        if (t.wantsSpark) loadSpark(t)
-                    }
+                    // nothing found: look again in five minutes instead of six hours
+                    carPictures[key] = Pair(if (picture != null) now else now - 6 * 3600_000L + 5 * 60_000L, picture)
+                    if (active) card.setPicture(picture)
                 }
             }
         } catch (e: Exception) { }
+    }
+
+    /** Cuts the empty margin off a cut-out picture, so the car fills its place. */
+    private fun trimmed(b: Bitmap): Bitmap {
+        if (!b.hasAlpha()) return b
+        val w = b.width
+        val h = b.height
+        val px = IntArray(w * h)
+        b.getPixels(px, 0, w, 0, 0, w, h)
+        var left = w
+        var top = h
+        var right = -1
+        var bottom = -1
+        for (y in 0 until h) {
+            val row = y * w
+            for (x in 0 until w) {
+                if ((px[row + x] ushr 24) > 24) {
+                    if (x < left) left = x
+                    if (x > right) right = x
+                    if (y < top) top = y
+                    if (y > bottom) bottom = y
+                }
+            }
+        }
+        if (right - left < 8 || bottom - top < 8) return b
+        if (left == 0 && top == 0 && right == w - 1 && bottom == h - 1) return b
+        return try { Bitmap.createBitmap(b, left, top, right - left + 1, bottom - top + 1) } catch (e: Exception) { b }
     }
 
     /** The last 24 hours of a number as a few dozen averages. Kept for ten minutes. */
@@ -445,7 +588,7 @@ class DashboardActivity : PanelActivity() {
                 when (which) {
                     0 -> act(r, "Cleaning started") { client.call("vacuum", "start", item.entity) }
                     1 -> act(r, "Returning to dock") { client.call("vacuum", "return_to_base", item.entity) }
-                    else -> showStats(r)
+                    else -> showStats(r.item, r.state)
                 }
             }
             Actions.Kind.SELECT -> {
@@ -453,7 +596,7 @@ class DashboardActivity : PanelActivity() {
                 val options = ArrayList<String>()
                 if (arr != null) for (i in 0 until arr.length()) options.add(arr.optString(i))
                 if (options.isEmpty()) {
-                    showStats(r)
+                    showStats(r.item, r.state)
                 } else {
                     val current = options.indexOf(r.state?.optString("state") ?: "")
                     Popup.menu(this, item.title, options, current) { which ->
@@ -463,7 +606,20 @@ class DashboardActivity : PanelActivity() {
                     }
                 }
             }
-            Actions.Kind.NONE -> showStats(r)
+            Actions.Kind.NONE -> showStats(r.item, r.state)
+        }
+    }
+
+    /** A car has several readings: OK lists them, and picking one opens its statistics. */
+    private fun onCarClick(card: CarCard) {
+        if (card.items.size == 1) {
+            showStats(card.tracker, card.stateOf(card.tracker))
+            return
+        }
+        val names = card.items.mapIndexed { i, item -> if (i == 0) "Location" else item.title }
+        Popup.menu(this, card.tracker.title, names) { which ->
+            val item = card.items[which]
+            showStats(item, card.stateOf(item))
         }
     }
 
@@ -474,8 +630,8 @@ class DashboardActivity : PanelActivity() {
                 main.post {
                     if (!ok) toast("Home Assistant did not accept that")
                     else if (okMessage != null) toast(okMessage)
-                    main.postDelayed({ refreshTile(r) }, 500L)
-                    main.postDelayed({ refreshTile(r) }, 2500L)
+                    main.postDelayed({ refresh(r) }, 500L)
+                    main.postDelayed({ refresh(r) }, 2500L)
                 }
             }
         } catch (e: Exception) { }
@@ -483,11 +639,11 @@ class DashboardActivity : PanelActivity() {
 
     // ---------- statistics ----------
 
-    private fun showStats(r: DashTile) {
-        statsItem = r.item
-        statsUnit = r.state?.optJSONObject("attributes")?.optString("unit_of_measurement", "") ?: ""
-        statsTitle.text = r.item.title
-        statsValue.text = r.state?.let { Fmt.value(r.item.entity, it) } ?: ""
+    private fun showStats(item: HaItem, state: JSONObject?) {
+        statsItem = item
+        statsUnit = state?.optJSONObject("attributes")?.optString("unit_of_measurement", "") ?: ""
+        statsTitle.text = item.title
+        statsValue.text = state?.let { Fmt.value(item.entity, it) } ?: ""
         overlayDownSeen = false
         overlay.visibility = View.VISIBLE
         val box = overlay.getChildAt(0)
@@ -582,5 +738,6 @@ class DashboardActivity : PanelActivity() {
     companion object {
         /** Curves survive closing and reopening the dashboard. */
         private val sparkCache = HashMap<String, Pair<Long, FloatArray>>()
+        private val carPictures = HashMap<String, Pair<Long, Bitmap?>>()
     }
 }

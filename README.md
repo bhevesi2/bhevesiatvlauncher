@@ -38,7 +38,14 @@ also be written over ADB. Main keys: `ha_url`, `ha_token`, `lat`, `lon`, `backgr
 }
 ```
 
-The dashboard draws every entity as a tile: numbers with a curve of their last 24 hours,
+Everything that can be switched from the TV is collected in a "Switches" block; the rest of each
+section is shown as status tiles. A `device_tracker` of a car (in a section called Cars, or named
+like one) becomes a card with the car's picture, and the entities listed after it, up to the next
+tracker, are shown on that card. The picture is the tracker's own entity picture or an image
+entity named after the car; `"picture": "image.my_car"` (or a camera, or a URL) on the tracker
+item overrides it.
+
+The dashboard draws every other entity as a tile: numbers with a curve of their last 24 hours,
 percentages with a level bar, everything else with a badge that lights up while it is on, open or
 home. The first entity of a section becomes a tall tile when it is a thermostat (a dial), a power
 sensor (a big curve), a selector, an alarm panel or a vacuum.
@@ -49,7 +56,8 @@ makes an item display-only. A section with `hide_when` disappears while that ent
 
 - `background`: `asset:<name>` (photo sets bundled in the APK), `foto:<name>` (your own photos in
   `files/backgrounds/<name>/hajnal.jpg`, `nappal.jpg`, `alkony.jpg`, `ejszaka.jpg`), or the
-  built-in illustrations `alpine` and `hills`.
+  built-in illustrations `alpine` and `hills`. A set may hold several pictures per time of day
+  (`hajnal.jpg`, `hajnal2.jpg`, `hajnal3.jpg` ...): they take turns, a new one every hour.
 
 ## Background photos
 
