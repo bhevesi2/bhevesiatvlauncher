@@ -530,8 +530,10 @@ class SettingsActivity : PanelActivity() {
                     }
                 }
             }
-            if (cfg.recoOrder.isNotEmpty()) row("Reset the row order") { edit { it.remove("reco_order") } }
-            note("Press Down on the bottom row of the home screen to see them. Hold OK on a recommendation to move its row.")
+            section("Row order")
+            row("Change the order", "Hold OK on a recommendation")
+            action("Reset the row order", cfg.recoOrder.isNotEmpty()) { edit { it.remove("reco_order") } }
+            note("On the home screen, Down on the bottom row slides up to the rows; the mark “Recommendations” at the bottom edge shows when there are any. Hold OK on a recommendation to move its row up or down.")
         }
         section("Weather chip")
         toggle("Show the weather before the status chips", cfg.weatherChip) { on -> edit { it.put("weather_chip", on) } }

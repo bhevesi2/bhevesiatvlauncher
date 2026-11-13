@@ -198,15 +198,18 @@ class HomeActivity : Activity() {
         moreHint = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(10f), dp(3f), dp(12f), dp(4f))
+            // a dark pill, so it reads on a bright photo too
+            background = rounded(0x99000000.toInt(), dp(12f).toFloat())
             alpha = 0f
             visibility = View.GONE
         }
         moreHint.addView(ImageView(this).apply {
             setImageResource(R.drawable.ic_chevron)
             setColorFilter(C.TEXT)
-        }, LinearLayout.LayoutParams(dp(14f), dp(14f)))
-        moreHint.addView(label("Recommendations", 10f, C.TEXT).apply { setPadding(dp(5f), 0, 0, 0) })
-        page.addView(moreHint, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(7f) })
+        }, LinearLayout.LayoutParams(dp(15f), dp(15f)))
+        moreHint.addView(label("Recommendations", 11f, C.TEXT, bold = true).apply { setPadding(dp(5f), 0, 0, 0) })
+        page.addView(moreHint, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(4f) })
 
         reco.onCard = { card ->
             val p = card?.program
@@ -277,7 +280,7 @@ class HomeActivity : Activity() {
     private fun showMoreHint() {
         val there = cfg.recommendations && reco.firstFocusable != null && !expanded
         val onBottom = currentFocus?.let { isInside(it, bottom) } == true
-        val target = if (!there) 0f else if (onBottom) 0.85f else 0.4f
+        val target = if (!there) 0f else if (onBottom) 1f else 0.75f
         if (there) moreHint.visibility = View.VISIBLE
         moreHint.animate().alpha(target).setDuration(220).withEndAction { if (!there) moreHint.visibility = View.GONE }.start()
     }
