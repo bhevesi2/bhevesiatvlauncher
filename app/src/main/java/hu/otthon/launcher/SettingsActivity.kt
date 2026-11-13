@@ -51,6 +51,9 @@ class SettingsActivity : PanelActivity() {
      */
     private var rendering = false
 
+    /** Apps that publish recommendations, read once when the Home screen page is first shown. */
+    private var publishers: List<Pair<String, String>>? = null
+
     private val roots = listOf("Appearance", "Favorites", "Home screen", "Cameras", "Inputs", "Dashboard", "Home Assistant", "About")
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -503,11 +506,30 @@ class SettingsActivity : PanelActivity() {
         note("The TV only allows this change over ADB, so the launcher asks Home Assistant's Android TV (ADB) integration to do it. Choosing this launcher switches the Google TV home app off, because the TV otherwise always prefers it; choosing Google TV home switches it back on. Nothing is uninstalled.")
         section("Recommendations")
         toggle("Rows from the streaming apps below the home screen", cfg.recommendations) { on -> edit { it.put("recommendations", on) } }
-        if (cfg.recoHidden.isNotEmpty()) {
-            val names = cfg.recoHidden.map { Apps.one(this, it)?.label ?: it }.joinToString(", ")
-            row("Hidden", names) { edit { it.remove("reco_hidden") } }
-            note("OK shows the hidden apps' rows again. Hold OK on a recommendation to hide its app.")
-        } else {
+        if (cfg.recommendations) {
+            toggle("Continue watching", cfg.recoWatchNext) { on -> edit { it.put("reco_watch_next", on) } }
+            val list = publishers
+            when {
+                !Reco.allowed(this) -> note("Press Down on the bottom row of the home screen and choose Allow; then the apps can be chosen here.")
+                list == null -> {
+                    row("Looking for apps…")
+                    val app = applicationContext
+                    Bg.run({ Reco.publishers(app) }) { found ->
+                        publishers = found ?: emptyList()
+                        change { }
+                    }
+                }
+                list.isEmpty() -> row("No app has published recommendations yet")
+                else -> for ((pkg, name) in list) {
+                    toggle(name, pkg !in cfg.recoHidden) { on ->
+                        edit { r ->
+                            val set = cfg.recoHidden.toMutableSet()
+                            if (on) set.remove(pkg) else set.add(pkg)
+                            r.put("reco_hidden", JSONArray().apply { set.forEach { put(it) } })
+                        }
+                    }
+                }
+            }
             note("Press Down on the bottom row of the home screen to see them. Hold OK on a recommendation to hide its app.")
         }
         section("Weather chip")

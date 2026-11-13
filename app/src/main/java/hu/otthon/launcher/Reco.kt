@@ -129,12 +129,12 @@ object Reco {
      * Everything to show, apps in [order] first (the favorites), the rest after them.
      * Background thread only. Empty when the permission is missing or nothing is published.
      */
-    fun load(ctx: Context, order: List<String>, hidden: Set<String>): List<Row> {
+    fun load(ctx: Context, order: List<String>, hidden: Set<String>, watchNext: Boolean = true): List<Row> {
         if (!allowed(ctx)) return emptyList()
         val rows = ArrayList<Row>()
 
         // Continue watching
-        query(
+        if (watchNext) query(
             ctx, TvContract.WatchNextPrograms.CONTENT_URI, programColumns,
             arrayOf(TvContract.WatchNextPrograms.COLUMN_LAST_ENGAGEMENT_TIME_UTC_MILLIS)
         )?.use { c ->
@@ -187,6 +187,24 @@ object Reco {
         fun rank(pkg: String) = order.indexOf(pkg).let { if (it < 0) Int.MAX_VALUE else it }
         rows.addAll(appRows.sortedWith(compareBy({ rank(it.pkg) }, { it.title.lowercase() })).take(14))
         return rows
+    }
+
+    /** The apps that publish rows (or Continue watching items), as package and name. Background thread only. */
+    fun publishers(ctx: Context): List<Pair<String, String>> {
+        if (!allowed(ctx)) return emptyList()
+        val pkgs = LinkedHashSet<String>()
+        query(ctx, TvContract.Channels.CONTENT_URI, arrayOf(TvContract.Channels.COLUMN_PACKAGE_NAME, TvContract.Channels.COLUMN_TYPE), emptyArray())?.use { c ->
+            while (c.moveToNext()) {
+                if (c.str(TvContract.Channels.COLUMN_TYPE) == TvContract.Channels.TYPE_PREVIEW) c.str(TvContract.Channels.COLUMN_PACKAGE_NAME)?.let { pkgs.add(it) }
+            }
+        }
+        query(ctx, TvContract.WatchNextPrograms.CONTENT_URI, arrayOf(TvContract.WatchNextPrograms.COLUMN_PACKAGE_NAME), emptyArray())?.use { c ->
+            while (c.moveToNext()) c.str(TvContract.WatchNextPrograms.COLUMN_PACKAGE_NAME)?.let { pkgs.add(it) }
+        }
+        val pm = ctx.packageManager
+        return pkgs.filter { it != ctx.packageName }.map { pkg ->
+            Pair(pkg, try { pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString() } catch (e: Exception) { pkg })
+        }.sortedBy { it.second.lowercase() }
     }
 
     /** Opens a programme in its app; falls back to the row's link, then to the app itself. */

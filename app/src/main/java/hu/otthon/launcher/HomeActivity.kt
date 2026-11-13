@@ -98,6 +98,9 @@ class HomeActivity : Activity() {
     private fun buildUi() {
         val side = dp(48f)
         val root = FrameLayout(this)
+        // the recommendations sit below the screen inside the page that slides up; the screen
+        // must not cut the page to its own first screenful, or the rows stay invisible
+        root.clipChildren = false
         rootView = root
         root.setBackgroundColor(Color.BLACK)
         backdrop = Backdrop(this)
@@ -279,7 +282,8 @@ class HomeActivity : Activity() {
         val app = applicationContext
         val order = FavStore.get(this, cfg)
         val hidden = cfg.recoHidden
-        Bg.run({ Reco.load(app, order, hidden) }) { rows ->
+        val watchNext = cfg.recoWatchNext
+        Bg.run({ Reco.load(app, order, hidden, watchNext) }) { rows ->
             recoLoading = false
             if (rows.isNullOrEmpty()) reco.showEmpty()
             else reco.show(rows) { pkg -> Apps.one(this, pkg)?.let { AppColors.of(it) } ?: 0xFFE9E7E2.toInt() }

@@ -56,7 +56,9 @@ data class Config(
     val liveUrl: String,
     /** The streaming apps' recommendation rows below the home screen. */
     val recommendations: Boolean,
-    val recoHidden: Set<String>
+    val recoHidden: Set<String>,
+    /** The "Continue watching" row at the top of the recommendations. */
+    val recoWatchNext: Boolean
 ) {
     val haEnabled: Boolean get() = !haUrl.isNullOrBlank() && !haToken.isNullOrBlank()
 
@@ -115,7 +117,8 @@ data class Config(
                 liveVideo = (json.optJSONObject("live") ?: JSONObject()).optBoolean("enabled", false),
                 liveUrl = (json.optJSONObject("live") ?: JSONObject()).optString("url", "").ifBlank { DEFAULT_LIVE_URL },
                 recommendations = json.optBoolean("recommendations", true),
-                recoHidden = strings(json.optJSONArray("reco_hidden")).toSet()
+                recoHidden = strings(json.optJSONArray("reco_hidden")).toSet(),
+                recoWatchNext = json.optBoolean("reco_watch_next", true)
             )
         }
 
