@@ -505,7 +505,8 @@ class SettingsActivity : PanelActivity() {
         }
         note("The TV only allows this change over ADB, so the launcher asks Home Assistant's Android TV (ADB) integration to do it. Choosing this launcher switches the Google TV home app off, because the TV otherwise always prefers it; choosing Google TV home switches it back on. Nothing is uninstalled.")
         section("Recommendations")
-        toggle("Rows from the streaming apps below the home screen", cfg.recommendations) { on -> edit { it.put("recommendations", on) } }
+        toggle("Show recommendations", cfg.recommendations) { on -> edit { it.put("recommendations", on) } }
+        if (!cfg.recommendations) note("Switched off: the streaming apps' rows below the home screen, the mark at its bottom edge and their options here are hidden.")
         if (cfg.recommendations) {
             toggle("Continue watching", cfg.recoWatchNext) { on -> edit { it.put("reco_watch_next", on) } }
             val list = publishers
