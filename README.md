@@ -105,9 +105,11 @@ and Continue watching, and resets the row order.
 ## Little visitors
 
 Settings › Appearance › Bears and bunnies (Off / A few / Lots) lets a few drawn bears and bunnies
-live on the home screen: they walk along the tops of the tiles, chips and buttons, sit down,
-wave, hop from one tile to the next, and jump up when the tile under them gets focus. They are
-drawn about thirty times a second and stop whenever the home screen is covered.
+live on the home screen. They walk along the tops of the tiles, chips and buttons and rest now
+and then. Bunnies hop from tile to tile, stop for a carrot, and jump up when the tile under them
+gets focus. Bears waddle, wave, step across small gaps and, to reach another row, set up a
+ladder, climb it and pack it away. They are drawn about thirty times a second and stop whenever
+the home screen is covered.
 
 ## Camera pop-ups
 

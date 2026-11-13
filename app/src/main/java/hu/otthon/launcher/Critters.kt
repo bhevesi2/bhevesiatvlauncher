@@ -14,14 +14,15 @@ import kotlin.random.Random
 
 /**
  * Little bears and bunnies that live on the home screen: they walk along the top edges of the
- * tiles, chips and buttons, sit down for a while, and hop from one to the next. A tile that gets
- * focus startles whoever is standing on it. Purely for fun; switched on in Settings › Appearance.
+ * tiles, chips and buttons and rest now and then. Bunnies hop from tile to tile and sometimes
+ * stop for a carrot; bears step across small gaps and, to reach another row, set up a ladder,
+ * climb it and pack it away. Purely for fun; switched on in Settings › Appearance.
  *
  * [platforms] lists the views they may stand on; it is asked again every couple of seconds.
  */
 class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View(ctx) {
 
-    private enum class State { WALK, IDLE, JUMP }
+    private enum class State { WALK, IDLE, JUMP, LADDER }
 
     private inner class Critter(val bunny: Boolean, val coat: Int, val light: Int) {
         var on: View? = null
@@ -38,6 +39,17 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
         var targetX = 0f
         var t = 0f
         var jumpTime = 0.6f
+        /** A "jump" that is really a few steps across a small gap: no arc, walking legs. */
+        var walkOver = false
+        // a ladder: from the spot it stands on to a spot on another row
+        var lFrom: View? = null
+        var lFromX = 0f
+        var lStage = 0          // 0 setting it up, 1 climbing, 2 packing it away
+        var lT = 0f
+        var climbTime = 1f
+        // a carrot break
+        var eating = false
+        var eatTotal = 1f
         // where it was drawn last
         var px = 0f
         var py = 0f
@@ -97,7 +109,16 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
     fun onFocus(v: View?) {
         if (v == null) return
         for (c in critters) {
-            if (c.on === v && c.state != State.JUMP) startJump(c, v, c.x, 0.45f)
+            if (c.on !== v || c.state == State.JUMP || c.state == State.LADDER) continue
+            if (c.bunny) {
+                c.eating = false
+                startJump(c, v, c.x, 0.45f)
+            } else {
+                // a bear just waves at you
+                c.state = State.IDLE
+                c.wave = true
+                c.timer = 1.6f
+            }
         }
     }
 
@@ -178,6 +199,25 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
         c.jumpTime = time
         c.state = State.JUMP
         c.wave = false
+        c.walkOver = false
+    }
+
+    private fun startLadder(c: Critter, to: View, toX: Float) {
+        c.lFrom = c.on
+        c.lFromX = c.x
+        c.target = to
+        c.targetX = toX
+        c.lStage = 0
+        c.lT = 0f
+        c.state = State.LADDER
+        c.wave = false
+    }
+
+    /** The two ends of a bear's ladder on screen, or null if a tile is gone. */
+    private fun ladderEnds(c: Critter): FloatArray? {
+        val a = c.lFrom?.let { rect(it) } ?: return null
+        val b = c.target?.let { rect(it) } ?: return null
+        return floatArrayOf(a.left + c.lFromX, a.top, b.left + c.targetX, b.top)
     }
 
     // ---------- behaviour ----------
@@ -205,6 +245,7 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
                     if (c.timer <= 0f) {
                         c.state = State.WALK
                         c.wave = false
+                        c.eating = false
                         c.dir = if (Random.nextFloat() < 0.6f) c.dir else -c.dir
                         c.timer = 2f + Random.nextFloat() * 5f
                     }
@@ -218,12 +259,17 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
                     val edge = (if (c.bunny) 9f else 12f) * d * SIZE
                     if (c.x < edge || c.x > r!!.width() - edge) {
                         c.x = c.x.coerceIn(edge, max(edge, r!!.width() - edge))
-                        if (Random.nextFloat() < 0.65f && !jumpAcross(c, r)) c.dir = -c.dir
-                        else if (c.state != State.JUMP) c.dir = -c.dir
+                        val moved = Random.nextFloat() < 0.65f && (if (c.bunny) jumpAcross(c, r) else bearAcross(c, r))
+                        if (!moved) c.dir = -c.dir
                     } else if (c.timer <= 0f) {
                         c.state = State.IDLE
                         c.wave = !c.bunny && Random.nextFloat() < 0.35f
                         c.timer = 1.5f + Random.nextFloat() * 3.5f
+                        if (c.bunny && Random.nextFloat() < 0.4f) {
+                            c.eating = true
+                            c.timer = 4f + Random.nextFloat() * 3f
+                            c.eatTotal = c.timer
+                        }
                     }
                 }
                 State.JUMP -> {
@@ -239,16 +285,57 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
                         c.x = c.targetX.coerceIn(4 * d, max(4 * d, tr.width() - 4 * d))
                         c.state = if (Random.nextFloat() < 0.4f) State.IDLE else State.WALK
                         c.timer = 1f + Random.nextFloat() * 3f
+                        c.walkOver = false
+                    }
+                }
+                State.LADDER -> {
+                    val ends = ladderEnds(c)
+                    if (ends == null) {
+                        place(c)
+                        continue
+                    }
+                    when (c.lStage) {
+                        0 -> {
+                            c.lT += dt / 0.9f
+                            if (c.lT >= 1f) {
+                                c.lStage = 1
+                                c.lT = 0f
+                                val len = Math.hypot((ends[2] - ends[0]).toDouble(), (ends[3] - ends[1]).toDouble()).toFloat()
+                                c.climbTime = max(0.8f, len / (26f * d))
+                            }
+                        }
+                        1 -> {
+                            c.lT += dt / c.climbTime
+                            if (c.lT >= 1f) {
+                                c.on = c.target
+                                c.x = c.targetX
+                                c.lStage = 2
+                                c.lT = 0f
+                            }
+                        }
+                        else -> {
+                            c.lT += dt / 0.7f
+                            if (c.lT >= 1f) {
+                                c.state = State.IDLE
+                                c.timer = 0.8f + Random.nextFloat() * 1.5f
+                                c.lFrom = null
+                            }
+                        }
                     }
                 }
             }
             // where it is on screen now
-            if (c.state == State.JUMP) {
+            if (c.state == State.LADDER) {
+                val e = ladderEnds(c) ?: continue
+                val k = if (c.lStage == 1) c.lT.coerceIn(0f, 1f) else if (c.lStage == 0) 0f else 1f
+                c.px = e[0] + (e[2] - e[0]) * k
+                c.py = e[1] + (e[3] - e[1]) * k
+            } else if (c.state == State.JUMP) {
                 val tr = rect(c.target!!) ?: continue
                 val tx = tr.left + c.targetX
                 val ty = tr.top
                 val k = c.t.coerceIn(0f, 1f)
-                val arc = 26 * d + max(0f, c.fromY - ty) * 0.6f
+                val arc = if (c.walkOver) 0f else 26 * d + max(0f, c.fromY - ty) * 0.6f
                 c.px = c.fromX + (tx - c.fromX) * k
                 c.py = c.fromY + (ty - c.fromY) * k - arc * 4f * k * (1f - k)
                 if (tx != c.fromX) c.dir = if (tx > c.fromX) 1f else -1f
@@ -258,6 +345,45 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
                 c.py = rr.top
             }
         }
+    }
+
+    /**
+     * A bear at the end of a tile: a neighbour on the same level close by is reached in a few
+     * steps; another row is reached by ladder, if there is a spot on it more or less straight
+     * above or below.
+     */
+    private fun bearAcross(c: Critter, from: RectF): Boolean {
+        val fx = from.left + c.x
+        val fy = from.top
+        val margin = 14 * d * SIZE
+        val steps = ArrayList<Pair<View, Float>>()
+        val ladders = ArrayList<Pair<View, Float>>()
+        for (v in places) {
+            if (v === c.on) continue
+            val r = rect(v) ?: continue
+            if (r.width() < 2 * margin) continue
+            if (abs(r.top - fy) < 10 * d) {
+                val nx = if (c.dir > 0) r.left + margin else r.right - margin
+                val ahead = if (c.dir > 0) nx > fx else nx < fx
+                if (ahead && abs(nx - fx) < 60 * d) steps.add(Pair(v, nx - r.left))
+            } else if (abs(r.top - fy) in (24 * d)..(230 * d)) {
+                val tx = fx.coerceIn(r.left + margin, r.right - margin)
+                if (abs(tx - fx) < 50 * d) ladders.add(Pair(v, tx - r.left))
+            }
+        }
+        if (steps.isNotEmpty() && (ladders.isEmpty() || Random.nextFloat() < 0.6f)) {
+            val (v, x) = steps[Random.nextInt(steps.size)]
+            val r = rect(v)!!
+            startJump(c, v, x, max(0.4f, abs(r.left + x - fx) / (17f * d)))
+            c.walkOver = true
+            return true
+        }
+        if (ladders.isNotEmpty()) {
+            val (v, x) = ladders[Random.nextInt(ladders.size)]
+            startLadder(c, v, x)
+            return true
+        }
+        return false
     }
 
     /** At the end of a tile: hop to a neighbour if one is near enough. */
@@ -279,7 +405,49 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
 
     // ---------- drawing ----------
 
+    private val wood = 0xFFB07A45.toInt()
+    private val woodDark = 0xFF8A5A2E.toInt()
+
+    /** The part of a bear's ladder that is out: growing while set up, shrinking while packed. */
+    private fun drawLadder(canvas: Canvas, c: Critter) {
+        val e = ladderEnds(c) ?: return
+        val k = c.lT.coerceIn(0f, 1f)
+        val (s0, s1) = when (c.lStage) {
+            0 -> 0f to (1f - (1f - k) * (1f - k))
+            1 -> 0f to 1f
+            else -> k to 1f
+        }
+        val x0 = e[0] + (e[2] - e[0]) * s0
+        val y0 = e[1] + (e[3] - e[1]) * s0
+        val x1 = e[0] + (e[2] - e[0]) * s1
+        val y1 = e[1] + (e[3] - e[1]) * s1
+        val len = Math.hypot((x1 - x0).toDouble(), (y1 - y0).toDouble()).toFloat()
+        if (len < 1f) return
+        val nx = -(y1 - y0) / len * 4f * d
+        val ny = (x1 - x0) / len * 4f * d
+        val a = (c.alpha * 255).toInt()
+        p.strokeCap = Paint.Cap.ROUND
+        p.style = Paint.Style.STROKE
+        // rungs, then the two rails over them
+        fill(woodDark, a)
+        p.strokeWidth = 1.4f * d
+        var t = 5f * d
+        while (t < len) {
+            val f = t / len
+            val cx = x0 + (x1 - x0) * f
+            val cy = y0 + (y1 - y0) * f
+            canvas.drawLine(cx - nx, cy - ny, cx + nx, cy + ny, p)
+            t += 6f * d
+        }
+        fill(wood, a)
+        p.strokeWidth = 1.8f * d
+        canvas.drawLine(x0 - nx, y0 - ny, x1 - nx, y1 - ny, p)
+        canvas.drawLine(x0 + nx, y0 + ny, x1 + nx, y1 + ny, p)
+        p.style = Paint.Style.FILL
+    }
+
     override fun onDraw(canvas: Canvas) {
+        for (c in critters) if (!c.bunny && c.state == State.LADDER) drawLadder(canvas, c)
         for (c in critters) {
             if (c.on == null && c.state != State.JUMP) continue
             val save = canvas.save()
@@ -311,8 +479,9 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
      */
     private fun bear(canvas: Canvas, c: Critter, a: Int) {
         val dark = darker(c.coat)
-        val walking = c.state == State.WALK
-        val step = if (walking) sin(c.phase * 8f) else 0f
+        val climbing = c.state == State.LADDER && c.lStage == 1
+        val walking = c.state == State.WALK || (c.state == State.JUMP && c.walkOver) || climbing
+        val step = if (walking) sin(c.phase * (if (climbing) 10f else 8f)) else 0f
         val bob = if (walking) abs(step) * 1.2f else sin(c.phase * 2f) * 0.3f
         canvas.save()
         canvas.rotate(step * 5f, 0f, 0f)
@@ -338,6 +507,8 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
         canvas.save()
         val arm = when {
             c.wave -> -150f + sin(c.phase * 9f) * 22f
+            climbing -> -160f + step * 25f
+            c.state == State.LADDER -> -115f          // handling the ladder
             walking -> step * 25f
             else -> 0f
         }
@@ -409,7 +580,33 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
         ellipse(canvas, 11.2f, -15f, 0.9f, 0.7f)
         fill(0xFFF4A3B4.toInt(), a / 2)
         ellipse(canvas, 8.4f, -13.8f, 1.5f, 1f)
+        if (c.eating && c.state == State.IDLE) carrot(canvas, c, a)
         canvas.restore()
+    }
+
+    /** A carrot held up to the mouth, a little shorter with every bite. */
+    private fun carrot(canvas: Canvas, c: Critter, a: Int) {
+        val left = (c.timer / c.eatTotal).coerceIn(0f, 1f)
+        val chew = sin(c.phase * 14f) * 0.4f
+        // leaves at the bottom end, the eaten tip at the mouth
+        val bx = 13.5f
+        val by = -4.5f
+        val tx = bx + (10.8f - bx) * (0.25f + 0.75f * left)
+        val ty = by + (-13.2f - by) * (0.25f + 0.75f * left)
+        fill(0xFF5DA03A.toInt(), a)
+        ellipse(canvas, bx + 1.2f, by + 1.6f, 1f, 2.2f)
+        ellipse(canvas, bx - 0.6f, by + 1.8f, 0.9f, 2f)
+        val path = android.graphics.Path()
+        path.moveTo(bx - 1.9f, by)
+        path.lineTo(bx + 1.9f, by)
+        path.lineTo(tx + 0.5f, ty + chew)
+        path.lineTo(tx - 0.5f, ty + chew)
+        path.close()
+        fill(0xFFF08A24.toInt(), a)
+        canvas.drawPath(path, p)
+        // the paw holding it
+        fill(darker(c.coat), a)
+        ellipse(canvas, 11.6f, -7.6f, 1.8f, 1.5f)
     }
 
     /** A dark eye with a tiny highlight; it blinks every few seconds. */
