@@ -42,10 +42,11 @@ class HomeActivity : Activity() {
     private lateinit var recoBox: LinearLayout
     private lateinit var recoScroll: ColScroller
     private lateinit var reco: RecoPanel
-    private lateinit var recoInfo: TextView
     private lateinit var recoDim: View
     private lateinit var moreHint: LinearLayout
     private var expanded = false
+    /** Where the sliding page ends up: 0 on the home screen, negative while the rows are up. */
+    private var pageTarget = 0f
     private var lastBottomFocus: View? = null
     private var recoLoading = false
     private lateinit var topButtons: LinearLayout
@@ -142,7 +143,6 @@ class HomeActivity : Activity() {
 
         content.addView(View(this), LinearLayout.LayoutParams(1, 0, 1f))
 
-        content.addView(label("Favorites", 11f, C.TEXT2, bold = true), LinearLayout.LayoutParams(-2, -2).apply { leftMargin = side })
         favScroll = RowScroller(this)
         favScroll.setPadding(side, dp(9f), side, dp(9f))
         favRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; clipChildren = false }
@@ -181,12 +181,6 @@ class HomeActivity : Activity() {
             clipChildren = false
             descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
         }
-        recoInfo = label("", 12f, C.TEXT2).apply {
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            setPadding(dp(48f), 0, dp(48f), dp(6f))
-        }
-        recoBox.addView(recoInfo, LinearLayout.LayoutParams(-1, -2))
         recoScroll = ColScroller(this).apply { clipToPadding = false; clipChildren = false }
         reco = RecoPanel(this)
         recoScroll.addView(reco, FrameLayout.LayoutParams(-1, -2))
@@ -211,10 +205,6 @@ class HomeActivity : Activity() {
         moreHint.addView(label("Recommendations", 11f, C.TEXT, bold = true).apply { setPadding(dp(5f), 0, 0, 0) })
         page.addView(moreHint, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(4f) })
 
-        reco.onCard = { card ->
-            val p = card?.program
-            recoInfo.text = if (p == null) "" else listOf(p.title, p.subtitle, p.description).filter { it.isNotBlank() }.joinToString("   ·   ")
-        }
         reco.onAllow = {
             if (android.os.Build.VERSION.SDK_INT >= 23) requestPermissions(arrayOf(Reco.PERMISSION), 11)
         }
@@ -291,6 +281,7 @@ class HomeActivity : Activity() {
         moreHint.animate().alpha(0f).setDuration(120).start()
         recoBox.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
         val shift = -(bottom.top + content.top - dp(22f)).toFloat()
+        pageTarget = shift
         val ms = if (Motion.level == Motion.OFF) 0L else 320L
         page.animate().translationY(shift).setDuration(ms).setInterpolator(android.view.animation.DecelerateInterpolator(2f)).start()
         recoDim.animate().alpha(1f).setDuration(ms).start()
@@ -301,13 +292,13 @@ class HomeActivity : Activity() {
     private fun collapse(moveFocus: Boolean) {
         if (!expanded) return
         expanded = false
+        pageTarget = 0f
         val ms = if (Motion.level == Motion.OFF) 0L else 280L
         page.animate().translationY(0f).setDuration(ms).setInterpolator(android.view.animation.DecelerateInterpolator(2f)).start()
         recoDim.animate().alpha(0f).setDuration(ms).start()
         if (moveFocus) (lastBottomFocus?.takeIf { it.isAttachedToWindow && isInside(it, bottom) } ?: bottom.getChildAt(0))?.requestFocus()
         recoBox.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
         recoScroll.scrollTo(0, 0)
-        recoInfo.text = ""
         showMoreHint()
     }
 
@@ -465,6 +456,8 @@ class HomeActivity : Activity() {
             val h = hint.measuredHeight
             val loc = IntArray(2)
             v.getLocationInWindow(loc)
+            // the page may still be sliding back: place the label where the button will rest
+            if (isInside(v, page)) loc[1] += (pageTarget - page.translationY).toInt()
             val maxX = maxOf(dp(8f), rootView.width - w - dp(8f))
             val x = (loc[0] + v.width / 2 - w / 2).coerceIn(dp(8f), maxX)
             val y = if (above) loc[1] - h - dp(5f) else loc[1] + v.height + dp(5f)
