@@ -90,7 +90,11 @@ object Updates {
         return null
     }
 
-    /** Installs over the running launcher, then opens it again. */
+    /**
+     * Installs over the running launcher, then opens it again. The package manager may not read
+     * the app's own folder on the shared storage, so the file goes through /data/local/tmp.
+     */
     fun installCommand(ctx: Context, apk: File): String =
-        "pm install -r '${apk.absolutePath}' && am start -n ${ctx.packageName}/.HomeActivity"
+        "cp '${apk.absolutePath}' /data/local/tmp/otthon-update.apk && pm install -r /data/local/tmp/otthon-update.apk; " +
+            "rm -f /data/local/tmp/otthon-update.apk; am start -n ${ctx.packageName}/.HomeActivity"
 }
