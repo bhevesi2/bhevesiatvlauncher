@@ -478,7 +478,7 @@ class SettingsActivity : PanelActivity() {
             toast("Google TV home is not installed on this TV")
             return
         }
-        val want = if (ours) packageName else Apps.STOCK
+        val want = if (ours) packageName else Apps.stock(this)
         if (Apps.defaultHome(this) == want) {
             change(close = true) { }
             return
@@ -501,13 +501,13 @@ class SettingsActivity : PanelActivity() {
         val current = Apps.defaultHome(this)
         val opens = when (current) {
             packageName -> "This launcher"
-            Apps.STOCK -> "Google TV home"
+            Apps.STOCK_ATV, Apps.STOCK_GTV -> "Google TV home"
             null, "android" -> "The TV asks"
             else -> Apps.one(this, current)?.label ?: current
         }
         expand("home", "Home button opens", opens) {
             row("This launcher", null, current == packageName) { setDefaultHome(true) }
-            row("Google TV home", null, current == Apps.STOCK) { setDefaultHome(false) }
+            row("Google TV home", null, current == Apps.stock(this)) { setDefaultHome(false) }
         }
         row("This TV in Home Assistant", cfg.adbEntity ?: "Automatic") {
             pick("Choose this TV's Android TV (ADB) player", "media_player") { entity, _ -> edit { it.put("adb_entity", entity) } }

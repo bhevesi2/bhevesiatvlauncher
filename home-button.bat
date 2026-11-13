@@ -34,6 +34,16 @@ timeout /t 2 /nobreak >nul
 goto connect
 
 :connected
+rem Google TV sets (Chromecast, newer TCL) have another home app, and a setup helper that
+rem switches it back on, so that one has to go too.
+set "STOCKACT=%STOCK%/.MainActivity"
+set "SETUP="
+"%ADB%" -s %TV% shell pm list packages com.google.android.apps.tv.launcherx 2>nul | findstr /c:"launcherx" >nul
+if not errorlevel 1 (
+    set "STOCK=com.google.android.apps.tv.launcherx"
+    set "STOCKACT=com.google.android.apps.tv.launcherx/.home.HomeActivity"
+    set "SETUP=com.google.android.tungsten.setupwraith"
+)
 call :show
 if /i "%WANT%"=="launcher" goto launcher
 if /i "%WANT%"=="google" goto google
@@ -50,7 +60,8 @@ goto launcher
 echo.
 echo Switching to this launcher ...
 rem Google's home app outranks every installed launcher, so it has to be switched off. It stays installed.
-"%ADB%" -s %TV% shell pm disable-user --user 0 %STOCK%
+"%ADB%" -s %TV% shell pm disable-user %STOCK%
+if defined SETUP "%ADB%" -s %TV% shell pm disable-user %SETUP%
 "%ADB%" -s %TV% shell cmd package set-home-activity %OURS%/.HomeActivity
 goto done
 
@@ -58,7 +69,8 @@ goto done
 echo.
 echo Switching to Google TV home ...
 "%ADB%" -s %TV% shell pm enable %STOCK%
-"%ADB%" -s %TV% shell cmd package set-home-activity %STOCK%/.MainActivity
+if defined SETUP "%ADB%" -s %TV% shell pm enable %SETUP%
+"%ADB%" -s %TV% shell cmd package set-home-activity %STOCKACT%
 goto done
 
 :done

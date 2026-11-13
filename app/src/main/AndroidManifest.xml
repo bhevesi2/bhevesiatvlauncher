@@ -5,6 +5,7 @@
     <!-- camera pop-ups over other apps (granted over ADB) and the service that watches for them -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <!-- the streaming apps' recommendation rows, as the Google TV home reads them -->
     <uses-permission android:name="android.permission.READ_TV_LISTINGS" />
 
@@ -12,6 +13,14 @@
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
 
     <queries>
+        <!-- the TV's own home app, to hand the Home button back to it (Android 11 and later) -->
+        <package android:name="com.google.android.tvlauncher" />
+        <package android:name="com.google.android.apps.tv.launcherx" />
+        <package android:name="com.google.android.tungsten.setupwraith" />
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.HOME" />
+        </intent>
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
@@ -77,7 +86,12 @@
 
         <service
             android:name=".PopupService"
-            android:exported="false" />
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Shows a Home Assistant camera over other apps when a doorbell or motion sensor fires" />
+        </service>
 
         <!-- the remote's colour buttons in every app; switched on over ADB from Settings › Remote -->
         <service

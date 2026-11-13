@@ -1204,7 +1204,25 @@ object Apps {
         }
     }
 
-    const val STOCK = "com.google.android.tvlauncher"
+    /** Android TV home (Sony and other Android TV sets). */
+    const val STOCK_ATV = "com.google.android.tvlauncher"
+    /** Google TV home (Chromecast with Google TV, newer TCL and other Google TV sets). */
+    const val STOCK_GTV = "com.google.android.apps.tv.launcherx"
+    /** Google TV's setup helper: with the home app switched off it switches it back on, so it goes too. */
+    const val GTV_SETUP = "com.google.android.tungsten.setupwraith"
+
+    private fun installed(ctx: Context, pkg: String): Boolean = try {
+        ctx.packageManager.getApplicationInfo(pkg, android.content.pm.PackageManager.MATCH_DISABLED_COMPONENTS)
+        true
+    } catch (e: Exception) {
+        false
+    }
+
+    /** The TV's own home app: Google TV home where there is one, Android TV home otherwise. */
+    fun stock(ctx: Context): String = if (installed(ctx, STOCK_GTV)) STOCK_GTV else STOCK_ATV
+
+    /** The stock home app's home screen, to hand the Home button back to it. */
+    private fun stockActivity(pkg: String) = if (pkg == STOCK_GTV) "$pkg/.home.HomeActivity" else "$pkg/.MainActivity"
 
     /** The package the Home button opens now; "android" means the TV would ask. */
     fun defaultHome(ctx: Context): String? {
@@ -1213,12 +1231,7 @@ object Apps {
     }
 
     /** True when the Google TV home app is on the TV at all, switched on or off. */
-    fun stockInstalled(ctx: Context): Boolean = try {
-        ctx.packageManager.getApplicationInfo(STOCK, android.content.pm.PackageManager.MATCH_DISABLED_COMPONENTS)
-        true
-    } catch (e: Exception) {
-        false
-    }
+    fun stockInstalled(ctx: Context): Boolean = installed(ctx, stock(ctx))
 
     /**
      * The shell commands that hand the Home button to this launcher or back to Google TV home.
@@ -1228,8 +1241,14 @@ object Apps {
      */
     fun homeCommand(ctx: Context, ours: Boolean): String {
         val me = android.content.ComponentName(ctx, HomeActivity::class.java).flattenToShortString()
-        return if (ours) "pm disable-user --user 0 $STOCK; cmd package set-home-activity $me"
-        else "pm enable $STOCK; cmd package set-home-activity $STOCK/.MainActivity"
+        val stock = stock(ctx)
+        // Google TV's setup helper would switch its home app back on, so it is switched off too
+        val setup = if (stock == STOCK_GTV && installed(ctx, GTV_SETUP)) GTV_SETUP else null
+        return if (ours) {
+            "pm disable-user $stock; " + (setup?.let { "pm disable-user $it; " } ?: "") + "cmd package set-home-activity $me"
+        } else {
+            "pm enable $stock; " + (setup?.let { "pm enable $it; " } ?: "") + "cmd package set-home-activity ${stockActivity(stock)}"
+        }
     }
 
     /** This TV's address on the local network, for finding it among Home Assistant's players. */
@@ -1242,7 +1261,7 @@ object Apps {
     }
 
     fun stockHomeIntent(ctx: Context): Intent? {
-        val i = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).setPackage(STOCK)
+        val i = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME).setPackage(stock(ctx))
         val ri = ctx.packageManager.resolveActivity(i, 0) ?: return null
         return Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
             .setClassName(ri.activityInfo.packageName, ri.activityInfo.name)

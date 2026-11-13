@@ -97,18 +97,27 @@ class PopupService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    /** Android 14 wants to know what a foreground service is for; this one is a special use. */
+    private fun foreground() {
+        if (Build.VERSION.SDK_INT >= 34) {
+            startForeground(1, notification(), android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+        } else {
+            startForeground(1, notification())
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         worker = HandlerThread("popups").apply { start() }
         bg = Handler(worker.looper)
-        startForeground(1, notification())
+        foreground()
         reload()
         bg.post(poll)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // every startForegroundService() must be answered, even when the service already runs
-        startForeground(1, notification())
+        foreground()
         reload()
         intent?.getStringExtra(TEST)?.let { cam -> main.post { show(cam, "Test", true) } }
         intent?.getStringExtra(CAMERA)?.let { cam -> main.post { show(cam, intent.getStringExtra(CAMERA_TITLE) ?: "", true) } }
