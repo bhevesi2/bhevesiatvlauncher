@@ -211,11 +211,11 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
                 }
                 State.WALK -> {
                     // bunnies only move while in the air
-                    val speed = (if (c.bunny) 26f else 15f) * d
+                    val speed = (if (c.bunny) 26f else 17f) * d
                     c.x += c.dir * speed * dt
                     c.timer -= dt
                     // half a body from the edge, so nobody hangs over it
-                    val edge = (if (c.bunny) 9f else 17f) * d * SIZE
+                    val edge = (if (c.bunny) 9f else 12f) * d * SIZE
                     if (c.x < edge || c.x > r!!.width() - edge) {
                         c.x = c.x.coerceIn(edge, max(edge, r!!.width() - edge))
                         if (Random.nextFloat() < 0.65f && !jumpAcross(c, r)) c.dir = -c.dir
@@ -306,77 +306,71 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
     }
 
     /**
-     * A bear, drawn facing right with its feet at (0, 0): on all fours while it walks, with the
-     * shoulder hump, short round ears and long muzzle of a real one; sitting up when it rests.
+     * A chubby cartoon bear, drawn facing right with its feet at (0, 0): big round head, round
+     * belly, short arms; it waddles on two legs and waves now and then while it rests.
      */
     private fun bear(canvas: Canvas, c: Critter, a: Int) {
         val dark = darker(c.coat)
-        if (c.state == State.IDLE) {
-            // sitting up
-            fill(dark, a)
-            ellipse(canvas, -3f, -2f, 5f, 2.2f)
-            ellipse(canvas, 7f, -2f, 5f, 2.2f)
-            fill(c.coat, a)
-            ellipse(canvas, 1f, -14f, 11f, 13f)
-            fill(c.light, a)
-            ellipse(canvas, 3f, -12f, 6.5f, 8f)
-            // front paws, one waving now and then
-            fill(dark, a)
-            ellipse(canvas, 8f, -10f, 3.2f, 2.6f)
-            canvas.save()
-            canvas.rotate(if (c.wave) -140f + sin(c.phase * 9f) * 22f else 0f, 6f, -20f)
-            ellipse(canvas, 8f, -14f, 2.8f, 5f)
-            canvas.restore()
-            // head
-            fill(c.coat, a)
-            ellipse(canvas, -1f, -36.5f, 3f, 3f)
-            ellipse(canvas, 9f, -36.5f, 3f, 3f)
-            fill(dark, a)
-            ellipse(canvas, -1f, -36.5f, 1.5f, 1.5f)
-            ellipse(canvas, 9f, -36.5f, 1.5f, 1.5f)
-            fill(c.coat, a)
-            ellipse(canvas, 4f, -30f, 8f, 7.4f)
-            fill(c.light, a)
-            ellipse(canvas, 9.5f, -27.5f, 4.6f, 3.4f)
-            fill(0xFF22160F.toInt(), a)
-            ellipse(canvas, 13.3f, -28.6f, 1.6f, 1.2f)
-            eye(canvas, c, 8.4f, -32f, 1.1f)
-            return
-        }
-        // walking on all fours, legs in a diagonal gait
-        val g = sin(c.phase * 8f)
-        val sway = sin(c.phase * 4f) * 0.8f
-        fun leg(x: Float, phase: Float, far: Boolean) {
-            val lift = max(0f, phase) * 2.2f
-            val swing = phase * 1.6f
-            fill(if (far) darker(dark) else dark, a)
-            oval.set(x - 2.6f + swing, -11f, x + 2.6f + swing, -lift)
-            canvas.drawRoundRect(oval, 2.4f, 2.4f, p)
-        }
-        leg(-9f, -g, true)
-        leg(10f, g, true)
+        val walking = c.state == State.WALK
+        val step = if (walking) sin(c.phase * 8f) else 0f
+        val bob = if (walking) abs(step) * 1.2f else sin(c.phase * 2f) * 0.3f
         canvas.save()
-        canvas.translate(0f, sway * 0.3f)
-        fill(c.coat, a)
-        ellipse(canvas, 0f, -15f, 16f, 8.5f)
-        ellipse(canvas, 6f, -19.5f, 8.5f, 6f)            // shoulder hump
-        ellipse(canvas, -15f, -17f, 2f, 2f)              // tail
-        canvas.restore()
-        leg(-13f, g, false)
-        leg(6f, -g, false)
-        // head, a little low, the way bears carry it
-        fill(c.coat, a)
-        ellipse(canvas, 14f, -24f, 2.4f, 2.4f)
-        ellipse(canvas, 19f, -24.4f, 2.2f, 2.2f)
+        canvas.rotate(step * 5f, 0f, 0f)
+        // feet, stepping in turn
         fill(dark, a)
-        ellipse(canvas, 14f, -24f, 1.1f, 1.1f)
+        ellipse(canvas, -4.5f, -2f - max(0f, step) * 2.2f, 4.2f, 2.2f)
+        ellipse(canvas, 5f, -2f - max(0f, -step) * 2.2f, 4.2f, 2.2f)
+        canvas.translate(0f, -bob)
+        // far arm, body, belly, tail
+        fill(dark, a)
+        canvas.save()
+        canvas.rotate(-step * 25f, -6f, -17f)
+        ellipse(canvas, -7f, -13f, 2.8f, 4.8f)
+        canvas.restore()
         fill(c.coat, a)
-        ellipse(canvas, 17.5f, -18f, 7f, 6.2f)
+        ellipse(canvas, 0f, -10f, 11.5f, 8.5f)
+        ellipse(canvas, 0f, -15f, 9.5f, 8f)
+        ellipse(canvas, -11f, -10f, 2.4f, 2.4f)
         fill(c.light, a)
-        ellipse(canvas, 23.5f, -16f, 4.4f, 3.2f)
+        ellipse(canvas, 2.5f, -11f, 6.8f, 6.6f)
+        // near arm: swings while walking, waves while resting
+        fill(c.coat, a)
+        canvas.save()
+        val arm = when {
+            c.wave -> -150f + sin(c.phase * 9f) * 22f
+            walking -> step * 25f
+            else -> 0f
+        }
+        canvas.rotate(arm, 6.5f, -18f)
+        ellipse(canvas, 7.5f, -13.5f, 3f, 5.2f)
+        fill(dark, a)
+        ellipse(canvas, 7.8f, -9.5f, 2.4f, 1.8f)
+        canvas.restore()
+        // head
+        fill(c.coat, a)
+        ellipse(canvas, -4.5f, -35.5f, 3.6f, 3.6f)
+        ellipse(canvas, 8.5f, -36.5f, 3.6f, 3.6f)
+        fill(c.light, a)
+        ellipse(canvas, -4.5f, -35.5f, 1.9f, 1.9f)
+        ellipse(canvas, 8.5f, -36.5f, 1.9f, 1.9f)
+        fill(c.coat, a)
+        ellipse(canvas, 2f, -27.5f, 10f, 9.4f)
+        fill(c.light, a)
+        ellipse(canvas, 7.6f, -24.2f, 4.8f, 3.6f)
         fill(0xFF22160F.toInt(), a)
-        ellipse(canvas, 27.2f, -17.2f, 1.9f, 1.4f)
-        eye(canvas, c, 20.2f, -20f, 1f)
+        ellipse(canvas, 10.2f, -25.8f, 2f, 1.5f)
+        // a small smile under the nose
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = 0.7f
+        p.strokeCap = Paint.Cap.ROUND
+        oval.set(7.4f, -24.6f, 10.4f, -21.8f)
+        canvas.drawArc(oval, 20f, 120f, false, p)
+        p.style = Paint.Style.FILL
+        eye(canvas, c, 4.2f, -29.4f, 1.35f)
+        eye(canvas, c, 9.2f, -29.8f, 1.2f)
+        fill(0xFFF0909A.toInt(), a / 2)
+        ellipse(canvas, 3.6f, -24.5f, 2f, 1.2f)
+        canvas.restore()
     }
 
     /** A bunny that hops rather than walks, drawn facing right with its feet at (0, 0). */
