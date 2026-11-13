@@ -118,6 +118,18 @@ and pulled by two pairs of reindeer, flies across the screen and leaves a trail 
 halfway across Santa waves. The app tiles light up with a twinkling string of fairy lights
 instead of the coloured glow.
 
+## Colour buttons
+
+Settings › Remote gives each of the remote's red, green, yellow and blue buttons a Home Assistant
+action: a scene or script to run, a light, switch or helper to toggle, a button to press, or a
+camera to pop up (with its name as the caption). A short message confirms the action.
+
+By default the buttons work on the home screen. "Colour buttons work › In every app" switches on
+`KeyService`, an accessibility service that sees the buttons before any app does; the launcher
+asks Home Assistant's Android TV integration to enable it over ADB (other accessibility services
+are kept). Only buttons that have an action are taken over, the rest still reach the app
+(teletext, programme guide). Choosing "On the home screen" removes the service again.
+
 ## Camera pop-ups
 
 When one of the chosen sensors turns on (by default: Frigate seeing a person on any camera of the

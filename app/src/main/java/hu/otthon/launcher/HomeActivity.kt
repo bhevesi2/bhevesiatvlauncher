@@ -368,6 +368,8 @@ class HomeActivity : Activity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // the remote's colour buttons; when they work everywhere, KeyService has them already
+        if (!(cfg.colorKeysEverywhere && KeyService.running) && ColorKeys.handle(this, cfg, event)) return true
         val down = event.action == KeyEvent.ACTION_DOWN
         val focus = currentFocus
         if (!expanded && down && event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN && focus != null && isInside(focus, bottom) &&

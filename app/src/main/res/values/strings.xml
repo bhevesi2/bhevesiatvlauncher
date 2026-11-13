@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Otthon launcher</string>
+    <string name="key_service_label">Otthon launcher colour buttons</string>
+    <string name="key_service_description">Runs the Home Assistant actions set for the red, green, yellow and blue buttons of the remote, in every app.</string>
 </resources>

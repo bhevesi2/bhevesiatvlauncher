@@ -64,7 +64,11 @@ data class Config(
     /** Bears and bunnies on the home screen: 0 none, 1 a few, 2 a whole family. */
     val critters: Int,
     /** Christmas: reindeer instead of bears and bunnies, Santa's sleigh, fairy lights as the cursor. */
-    val christmas: Boolean
+    val christmas: Boolean,
+    /** The remote's colour buttons ("red", "green", "yellow", "blue") and what each one does. */
+    val colorKeys: Map<String, HaItem>,
+    /** True: the colour buttons work in every app (KeyService), not only on the home screen. */
+    val colorKeysEverywhere: Boolean
 ) {
     val haEnabled: Boolean get() = !haUrl.isNullOrBlank() && !haToken.isNullOrBlank()
 
@@ -128,7 +132,9 @@ data class Config(
                 recoWatchNext = json.optBoolean("reco_watch_next", true),
                 recoOrder = strings(json.optJSONArray("reco_order")),
                 critters = json.optInt("critters", 0).coerceIn(0, 2),
-                christmas = json.optBoolean("christmas", false)
+                christmas = json.optBoolean("christmas", false),
+                colorKeys = colorKeys(json.optJSONObject("color_keys")),
+                colorKeysEverywhere = json.optBoolean("color_keys_everywhere", false)
             )
         }
 
@@ -153,6 +159,17 @@ data class Config(
         private fun strings(arr: JSONArray?): List<String> {
             if (arr == null) return emptyList()
             return (0 until arr.length()).mapNotNull { arr.optString(it, "").ifBlank { null } }
+        }
+
+        private fun colorKeys(o: JSONObject?): Map<String, HaItem> {
+            if (o == null) return emptyMap()
+            val map = LinkedHashMap<String, HaItem>()
+            for (k in o.keys()) {
+                val e = o.optJSONObject(k) ?: continue
+                val entity = e.optString("entity", "")
+                if (entity.isNotBlank()) map[k] = HaItem(entity, e.optString("label", ""))
+            }
+            return map
         }
 
         fun items(arr: JSONArray?): List<HaItem> {

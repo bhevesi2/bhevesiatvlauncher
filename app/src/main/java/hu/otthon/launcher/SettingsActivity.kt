@@ -54,7 +54,7 @@ class SettingsActivity : PanelActivity() {
     /** Apps that publish recommendations, read once when the Home screen page is first shown. */
     private var publishers: List<Pair<String, String>>? = null
 
-    private val roots = listOf("Appearance", "Favorites", "Home screen", "Cameras", "Inputs", "Dashboard", "Home Assistant", "About")
+    private val roots = listOf("Appearance", "Favorites", "Home screen", "Cameras", "Inputs", "Remote", "Dashboard", "Home Assistant", "About")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -168,9 +168,10 @@ class SettingsActivity : PanelActivity() {
         2 -> Page(roots[2]) { homePage() }
         3 -> Page(roots[3]) { camerasPage() }
         4 -> Page(roots[4]) { inputsPage() }
-        5 -> Page(roots[5]) { dashboardPage() }
-        6 -> Page(roots[6]) { haPage() }
-        else -> Page(roots[7]) { aboutPage() }
+        5 -> Page(roots[5]) { remotePage() }
+        6 -> Page(roots[6]) { dashboardPage() }
+        7 -> Page(roots[7]) { haPage() }
+        else -> Page(roots[8]) { aboutPage() }
     }
 
     private fun showRoot(i: Int, focusPane: Boolean) {
@@ -675,6 +676,57 @@ class SettingsActivity : PanelActivity() {
                     r.put("inputs_hidden", a)
                 }
             }
+        }
+    }
+
+    private fun remotePage() {
+        note("The red, green, yellow and blue buttons of the remote, each with a Home Assistant action: a scene, a script, a light or switch to turn on or off, a button to press, or a camera to pop up.")
+        section("Colour buttons")
+        for ((key, title, _) in ColorKeys.KEYS) {
+            val item = cfg.colorKeys[key]
+            expand("color_$key", title, item?.title ?: "Nothing") {
+                row(if (item == null) "Choose an action" else "Choose another action") {
+                    pick(title, ColorKeys.DOMAINS) { entity, name ->
+                        edit { r -> ConfigStore.obj(r, "color_keys").put(key, JSONObject().put("entity", entity).put("label", name)) }
+                    }
+                }
+                if (item != null) {
+                    row("Name", item.title) {
+                        Popup.text(this, "Name", item.label, "Shown when the button is pressed") { v ->
+                            edit { r -> ConfigStore.obj(r, "color_keys").optJSONObject(key)?.put("label", v) }
+                        }
+                    }
+                    row("Nothing") { edit { r -> ConfigStore.obj(r, "color_keys").remove(key) } }
+                }
+            }
+        }
+        section("Where they work")
+        val everywhere = cfg.colorKeysEverywhere
+        add(SegmentRow(this, "Colour buttons work", listOf("On the home screen", "In every app"), if (everywhere) 1 else 0) { i ->
+            setColorKeysEverywhere(i == 1)
+        })
+        if (everywhere && !KeyService.running) note("Waiting for the TV to start the button service. If this stays, choose “In every app” again.")
+        note("In every app, the launcher watches the colour buttons through an accessibility service, switched on over ADB by Home Assistant's Android TV integration. Only buttons that have an action are taken over; the others keep working as before in the apps, for example for teletext or the programme guide.")
+    }
+
+    private fun setColorKeysEverywhere(on: Boolean) {
+        if (on == cfg.colorKeysEverywhere && on == KeyService.running) return
+        if (!cfg.haEnabled) {
+            toast("Set up Home Assistant first: the TV only lets this be switched on over ADB")
+            change { }
+            return
+        }
+        toast(if (on) "Switching on…" else "Switching off…")
+        Adb.run(this, cfg, if (on) ColorKeys.enableCommand(this) else ColorKeys.disableCommand()) { r ->
+            Bg.main.postDelayed({
+                when {
+                    r != Adb.Result.OK -> toast(Adb.explain(r))
+                    on && !KeyService.running -> toast("The TV did not start the button service")
+                    on -> toast("The colour buttons now work in every app")
+                    else -> toast("The colour buttons now work on the home screen only")
+                }
+                edit { it.put("color_keys_everywhere", on && (r == Adb.Result.OK)) }
+            }, 1500)
         }
     }
 

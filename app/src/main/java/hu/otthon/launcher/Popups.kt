@@ -54,6 +54,17 @@ class PopupService : Service() {
             } catch (e: Exception) { }
         }
 
+        private const val CAMERA = "camera"
+        private const val CAMERA_TITLE = "camera_title"
+
+        /** Pops up [camera] now, for a colour button of the remote. */
+        fun showCamera(ctx: Context, camera: String, title: String) {
+            val i = Intent(ctx, PopupService::class.java).putExtra(CAMERA, camera).putExtra(CAMERA_TITLE, title)
+            try {
+                if (Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(i) else ctx.startService(i)
+            } catch (e: Exception) { }
+        }
+
         /** Shows the pop-up of a camera now, to see how it looks. */
         fun test(ctx: Context, camera: String) {
             val i = Intent(ctx, PopupService::class.java).putExtra(TEST, camera)
@@ -100,9 +111,10 @@ class PopupService : Service() {
         startForeground(1, notification())
         reload()
         intent?.getStringExtra(TEST)?.let { cam -> main.post { show(cam, "Test", true) } }
+        intent?.getStringExtra(CAMERA)?.let { cam -> main.post { show(cam, intent.getStringExtra(CAMERA_TITLE) ?: "", true) } }
         val c = cfg
         if (c == null || !c.haEnabled || !c.popups || c.popupTriggers.isEmpty()) {
-            if (intent?.getStringExtra(TEST) == null) stopSelf()
+            if (intent?.getStringExtra(TEST) == null && intent?.getStringExtra(CAMERA) == null) stopSelf()
         }
         return START_STICKY
     }
