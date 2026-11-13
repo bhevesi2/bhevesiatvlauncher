@@ -425,6 +425,12 @@ class SettingsActivity : PanelActivity() {
             cfg = Config.load(this)
         })
         note("Reduced keeps only short fades. Off also stops the gliding cursor and the smooth scrolling.")
+        section("Little visitors")
+        add(SegmentRow(this, "Bears and bunnies", listOf("Off", "A few", "Lots"), cfg.critters) { i ->
+            ConfigStore.edit(this) { it.put("critters", i) }
+            cfg = Config.load(this)
+        })
+        note("They walk along the tops of the tiles and buttons on the home screen, sit down now and then, and hop from one to the next.")
     }
 
     private fun favoritesPage() {

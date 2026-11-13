@@ -102,6 +102,13 @@ asks for the first time (Allow). OK opens a programme, Hold OK moves its row up 
 is something below. Settings › Home screen › Recommendations switches them off, chooses the apps
 and Continue watching, and resets the row order.
 
+## Little visitors
+
+Settings › Appearance › Bears and bunnies (Off / A few / Lots) lets a few drawn bears and bunnies
+live on the home screen: they walk along the tops of the tiles, chips and buttons, sit down,
+wave, hop from one tile to the next, and jump up when the tile under them gets focus. They are
+drawn about thirty times a second and stop whenever the home screen is covered.
+
 ## Camera pop-ups
 
 When one of the chosen sensors turns on (by default: Frigate seeing a person on any camera of the

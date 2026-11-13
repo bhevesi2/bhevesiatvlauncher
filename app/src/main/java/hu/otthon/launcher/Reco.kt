@@ -375,10 +375,10 @@ class RecoPanel(private val act: android.app.Activity) : LinearLayout(act) {
             addView(head, LayoutParams(-1, -2).apply {
                 leftMargin = side
                 rightMargin = side
-                topMargin = if (childCount > 0) act.dp(10f) else 0
+                topMargin = if (childCount > 0) act.dp(24f) else 0
             })
             val scroller = RowScroller(act)
-            scroller.setPadding(side, act.dp(9f), side, act.dp(9f))
+            scroller.setPadding(side, act.dp(12f), side, act.dp(12f))
             val line = LinearLayout(act).apply { orientation = HORIZONTAL; clipChildren = false }
             scroller.addView(line, FrameLayout.LayoutParams(-2, cardH))
             for (p in row.programs) {

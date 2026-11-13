@@ -47,6 +47,7 @@ class HomeActivity : Activity() {
     private var expanded = false
     /** Where the sliding page ends up: 0 on the home screen, negative while the rows are up. */
     private var pageTarget = 0f
+    private var critters: CritterLayer? = null
     private var lastBottomFocus: View? = null
     private var recoLoading = false
     private lateinit var topButtons: LinearLayout
@@ -166,6 +167,10 @@ class HomeActivity : Activity() {
             setPadding(dp(8f), dp(4f), dp(8f), dp(4f))
             visibility = View.INVISIBLE
         }
+        // the bears and bunnies walk on top of everything, but under the button names
+        val layer = CritterLayer(this) { critterPlaces() }
+        critters = layer
+        root.addView(layer, FrameLayout.LayoutParams(-1, -1))
         root.addView(hint, FrameLayout.LayoutParams(-2, -2))
 
         setContentView(root)
@@ -180,8 +185,15 @@ class HomeActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             clipChildren = false
             descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+            // hidden until the page slides up, so nothing of it peeks in at the bottom edge
+            alpha = 0f
         }
-        recoScroll = ColScroller(this).apply { clipToPadding = false; clipChildren = false }
+        recoScroll = ColScroller(this).apply {
+            clipToPadding = false
+            clipChildren = false
+            // room above the first and below the last row for the enlarged card and its glow
+            setPadding(0, dp(12f), 0, dp(44f))
+        }
         reco = RecoPanel(this)
         recoScroll.addView(reco, FrameLayout.LayoutParams(-1, -2))
         recoBox.addView(recoScroll, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -216,6 +228,7 @@ class HomeActivity : Activity() {
             if (expanded && isInside(now, content)) collapse(false)
             if (!expanded && isInside(now, bottom)) lastBottomFocus = now
             if (!expanded) showMoreHint()
+            critters?.onFocus(now)
         }
     }
 
@@ -245,6 +258,19 @@ class HomeActivity : Activity() {
         }
     }
 
+    /** Everything on the home screen the critters may stand on. */
+    private fun critterPlaces(): List<View> {
+        val out = ArrayList<View>()
+        for (row in listOf(favRow, chipsRow, topButtons)) for (i in 0 until row.childCount) out.add(row.getChildAt(i))
+        fun walk(v: View) {
+            if (v.isFocusable && v !is android.widget.HorizontalScrollView) out.add(v)
+            else if (v is ViewGroup) for (i in 0 until v.childCount) walk(v.getChildAt(i))
+        }
+        walk(bottom)
+        if (npCard.visibility == View.VISIBLE) out.add(npCard)
+        return out
+    }
+
     private fun isInside(v: View, parent: View): Boolean {
         var p: View? = v
         while (p != null) {
@@ -256,8 +282,8 @@ class HomeActivity : Activity() {
 
     private fun placeReco() {
         if (bottom.height == 0) return
-        val top = bottom.bottom + content.top + dp(16f)
-        val height = page.height - (bottom.height + dp(40f))
+        val top = bottom.bottom + content.top + dp(24f)
+        val height = page.height - (bottom.height + dp(46f))
         val lp = recoBox.layoutParams as FrameLayout.LayoutParams
         if (lp.topMargin != top || lp.height != height) {
             lp.topMargin = top
@@ -285,6 +311,8 @@ class HomeActivity : Activity() {
         val ms = if (Motion.level == Motion.OFF) 0L else 320L
         page.animate().translationY(shift).setDuration(ms).setInterpolator(android.view.animation.DecelerateInterpolator(2f)).start()
         recoDim.animate().alpha(1f).setDuration(ms).start()
+        recoBox.animate().alpha(1f).setDuration(ms).start()
+        critters?.paused = true
         reco.firstFocusable?.requestFocus()
         loadReco()
     }
@@ -296,6 +324,8 @@ class HomeActivity : Activity() {
         val ms = if (Motion.level == Motion.OFF) 0L else 280L
         page.animate().translationY(0f).setDuration(ms).setInterpolator(android.view.animation.DecelerateInterpolator(2f)).start()
         recoDim.animate().alpha(0f).setDuration(ms).start()
+        recoBox.animate().alpha(0f).setDuration(ms).start()
+        critters?.paused = false
         if (moveFocus) (lastBottomFocus?.takeIf { it.isAttachedToWindow && isInside(it, bottom) } ?: bottom.getChildAt(0))?.requestFocus()
         recoBox.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
         recoScroll.scrollTo(0, 0)
@@ -630,6 +660,8 @@ class HomeActivity : Activity() {
         super.onResume()
         resumed = true
         reload()
+        critters?.setCount(cfg.critters)
+        critters?.paused = expanded
         if (awayOnOwnScreen) {
             // back from one of our own screens: let the tiles fade back instead of popping in
             awayOnOwnScreen = false
@@ -662,6 +694,7 @@ class HomeActivity : Activity() {
     override fun onPause() {
         super.onPause()
         resumed = false
+        critters?.paused = true
         try { unregisterReceiver(tick) } catch (e: Exception) { }
         Bg.main.removeCallbacks(statusLoop)
         Bg.main.removeCallbacks(npLoop)

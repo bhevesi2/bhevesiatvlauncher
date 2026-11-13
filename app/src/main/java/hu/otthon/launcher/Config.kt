@@ -60,7 +60,9 @@ data class Config(
     /** The "Continue watching" row at the top of the recommendations. */
     val recoWatchNext: Boolean,
     /** Recommendation rows in the order chosen on the home screen (row keys); the rest follow. */
-    val recoOrder: List<String>
+    val recoOrder: List<String>,
+    /** Bears and bunnies on the home screen: 0 none, 1 a few, 2 a whole family. */
+    val critters: Int
 ) {
     val haEnabled: Boolean get() = !haUrl.isNullOrBlank() && !haToken.isNullOrBlank()
 
@@ -121,7 +123,8 @@ data class Config(
                 recommendations = json.optBoolean("recommendations", true),
                 recoHidden = strings(json.optJSONArray("reco_hidden")).toSet(),
                 recoWatchNext = json.optBoolean("reco_watch_next", true),
-                recoOrder = strings(json.optJSONArray("reco_order"))
+                recoOrder = strings(json.optJSONArray("reco_order")),
+                critters = json.optInt("critters", 0).coerceIn(0, 2)
             )
         }
 
