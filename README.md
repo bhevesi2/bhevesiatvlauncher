@@ -22,6 +22,13 @@ Everything is edited on the TV: the gear icon on the home screen opens the launc
 (background set, favorites, status chips, quick actions, cameras, inputs, dashboard sections,
 Home Assistant connection). Entities are chosen from a searchable list loaded from Home Assistant.
 
+Settings › Home Assistant › Use Home Assistant is the main switch (`ha_on`). Off, the launcher
+works on its own, for a TV in a home without Home Assistant: no dashboard, cameras, Today panel,
+quick actions, chips, Now playing card, camera pop-ups or colour buttons. Their settings are kept
+for when it is switched on again. Changing the Home button and installing updates from Settings
+go through Home Assistant's ADB integration, so on such a TV use `home-button.bat` and
+`update.bat` on the PC instead.
+
 The settings are stored in `/sdcard/Android/data/hu.otthon.launcher/files/config.json`, which can
 also be written over ADB. Main keys: `ha_url`, `ha_token`, `lat`, `lon`, `background`, `dim`,
 `status`, `scenes`, `cameras` (lists of `{ "entity", "label" }`), `now_playing`, `inputs_hidden`,
@@ -155,7 +162,8 @@ at home; sunrise, sunset and whether it is a workday sit under the clock.
 ## Updates on the TV
 
 Settings › About › Check for updates looks at the latest GitHub release; OK downloads it and has
-Home Assistant install it over ADB. The home screen checks every six hours and puts a dot on the
+Home Assistant install it over ADB (copied to `/data/local/tmp` first: the package manager may not
+read the app's own folder). The home screen checks every six hours and puts a dot on the
 settings button when there is something newer.
 
 ## Making it the default home app

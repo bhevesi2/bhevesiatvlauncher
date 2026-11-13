@@ -42,7 +42,7 @@ object Adb {
     /** What to tell the user when it did not work. */
     fun explain(r: Result): String = when (r) {
         Result.OK -> "Done"
-        Result.NO_HA -> "Set up Home Assistant first: the TV only allows this over ADB"
+        Result.NO_HA -> "Set up or switch on Home Assistant first: the TV only allows this over ADB"
         Result.NO_TV -> "Couldn't find this TV in Home Assistant. Choose it under Settings › Home screen › This TV in Home Assistant."
         Result.FAILED -> "Home Assistant could not run the command on the TV"
     }

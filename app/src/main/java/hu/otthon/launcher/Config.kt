@@ -25,6 +25,8 @@ data class DashSection(val title: String, val hideWhen: String?, val items: List
 data class Config(
     val haUrl: String?,
     val haToken: String?,
+    /** The main switch: off, the launcher works without Home Assistant and keeps its settings. */
+    val haOn: Boolean,
     val lat: Double,
     val lon: Double,
     val favorites: List<String>,
@@ -70,7 +72,7 @@ data class Config(
     /** True: the colour buttons work in every app (KeyService), not only on the home screen. */
     val colorKeysEverywhere: Boolean
 ) {
-    val haEnabled: Boolean get() = !haUrl.isNullOrBlank() && !haToken.isNullOrBlank()
+    val haEnabled: Boolean get() = haOn && !haUrl.isNullOrBlank() && !haToken.isNullOrBlank()
 
     /** The live stream of a camera entity, or null when live video is off. */
     fun stream(camera: String): String? {
@@ -104,6 +106,7 @@ data class Config(
             return Config(
                 haUrl = json.optString("ha_url", "").trim().trimEnd('/').ifBlank { null },
                 haToken = json.optString("ha_token", "").trim().ifBlank { null },
+                haOn = json.optBoolean("ha_on", true),
                 lat = json.optDouble("lat", 47.63),
                 lon = json.optDouble("lon", 17.73),
                 favorites = strings(json.optJSONArray("favorites")).ifEmpty { DEFAULT_FAVORITES },

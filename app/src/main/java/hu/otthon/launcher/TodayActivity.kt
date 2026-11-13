@@ -63,7 +63,7 @@ class TodayActivity : PanelActivity() {
         super.onCreate(savedInstanceState)
         cfg = Config.load(this)
         if (!cfg.haEnabled) {
-            Toast.makeText(this, "Set up Home Assistant first", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Set up or switch on Home Assistant first", Toast.LENGTH_SHORT).show()
             finish()
             return
         }

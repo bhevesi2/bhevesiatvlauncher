@@ -356,7 +356,7 @@ class SettingsActivity : PanelActivity() {
 
     private fun pick(title: String, domains: String, cb: (String, String) -> Unit) {
         if (!cfg.haEnabled) {
-            toast("Set up Home Assistant first")
+            toast("Set up or switch on Home Assistant first")
             return
         }
         pendingFocus = focusedRow() ?: 0
@@ -471,7 +471,7 @@ class SettingsActivity : PanelActivity() {
     private fun setDefaultHome(ours: Boolean) {
         val client = if (cfg.haEnabled) HaClient(cfg.haUrl!!, cfg.haToken!!) else null
         if (client == null) {
-            toast("Set up Home Assistant first: the TV only lets this be changed over ADB")
+            toast("Set up or switch on Home Assistant first: the TV only lets this be changed over ADB")
             return
         }
         if (!ours && !Apps.stockInstalled(this)) {
@@ -712,7 +712,7 @@ class SettingsActivity : PanelActivity() {
     private fun setColorKeysEverywhere(on: Boolean) {
         if (on == cfg.colorKeysEverywhere && on == KeyService.running) return
         if (!cfg.haEnabled) {
-            toast("Set up Home Assistant first: the TV only lets this be switched on over ADB")
+            toast("Set up or switch on Home Assistant first: the TV only lets this be switched on over ADB")
             change { }
             return
         }
@@ -790,6 +790,14 @@ class SettingsActivity : PanelActivity() {
     }
 
     private fun haPage() {
+        toggle("Use Home Assistant", cfg.haOn) { on ->
+            edit { it.put("ha_on", on) }
+            PopupService.sync(this)
+        }
+        if (!cfg.haOn) {
+            note("Switched off: the launcher works on its own, without the dashboard, cameras, Today panel, quick actions, status and weather chips, the Now playing card, camera pop-ups and the colour buttons. Everything set up for them is kept, and comes back when this is switched on again. Changing the Home button and installing updates from Settings also need Home Assistant; on a TV without it, use update.bat and home-button.bat on the PC.")
+            return
+        }
         section("Connection")
         row("Server address", cfg.haUrl ?: "Not set") {
             Popup.text(this, "Server address", cfg.haUrl ?: "http://", "http://192.168.1.10:8123") { v -> edit { it.put("ha_url", v) } }
@@ -870,7 +878,7 @@ class SettingsActivity : PanelActivity() {
 
     private fun install(r: Updates.Release) {
         if (!cfg.haEnabled) {
-            toast("Set up Home Assistant first, or run update.bat on the PC")
+            toast("Set up or switch on Home Assistant first, or run update.bat on the PC")
             return
         }
         updating = true
