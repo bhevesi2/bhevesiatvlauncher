@@ -288,6 +288,7 @@ class RecoCard(ctx: Context, val program: Reco.Program, val row: Reco.Row, glow:
         FocusGlide.glow(this, glow)
         setOnFocusChangeListener { v, f ->
             v.animate().scaleX(if (f) 1.1f else 1f).scaleY(if (f) 1.1f else 1f).setDuration(160).start()
+            Neighbors.push(v, f)
         }
     }
 

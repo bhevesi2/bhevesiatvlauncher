@@ -45,6 +45,8 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
     }
 
     private val d = resources.displayMetrics.density
+    /** Drawing units to dp: the bears are about 30 dp tall standing, the bunnies about 34 with ears. */
+    private val SIZE = 1.05f
     private val critters = ArrayList<Critter>()
     private var places: List<View> = emptyList()
     private var placesAt = 0L
@@ -208,10 +210,13 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
                     }
                 }
                 State.WALK -> {
-                    val speed = (if (c.bunny) 26f else 16f) * d
+                    // bunnies only move while in the air
+                    val inAir = !c.bunny || sin(((c.phase * 2.6f) % 1f) * Math.PI.toFloat()) > 0.15f
+                    val speed = (if (c.bunny) (if (inAir) 46f else 0f) else 15f) * d
                     c.x += c.dir * speed * dt
                     c.timer -= dt
-                    val edge = 6 * d
+                    // half a body from the edge, so nobody hangs over it
+                    val edge = (if (c.bunny) 11f else 17f) * d * SIZE
                     if (c.x < edge || c.x > r!!.width() - edge) {
                         c.x = c.x.coerceIn(edge, max(edge, r!!.width() - edge))
                         if (Random.nextFloat() < 0.65f && !jumpAcross(c, r)) c.dir = -c.dir
@@ -280,7 +285,7 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
             if (c.on == null && c.state != State.JUMP) continue
             val save = canvas.save()
             canvas.translate(c.px, c.py)
-            canvas.scale(c.dir * d, d)
+            canvas.scale(c.dir * d * SIZE, d * SIZE)
             val a = (c.alpha * 255).toInt()
             if (c.bunny) bunny(canvas, c, a) else bear(canvas, c, a)
             canvas.restoreToCount(save)
@@ -301,97 +306,136 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
         canvas.drawOval(oval, p)
     }
 
-    /** A round little bear, drawn facing right with its feet at (0, 0), about 26 units tall. */
+    /**
+     * A bear, drawn facing right with its feet at (0, 0): on all fours while it walks, with the
+     * shoulder hump, short round ears and long muzzle of a real one; sitting up when it rests.
+     */
     private fun bear(canvas: Canvas, c: Critter, a: Int) {
-        val walking = c.state == State.WALK
-        val step = if (walking) sin(c.phase * 9f) else 0f
-        val bob = if (walking) abs(step) * 0.8f else 0f
-        val sitting = c.state == State.IDLE
-        canvas.save()
-        canvas.translate(0f, -bob)
-        if (walking) canvas.rotate(step * 3f, 0f, -8f)
-        // legs
-        fill(darker(c.coat), a)
-        if (sitting) {
-            ellipse(canvas, -2f, -1.6f, 3.6f, 1.8f)
-            ellipse(canvas, 5f, -1.6f, 3.6f, 1.8f)
-        } else {
-            ellipse(canvas, -3.5f, -2f - max(0f, step) * 1.5f, 2.4f, 2.2f)
-            ellipse(canvas, 3.5f, -2f - max(0f, -step) * 1.5f, 2.4f, 2.2f)
+        val dark = darker(c.coat)
+        if (c.state == State.IDLE) {
+            // sitting up
+            fill(dark, a)
+            ellipse(canvas, -3f, -2f, 5f, 2.2f)
+            ellipse(canvas, 7f, -2f, 5f, 2.2f)
+            fill(c.coat, a)
+            ellipse(canvas, 1f, -14f, 11f, 13f)
+            fill(c.light, a)
+            ellipse(canvas, 3f, -12f, 6.5f, 8f)
+            // front paws, one waving now and then
+            fill(dark, a)
+            ellipse(canvas, 8f, -10f, 3.2f, 2.6f)
+            canvas.save()
+            canvas.rotate(if (c.wave) -140f + sin(c.phase * 9f) * 22f else 0f, 6f, -20f)
+            ellipse(canvas, 8f, -14f, 2.8f, 5f)
+            canvas.restore()
+            // head
+            fill(c.coat, a)
+            ellipse(canvas, -1f, -36.5f, 3f, 3f)
+            ellipse(canvas, 9f, -36.5f, 3f, 3f)
+            fill(dark, a)
+            ellipse(canvas, -1f, -36.5f, 1.5f, 1.5f)
+            ellipse(canvas, 9f, -36.5f, 1.5f, 1.5f)
+            fill(c.coat, a)
+            ellipse(canvas, 4f, -30f, 8f, 7.4f)
+            fill(c.light, a)
+            ellipse(canvas, 9.5f, -27.5f, 4.6f, 3.4f)
+            fill(0xFF22160F.toInt(), a)
+            ellipse(canvas, 13.3f, -28.6f, 1.6f, 1.2f)
+            eye(canvas, c, 8.4f, -32f, 1.1f)
+            return
         }
-        // body and belly
-        fill(c.coat, a)
-        ellipse(canvas, 0f, if (sitting) -8f else -9f, 9f, if (sitting) 7.5f else 7f)
-        fill(c.light, a)
-        ellipse(canvas, 2.5f, if (sitting) -7.5f else -8.5f, 5f, 4.6f)
-        // tail
-        fill(c.coat, a)
-        ellipse(canvas, -8.6f, -9f, 2.2f, 2.2f)
-        // arm, waving now and then
+        // walking on all fours, legs in a diagonal gait
+        val g = sin(c.phase * 8f)
+        val sway = sin(c.phase * 4f) * 0.8f
+        fun leg(x: Float, phase: Float, far: Boolean) {
+            val lift = max(0f, phase) * 2.2f
+            val swing = phase * 1.6f
+            fill(if (far) darker(dark) else dark, a)
+            oval.set(x - 2.6f + swing, -11f, x + 2.6f + swing, -lift)
+            canvas.drawRoundRect(oval, 2.4f, 2.4f, p)
+        }
+        leg(-9f, -g, true)
+        leg(10f, g, true)
         canvas.save()
-        val armAngle = if (c.wave) -70f + sin(c.phase * 10f) * 25f else 10f
-        canvas.rotate(armAngle, 5f, -11f)
-        fill(darker(c.coat), a)
-        ellipse(canvas, 8f, -11f, 3.4f, 1.8f)
-        canvas.restore()
-        // head
+        canvas.translate(0f, sway * 0.3f)
         fill(c.coat, a)
-        ellipse(canvas, 1.5f, -24.5f, 2.8f, 2.8f)
-        ellipse(canvas, 9.5f, -24.5f, 2.8f, 2.8f)
-        fill(c.light, a)
-        ellipse(canvas, 1.5f, -24.5f, 1.4f, 1.4f)
-        ellipse(canvas, 9.5f, -24.5f, 1.4f, 1.4f)
-        fill(c.coat, a)
-        ellipse(canvas, 5.5f, -18.5f, 6.8f, 6.3f)
-        fill(c.light, a)
-        ellipse(canvas, 9.6f, -16.8f, 3.2f, 2.4f)
-        fill(0xFF2B1D16.toInt(), a)
-        ellipse(canvas, 11.6f, -17.6f, 1.1f, 0.9f)
-        // eye: blinks every few seconds
-        val blink = (c.phase % 4f) < 0.12f
-        if (blink) ellipse(canvas, 7.6f, -20f, 1.1f, 0.25f) else ellipse(canvas, 7.6f, -20f, 1f, 1.1f)
-        fill(0xFFF0A0A0.toInt(), a / 2)
-        ellipse(canvas, 6.4f, -16.5f, 1.6f, 1f)
+        ellipse(canvas, 0f, -15f, 16f, 8.5f)
+        ellipse(canvas, 6f, -19.5f, 8.5f, 6f)            // shoulder hump
+        ellipse(canvas, -15f, -17f, 2f, 2f)              // tail
         canvas.restore()
+        leg(-13f, g, false)
+        leg(6f, -g, false)
+        // head, a little low, the way bears carry it
+        fill(c.coat, a)
+        ellipse(canvas, 14f, -24f, 2.4f, 2.4f)
+        ellipse(canvas, 19f, -24.4f, 2.2f, 2.2f)
+        fill(dark, a)
+        ellipse(canvas, 14f, -24f, 1.1f, 1.1f)
+        fill(c.coat, a)
+        ellipse(canvas, 17.5f, -18f, 7f, 6.2f)
+        fill(c.light, a)
+        ellipse(canvas, 23.5f, -16f, 4.4f, 3.2f)
+        fill(0xFF22160F.toInt(), a)
+        ellipse(canvas, 27.2f, -17.2f, 1.9f, 1.4f)
+        eye(canvas, c, 20.2f, -20f, 1f)
     }
 
-    /** A bunny that hops rather than walks, drawn facing right with its feet at (0, 0). */
+    /**
+     * A bunny, drawn facing right with its feet at (0, 0): crouched on long hind feet, tall ears,
+     * a white puff of a tail, a twitching nose; it moves in hops, stretching out in the air.
+     */
     private fun bunny(canvas: Canvas, c: Critter, a: Int) {
         val walking = c.state == State.WALK
-        val hop = if (walking) abs(sin(c.phase * 7f)) * 5f else 0f
-        val twitch = if (!walking && (c.phase % 3f) < 0.3f) sin(c.phase * 40f) * 8f else 0f
+        val cycle = (c.phase * 2.6f) % 1f
+        val hop = if (walking) sin(cycle * Math.PI.toFloat()) else 0f
+        val twitch = if (!walking && (c.phase % 3f) < 0.35f) sin(c.phase * 45f) * 7f else 0f
+        val sniff = sin(c.phase * 22f) * 0.35f
         canvas.save()
-        canvas.translate(0f, -hop)
-        // feet
-        fill(darker(c.coat), a)
-        ellipse(canvas, 3f, -1.4f, 3.4f, 1.5f)
-        ellipse(canvas, -4f, -1.4f, 3.4f, 1.5f)
-        // body and fluffy tail
+        canvas.translate(0f, -hop * 9f)
+        canvas.rotate(-hop * 12f, 0f, -6f)
+        val dark = darker(c.coat)
+        // long hind foot, a little front paw
+        fill(dark, a)
+        ellipse(canvas, -3f + hop * 2f, -1.8f, 7f, 1.9f)
+        ellipse(canvas, 9f + hop * 3f, -1.6f, 2.4f, 1.6f)
+        // haunch and body
         fill(c.coat, a)
-        ellipse(canvas, -1f, -8f, 8f, 6.8f)
-        fill(0xFFFFFFFF.toInt(), a)
-        ellipse(canvas, -8.4f, -9f, 2.8f, 2.8f)
-        // ears
-        for ((ex, tilt) in listOf(3.6f to -8f, 7.4f to 6f)) {
+        ellipse(canvas, -3.5f, -8.5f, 8f, 7.5f)
+        ellipse(canvas, 2.5f, -9f, 9f, 6.6f)
+        fill(if (c.coat == 0xFFF4F1EC.toInt()) 0xFFFFFFFF.toInt() else 0xFFF7F4EF.toInt(), a)
+        ellipse(canvas, -11f, -11f, 3.4f, 3.4f)
+        // ears: long, standing up, laid back a bit while hopping
+        for ((ex, tilt) in listOf(8.3f to -14f, 11.3f to -3f)) {
             canvas.save()
-            canvas.rotate(tilt + twitch, ex, -20f)
+            canvas.rotate(tilt + twitch - hop * 20f, ex, -21f)
             fill(c.coat, a)
-            ellipse(canvas, ex, -26f, 2f, 6.4f)
+            ellipse(canvas, ex, -30f, 2.3f, 9f)
             fill(c.light, a)
-            ellipse(canvas, ex, -26f, 1f, 4.8f)
+            ellipse(canvas, ex, -29.5f, 1.1f, 7f)
             canvas.restore()
         }
         // head
         fill(c.coat, a)
-        ellipse(canvas, 6f, -16f, 5.6f, 5.2f)
-        fill(0xFF2B2422.toInt(), a)
-        val blink = (c.phase % 3.5f) < 0.12f
-        if (blink) ellipse(canvas, 7.8f, -16.8f, 1f, 0.25f) else ellipse(canvas, 7.8f, -16.8f, 0.9f, 1f)
-        fill(0xFFE88FA0.toInt(), a)
-        ellipse(canvas, 11.2f, -15f, 0.9f, 0.7f)
+        ellipse(canvas, 11f, -17.5f, 6f, 5.4f)
+        ellipse(canvas, 14.5f, -16f, 3.4f, 3f)
+        eye(canvas, c, 13f, -18.8f, 1.15f)
+        fill(0xFFE07A90.toInt(), a)
+        ellipse(canvas, 17.6f, -16.4f + sniff, 1.1f, 0.8f)
         fill(0xFFF4A3B4.toInt(), a / 2)
-        ellipse(canvas, 8.4f, -13.8f, 1.5f, 1f)
+        ellipse(canvas, 13.6f, -15f, 1.7f, 1.1f)
         canvas.restore()
+    }
+
+    /** A dark eye with a tiny highlight; it blinks every few seconds. */
+    private fun eye(canvas: Canvas, c: Critter, x: Float, y: Float, r: Float) {
+        fill(0xFF1E1714.toInt(), (c.alpha.coerceIn(0f, 1f) * 255).toInt())
+        if ((c.phase % 3.7f) < 0.12f) {
+            ellipse(canvas, x, y, r, r * 0.25f)
+        } else {
+            ellipse(canvas, x, y, r, r * 1.1f)
+            fill(0xFFFFFFFF.toInt(), (c.alpha * 200).toInt())
+            ellipse(canvas, x + r * 0.35f, y - r * 0.4f, r * 0.35f, r * 0.35f)
+        }
     }
 
     private fun darker(c: Int): Int {

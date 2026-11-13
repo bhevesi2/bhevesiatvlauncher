@@ -171,7 +171,34 @@ class AppTile(ctx: Context, val app: AppEntry) : FrameLayout(ctx) {
             background = if (glide) solid else glass
             v.animate().scaleX(if (f) 1.1f else 1f).scaleY(if (f) 1.1f else 1f)
                 .translationZ(if (f && !glide) ctx.dp(6f).toFloat() else 0f).setDuration(160).start()
+            Neighbors.push(v, f)
             if (f) onFocused?.invoke()
+        }
+    }
+}
+
+/**
+ * When a tile in a row grows on focus, its neighbours step aside a little, with a small spring,
+ * as if making room for it; they come back when it lets go.
+ */
+object Neighbors {
+    private val spring = android.view.animation.OvershootInterpolator(1.6f)
+
+    fun push(v: View, focused: Boolean) {
+        val row = v.parent as? LinearLayout ?: return
+        if (row.orientation != LinearLayout.HORIZONTAL || Motion.level == Motion.OFF) return
+        val i = row.indexOfChild(v)
+        // half of the growth, plus a little air
+        val step = v.width * 0.05f + v.resources.displayMetrics.density * 5f
+        for (k in 1..2) {
+            val share = if (k == 1) 1f else 0.35f
+            for (side in intArrayOf(-1, 1)) {
+                val n = row.getChildAt(i + side * k) ?: continue
+                if (n.width == 0) continue
+                val to = if (focused) side * step * share else 0f
+                n.animate().translationX(to).setDuration(if (focused) 320L else 220L)
+                    .setInterpolator(if (focused) spring else DecelerateInterpolator()).start()
+            }
         }
     }
 }
