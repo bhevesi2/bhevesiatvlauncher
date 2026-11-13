@@ -660,7 +660,7 @@ class HomeActivity : Activity() {
         super.onResume()
         resumed = true
         reload()
-        critters?.setCount(cfg.critters)
+        critters?.setCount(cfg.critters, cfg.christmas)
         critters?.paused = expanded
         if (awayOnOwnScreen) {
             // back from one of our own screens: let the tiles fade back instead of popping in

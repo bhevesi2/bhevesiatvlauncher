@@ -431,6 +431,8 @@ class SettingsActivity : PanelActivity() {
             cfg = Config.load(this)
         })
         note("They walk along the tops of the tiles and buttons on the home screen, sit down now and then, and hop from one to the next.")
+        toggle("Christmas", cfg.christmas) { on -> edit { it.put("christmas", on) } }
+        note("Reindeer take the place of the bears and bunnies, Santa's sleigh flies across the screen now and then, and the app tiles light up with a string of fairy lights instead of the glow.")
     }
 
     private fun favoritesPage() {

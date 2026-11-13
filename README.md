@@ -111,6 +111,13 @@ gets focus. Bears waddle, wave, step across small gaps and, to reach another row
 ladder, climb it and pack it away. They are drawn about thirty times a second and stop whenever
 the home screen is covered.
 
+Settings › Appearance › Christmas swaps them for reindeer with red collars and little bells
+(at least a few, even with Bears and bunnies off). They trot along the tiles, leap across gaps
+and nibble at the frost now and then. Every minute or two Santa's sleigh, loaded with presents
+and pulled by two pairs of reindeer, flies across the screen and leaves a trail of gold dust;
+halfway across Santa waves. The app tiles light up with a twinkling string of fairy lights
+instead of the coloured glow.
+
 ## Camera pop-ups
 
 When one of the chosen sensors turns on (by default: Frigate seeing a person on any camera of the

@@ -413,6 +413,15 @@ class FocusGlide private constructor(private val host: View) {
             shapes[v] = Shape(radius, outset)
         }
 
+        /** Christmas: the glow around app tiles becomes a string of twinkling fairy lights. */
+        @Volatile
+        var festive = false
+
+        /** The bulbs' colours, in the order they hang on the string. */
+        private val BULBS = intArrayOf(
+            0xFFFF3B30.toInt(), 0xFFFFC52E.toInt(), 0xFF34C759.toInt(), 0xFF3D8BFF.toInt(), 0xFFFF8A1F.toInt()
+        )
+
         /** Makes the cursor a soft glow of [color] around [v] instead of the light fill under it. */
         fun glow(v: View, color: Int) {
             shapes[v]?.glow = color
@@ -480,6 +489,91 @@ class FocusGlide private constructor(private val host: View) {
     private var move: ValueAnimator? = null
     private val a = IntArray(2)
     private val b = IntArray(2)
+
+    // ---------- fairy lights ----------
+    private val dens = host.resources.displayMetrics.density
+    private val wirePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 1.5f * dens
+        color = 0xFF1C3322.toInt()
+    }
+    private val socketPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF2A4A30.toInt() }
+    private val bulbPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val shinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE }
+    private val haloRadius = 15f * dens
+    private val haloPaints = BULBS.map { c ->
+        Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = android.graphics.RadialGradient(
+                0f, 0f, haloRadius,
+                intArrayOf((c and 0xFFFFFF) or 0xAA000000.toInt(), (c and 0xFFFFFF) or 0x40000000, c and 0xFFFFFF),
+                floatArrayOf(0f, 0.4f, 1f), android.graphics.Shader.TileMode.CLAMP
+            )
+        }
+    }
+    private val lightPath = android.graphics.Path()
+    private val measure = android.graphics.PathMeasure()
+    private val lightRect = RectF()
+    private val bulbOval = RectF()
+    private val pos = FloatArray(2)
+    private val tan = FloatArray(2)
+
+    /** A string of bulbs hung around the cursor's rectangle, each twinkling at its own pace. */
+    private fun drawLights(canvas: Canvas, k: Float) {
+        val o = 4f * dens
+        lightRect.set(now)
+        lightRect.inset(-o, -o)
+        val r = nowRadius + o
+        lightPath.reset()
+        lightPath.addRoundRect(lightRect, r, r, android.graphics.Path.Direction.CW)
+        measure.setPath(lightPath, true)
+        val len = measure.length
+        if (len <= 0f) return
+        val n = maxOf(10, Math.round(len / (23f * dens)))
+        val step = len / n
+        val time = android.os.SystemClock.uptimeMillis() / 1000f
+        val a = (k * 255).toInt()
+        wirePaint.alpha = a
+        canvas.drawPath(lightPath, wirePaint)
+        // halos first, so no halo covers a neighbouring bulb
+        val glow = FloatArray(n)
+        for (i in 0 until n) {
+            // each bulb has its own speed; together they look like a slow, irregular twinkle
+            val speed = 1.3f + ((i * 7) % 5) * 0.32f
+            glow[i] = 0.5f + 0.5f * kotlin.math.sin(time * speed + i * 2.3f)
+            measure.getPosTan(i * step, pos, tan)
+            val hp = haloPaints[i % BULBS.size]
+            hp.alpha = (k * (0.25f + 0.75f * glow[i]) * 255).toInt()
+            val save = canvas.save()
+            canvas.translate(pos[0] + tan[1] * 5f * dens, pos[1] - tan[0] * 5f * dens)
+            canvas.drawCircle(0f, 0f, haloRadius, hp)
+            canvas.restoreToCount(save)
+        }
+        for (i in 0 until n) {
+            measure.getPosTan(i * step, pos, tan)
+            val c = BULBS[i % BULBS.size]
+            val save = canvas.save()
+            canvas.translate(pos[0], pos[1])
+            // outward is to the left of the direction of travel on a clockwise path
+            canvas.rotate(Math.toDegrees(Math.atan2(-tan[0].toDouble(), tan[1].toDouble())).toFloat())
+            socketPaint.alpha = a
+            canvas.drawRect(-0.4f * dens, -1.7f * dens, 2.4f * dens, 1.7f * dens, socketPaint)
+            bulbPaint.color = blend(dim(c), c, 0.35f + 0.65f * glow[i])
+            bulbPaint.alpha = a
+            bulbOval.set(1.6f * dens, -2.5f * dens, 8.6f * dens, 2.5f * dens)
+            canvas.drawOval(bulbOval, bulbPaint)
+            shinePaint.alpha = (k * (0.25f + 0.55f * glow[i]) * 255).toInt()
+            bulbOval.set(4.6f * dens, -1.5f * dens, 7.2f * dens, -0.3f * dens)
+            canvas.drawOval(bulbOval, shinePaint)
+            canvas.restoreToCount(save)
+        }
+    }
+
+    private fun dim(c: Int): Int {
+        val r = ((c shr 16) and 0xFF) * 2 / 5
+        val g = ((c shr 8) and 0xFF) * 2 / 5
+        val b = (c and 0xFF) * 2 / 5
+        return (0xFF shl 24) or (r shl 16) or (g shl 8) or b
+    }
 
     private val onFocus = ViewTreeObserver.OnGlobalFocusChangeListener { _, v -> focusTo(v) }
     private val onPreDraw = ViewTreeObserver.OnPreDrawListener { track(); true }
@@ -639,7 +733,14 @@ class FocusGlide private constructor(private val host: View) {
             base?.draw(canvas)
             if (!shown || now.isEmpty) return
             val mask = glowMask
-            if (nowGlow > 0f && mask != null) {
+            if (nowGlow > 0f && festive) {
+                val save = canvas.save()
+                if (clipped) canvas.clipRect(clip.left - margin, clip.top - margin, clip.right + margin, clip.bottom + margin)
+                drawLights(canvas, nowGlow)
+                canvas.restoreToCount(save)
+                // keep twinkling, at a pace that is kind to the TV
+                host.postInvalidateDelayed(40)
+            } else if (nowGlow > 0f && mask != null) {
                 val save = canvas.save()
                 // the glow may spill over the edge of its list, as far as it reaches
                 if (clipped) canvas.clipRect(clip.left - margin, clip.top - margin, clip.right + margin, clip.bottom + margin)

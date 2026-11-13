@@ -62,7 +62,9 @@ data class Config(
     /** Recommendation rows in the order chosen on the home screen (row keys); the rest follow. */
     val recoOrder: List<String>,
     /** Bears and bunnies on the home screen: 0 none, 1 a few, 2 a whole family. */
-    val critters: Int
+    val critters: Int,
+    /** Christmas: reindeer instead of bears and bunnies, Santa's sleigh, fairy lights as the cursor. */
+    val christmas: Boolean
 ) {
     val haEnabled: Boolean get() = !haUrl.isNullOrBlank() && !haToken.isNullOrBlank()
 
@@ -94,6 +96,7 @@ data class Config(
             json.optJSONObject("input_names")?.let { o -> o.keys().forEach { k -> names[k] = o.optString(k) } }
             val animations = json.optString("animations", "full").let { if (it == "reduced" || it == "off") it else "full" }
             Motion.level = when (animations) { "off" -> Motion.OFF; "reduced" -> Motion.REDUCED; else -> Motion.FULL }
+            FocusGlide.festive = json.optBoolean("christmas", false)
             return Config(
                 haUrl = json.optString("ha_url", "").trim().trimEnd('/').ifBlank { null },
                 haToken = json.optString("ha_token", "").trim().ifBlank { null },
@@ -124,7 +127,8 @@ data class Config(
                 recoHidden = strings(json.optJSONArray("reco_hidden")).toSet(),
                 recoWatchNext = json.optBoolean("reco_watch_next", true),
                 recoOrder = strings(json.optJSONArray("reco_order")),
-                critters = json.optInt("critters", 0).coerceIn(0, 2)
+                critters = json.optInt("critters", 0).coerceIn(0, 2),
+                christmas = json.optBoolean("christmas", false)
             )
         }
 
