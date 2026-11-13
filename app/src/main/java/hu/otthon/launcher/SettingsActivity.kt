@@ -530,7 +530,8 @@ class SettingsActivity : PanelActivity() {
                     }
                 }
             }
-            note("Press Down on the bottom row of the home screen to see them. Hold OK on a recommendation to hide its app.")
+            if (cfg.recoOrder.isNotEmpty()) row("Reset the row order") { edit { it.remove("reco_order") } }
+            note("Press Down on the bottom row of the home screen to see them. Hold OK on a recommendation to move its row.")
         }
         section("Weather chip")
         toggle("Show the weather before the status chips", cfg.weatherChip) { on -> edit { it.put("weather_chip", on) } }

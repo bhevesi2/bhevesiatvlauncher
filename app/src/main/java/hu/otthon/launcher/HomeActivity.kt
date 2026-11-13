@@ -44,6 +44,7 @@ class HomeActivity : Activity() {
     private lateinit var reco: RecoPanel
     private lateinit var recoInfo: TextView
     private lateinit var recoDim: View
+    private lateinit var moreHint: LinearLayout
     private var expanded = false
     private var lastBottomFocus: View? = null
     private var recoLoading = false
@@ -193,6 +194,20 @@ class HomeActivity : Activity() {
         page.addView(recoBox, FrameLayout.LayoutParams(-1, 0))
         FocusGlide.install(recoBox)
 
+        // a small mark at the bottom edge: there is more below
+        moreHint = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            alpha = 0f
+            visibility = View.GONE
+        }
+        moreHint.addView(ImageView(this).apply {
+            setImageResource(R.drawable.ic_chevron)
+            setColorFilter(C.TEXT)
+        }, LinearLayout.LayoutParams(dp(14f), dp(14f)))
+        moreHint.addView(label("Recommendations", 10f, C.TEXT).apply { setPadding(dp(5f), 0, 0, 0) })
+        page.addView(moreHint, FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply { bottomMargin = dp(7f) })
+
         reco.onCard = { card ->
             val p = card?.program
             recoInfo.text = if (p == null) "" else listOf(p.title, p.subtitle, p.description).filter { it.isNotBlank() }.joinToString("   ·   ")
@@ -200,24 +215,40 @@ class HomeActivity : Activity() {
         reco.onAllow = {
             if (android.os.Build.VERSION.SDK_INT >= 23) requestPermissions(arrayOf(Reco.PERMISSION), 11)
         }
-        reco.onHold = { card ->
-            val pkg = card.program.pkg
-            val app = Apps.one(this, pkg)?.label ?: pkg
-            Popup.menu(this, card.program.title, listOf("Open", "Hide recommendations from $app")) { which ->
-                if (which == 0) Reco.open(this, card.program, card.row)
-                else {
-                    ConfigStore.edit(this) { r -> ConfigStore.array(r, "reco_hidden").put(pkg) }
-                    cfg = Config.load(this)
-                    loadReco()
-                }
-            }
-        }
+        reco.onHold = { card -> moveRowMenu(card) }
         // keep the rows right under the bottom row, as tall as the screen minus the bottom row
         page.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> placeReco() }
         window.decorView.viewTreeObserver.addOnGlobalFocusChangeListener { _, now ->
             if (now == null) return@addOnGlobalFocusChangeListener
             if (expanded && isInside(now, content)) collapse(false)
             if (!expanded && isInside(now, bottom)) lastBottomFocus = now
+            if (!expanded) showMoreHint()
+        }
+    }
+
+    /** Hold OK on a recommendation: move its row. The new order is kept in the settings. */
+    private fun moveRowMenu(card: RecoCard) {
+        val keys = reco.rows.map { it.key }
+        val i = keys.indexOf(card.row.key)
+        if (i < 0) return
+        val options = ArrayList<Pair<String, Int>>()
+        if (i > 0) {
+            options.add("Move row up" to i - 1)
+            if (i > 1) options.add("Move row to the top" to 0)
+        }
+        if (i < keys.size - 1) {
+            options.add("Move row down" to i + 1)
+            if (i < keys.size - 2) options.add("Move row to the bottom" to keys.size - 1)
+        }
+        if (options.isEmpty()) return
+        Popup.menu(this, card.row.title, options.map { it.first }) { which ->
+            val to = options[which].second
+            val order = keys.toMutableList()
+            order.removeAt(i)
+            order.add(to, card.row.key)
+            ConfigStore.edit(this) { r -> r.put("reco_order", org.json.JSONArray().apply { order.forEach { put(it) } }) }
+            cfg = Config.load(this)
+            loadReco()
         }
     }
 
@@ -242,9 +273,19 @@ class HomeActivity : Activity() {
         }
     }
 
+    /** Shows the mark when there is something below; brighter while the cursor is on the bottom row. */
+    private fun showMoreHint() {
+        val there = cfg.recommendations && reco.firstFocusable != null && !expanded
+        val onBottom = currentFocus?.let { isInside(it, bottom) } == true
+        val target = if (!there) 0f else if (onBottom) 0.85f else 0.4f
+        if (there) moreHint.visibility = View.VISIBLE
+        moreHint.animate().alpha(target).setDuration(220).withEndAction { if (!there) moreHint.visibility = View.GONE }.start()
+    }
+
     private fun expand() {
         if (expanded || reco.firstFocusable == null) return
         expanded = true
+        moreHint.animate().alpha(0f).setDuration(120).start()
         recoBox.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
         val shift = -(bottom.top + content.top - dp(22f)).toFloat()
         val ms = if (Motion.level == Motion.OFF) 0L else 320L
@@ -264,17 +305,20 @@ class HomeActivity : Activity() {
         recoBox.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
         recoScroll.scrollTo(0, 0)
         recoInfo.text = ""
+        showMoreHint()
     }
 
     /** Reads the apps' rows in the background; the first rows are the favorites' apps. */
     private fun loadReco() {
         if (!cfg.recommendations) {
             recoBox.visibility = View.GONE
+            showMoreHint()
             return
         }
         recoBox.visibility = View.VISIBLE
         if (!Reco.allowed(this)) {
             reco.showAsk()
+            showMoreHint()
             return
         }
         if (recoLoading) return
@@ -283,10 +327,12 @@ class HomeActivity : Activity() {
         val order = FavStore.get(this, cfg)
         val hidden = cfg.recoHidden
         val watchNext = cfg.recoWatchNext
-        Bg.run({ Reco.load(app, order, hidden, watchNext) }) { rows ->
+        val custom = cfg.recoOrder
+        Bg.run({ Reco.load(app, order, hidden, watchNext, custom) }) { rows ->
             recoLoading = false
             if (rows.isNullOrEmpty()) reco.showEmpty()
             else reco.show(rows) { pkg -> Apps.one(this, pkg)?.let { AppColors.of(it) } ?: 0xFFE9E7E2.toInt() }
+            showMoreHint()
             if (expanded && currentFocus?.let { isInside(it, recoBox) } != true) reco.firstFocusable?.requestFocus()
         }
     }

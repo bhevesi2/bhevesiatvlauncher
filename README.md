@@ -97,8 +97,10 @@ Down on the bottom row of the home screen slides the page up: the bottom row sta
 the streaming apps' rows fill the screen, "Continue watching" first, then the favorites' apps.
 They are the preview channels and Watch Next programmes apps publish to the TV's listings provider,
 the same ones the Google TV home shows; reading them needs `READ_TV_LISTINGS`, which the launcher
-asks for the first time (Allow). OK opens a programme, Hold OK hides an app's rows, Back or Up
-returns. Settings › Home screen › Recommendations switches them off.
+asks for the first time (Allow). OK opens a programme, Hold OK moves its row up or down (kept in
+`reco_order`), Back or Up returns. A small mark at the bottom edge of the home screen shows there
+is something below. Settings › Home screen › Recommendations switches them off, chooses the apps
+and Continue watching, and resets the row order.
 
 ## Camera pop-ups
 

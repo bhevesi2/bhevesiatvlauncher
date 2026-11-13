@@ -129,7 +129,7 @@ object Reco {
      * Everything to show, apps in [order] first (the favorites), the rest after them.
      * Background thread only. Empty when the permission is missing or nothing is published.
      */
-    fun load(ctx: Context, order: List<String>, hidden: Set<String>, watchNext: Boolean = true): List<Row> {
+    fun load(ctx: Context, order: List<String>, hidden: Set<String>, watchNext: Boolean = true, custom: List<String> = emptyList()): List<Row> {
         if (!allowed(ctx)) return emptyList()
         val rows = ArrayList<Row>()
 
@@ -182,11 +182,15 @@ object Reco {
             val (pkg, name, link) = channels[ch] ?: return@mapNotNull null
             val app = try { pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString() } catch (e: Exception) { pkg }
             val title = if (name.isBlank() || name.equals(app, true)) app else "$app  ·  $name"
-            Row("ch:$ch", pkg, title, list.sortedByDescending { it.weight }.take(20), link)
+            // keyed by app and row name, which outlive the provider's row numbers
+            Row("$pkg/$name", pkg, title, list.sortedByDescending { it.weight }.take(20), link)
         }
         fun rank(pkg: String) = order.indexOf(pkg).let { if (it < 0) Int.MAX_VALUE else it }
         rows.addAll(appRows.sortedWith(compareBy({ rank(it.pkg) }, { it.title.lowercase() })).take(14))
-        return rows
+        // rows moved on the home screen keep their place; the others follow in the usual order
+        if (custom.isEmpty()) return rows
+        return rows.withIndex().sortedWith(compareBy({ custom.indexOf(it.value.key).let { i -> if (i < 0) Int.MAX_VALUE else i } }, { it.index }))
+            .map { it.value }
     }
 
     /** The apps that publish rows (or Continue watching items), as package and name. Background thread only. */
@@ -311,6 +315,10 @@ class RecoPanel(private val act: android.app.Activity) : LinearLayout(act) {
     var onAllow: (() -> Unit)? = null
     var onHold: ((RecoCard) -> Unit)? = null
     private var signature = ""
+
+    /** The rows as shown, top to bottom. */
+    var rows: List<Reco.Row> = emptyList()
+        private set
     val firstFocusable: View? get() = findFirst(this)
 
     init {
@@ -328,6 +336,7 @@ class RecoPanel(private val act: android.app.Activity) : LinearLayout(act) {
     fun showAsk() {
         if (signature == "ask") return
         signature = "ask"
+        rows = emptyList()
         removeAllViews()
         addView(act.label("Recommendations", 13f, C.TEXT, bold = true), LayoutParams(-2, -2).apply { leftMargin = act.dp(48f) })
         addView(act.label("The launcher may show the rows your streaming apps publish, like the Google TV home does.", 11f, C.TEXT2),
@@ -339,6 +348,7 @@ class RecoPanel(private val act: android.app.Activity) : LinearLayout(act) {
     fun showEmpty() {
         if (signature == "empty") return
         signature = "empty"
+        rows = emptyList()
         removeAllViews()
         addView(act.label("Your apps have not published any recommendations yet.", 12f, C.TEXT2),
             LayoutParams(-2, -2).apply { leftMargin = act.dp(48f) })
@@ -348,6 +358,7 @@ class RecoPanel(private val act: android.app.Activity) : LinearLayout(act) {
         val sig = rows.joinToString("|") { r -> r.key + ":" + r.programs.joinToString(",") { it.id.toString() } }
         if (sig == signature) return
         signature = sig
+        this.rows = rows
         val focusedKey = (act.currentFocus as? RecoCard)?.let { it.row.key + "/" + it.program.id }
         removeAllViews()
         val side = act.dp(48f)
