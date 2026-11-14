@@ -48,6 +48,11 @@ data class Config(
     val popups: Boolean,
     val popupSeconds: Int,
     val popupTriggers: List<PopupTrigger>,
+    /** Home Assistant notifications as a card over other apps (script "TV notification"). */
+    val notify: Boolean,
+    val notifySeconds: Int,
+    /** The text helper Home Assistant writes the notifications into. */
+    val notifyEntity: String,
     /** The outside weather as the first chip on the home screen. */
     val weatherChip: Boolean,
     /** To-do lists shown on the Today panel. */
@@ -84,6 +89,9 @@ data class Config(
     companion object {
         /** Frigate's RTSP restream (port 8554 of the Frigate add-on). */
         const val DEFAULT_LIVE_URL = "rtsp://{host}:8554/{camera}"
+
+        /** Where Home Assistant's "TV notification" script puts the latest notification. */
+        const val DEFAULT_NOTIFY_ENTITY = "input_text.tv_notification"
 
         val DEFAULT_FAVORITES = listOf(
             "com.netflix.ninja",
@@ -126,6 +134,9 @@ data class Config(
                 popups = (json.optJSONObject("popups") ?: JSONObject()).optBoolean("enabled", true),
                 popupSeconds = (json.optJSONObject("popups") ?: JSONObject()).optInt("seconds", 20).coerceIn(5, 120),
                 popupTriggers = popupTriggers(json),
+                notify = (json.optJSONObject("notify") ?: JSONObject()).optBoolean("enabled", true),
+                notifySeconds = (json.optJSONObject("notify") ?: JSONObject()).optInt("seconds", 12).coerceIn(5, 60),
+                notifyEntity = (json.optJSONObject("notify") ?: JSONObject()).optString("entity", "").ifBlank { DEFAULT_NOTIFY_ENTITY },
                 weatherChip = json.optBoolean("weather_chip", true),
                 todoLists = json.optJSONArray("todo_lists")?.let { items(it) } ?: listOf(HaItem("todo.shopping_list", "")),
                 liveVideo = (json.optJSONObject("live") ?: JSONObject()).optBoolean("enabled", false),

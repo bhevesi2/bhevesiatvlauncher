@@ -30,12 +30,17 @@ import android.widget.TextView
  * turns on (Frigate saw a person, say), shows that camera in a corner of the screen over
  * whatever is playing. While it is up it answers the remote: Back closes it, OK opens the
  * camera full screen, and any other key just closes it.
+ *
+ * Notifications: Home Assistant's "TV notification" script writes a short message into a text
+ * helper; the service shows it as a card in the top right corner for a few seconds. The card
+ * takes no keys, so the remote keeps working in the app underneath.
  */
 class PopupService : Service() {
 
     companion object {
         private const val CHANNEL = "popups"
         private const val TEST = "test"
+        private const val NOTE_TEST = "note_test"
 
         /** True while the launcher's own camera screen is open: no pop-ups over it. */
         @Volatile var camerasOpen = false
@@ -43,7 +48,7 @@ class PopupService : Service() {
         /** Starts or stops the watcher to match the settings. */
         fun sync(ctx: Context) {
             val cfg = Config.load(ctx)
-            val want = cfg.haEnabled && cfg.popups && cfg.popupTriggers.isNotEmpty()
+            val want = needed(cfg)
             val i = Intent(ctx, PopupService::class.java)
             try {
                 if (want) {
@@ -73,6 +78,17 @@ class PopupService : Service() {
             } catch (e: Exception) { }
         }
 
+        /** Shows a sample notification card now, to see how it looks. */
+        fun testNote(ctx: Context) {
+            val i = Intent(ctx, PopupService::class.java).putExtra(NOTE_TEST, true)
+            try {
+                if (Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(i) else ctx.startService(i)
+            } catch (e: Exception) { }
+        }
+
+        /** True when there is something to watch: camera pop-ups or notifications. */
+        fun needed(c: Config): Boolean = c.haEnabled && ((c.popups && c.popupTriggers.isNotEmpty()) || c.notify)
+
         fun allowed(ctx: Context): Boolean = Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(ctx)
 
         /** Lets the launcher draw over other apps; only possible over ADB on a TV. */
@@ -94,6 +110,10 @@ class PopupService : Service() {
     private var showing: String? = null
     private var until = 0L
     private var fetching = false
+
+    private var noteView: View? = null
+    private var noteUntil = 0L
+    private var lastNote: String? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -121,9 +141,11 @@ class PopupService : Service() {
         reload()
         intent?.getStringExtra(TEST)?.let { cam -> main.post { show(cam, "Test", true) } }
         intent?.getStringExtra(CAMERA)?.let { cam -> main.post { show(cam, intent.getStringExtra(CAMERA_TITLE) ?: "", true) } }
+        val noteTest = intent?.getBooleanExtra(NOTE_TEST, false) == true
+        if (noteTest) main.post { showNote(Note("bell", "info", "Test notification", "This is how Home Assistant's messages look on this TV.")) }
         val c = cfg
-        if (c == null || !c.haEnabled || !c.popups || c.popupTriggers.isEmpty()) {
-            if (intent?.getStringExtra(TEST) == null && intent?.getStringExtra(CAMERA) == null) stopSelf()
+        if (c == null || !needed(c)) {
+            if (intent?.getStringExtra(TEST) == null && intent?.getStringExtra(CAMERA) == null && !noteTest) stopSelf()
         }
         return START_STICKY
     }
@@ -134,6 +156,7 @@ class PopupService : Service() {
         worker.quitSafely()
         main.removeCallbacksAndMessages(null)
         hide(false)
+        hideNote(false)
     }
 
     private fun reload() {
@@ -162,6 +185,7 @@ class PopupService : Service() {
             val c = cfg
             val api = client
             val screenOn = (getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive
+            if (c != null && api != null && c.notify && screenOn) checkNote(c, api)
             if (c != null && api != null && c.popups && screenOn) {
                 for (t in c.popupTriggers) {
                     val state = try { api.state(t.entity).optString("state") } catch (e: Exception) { null } ?: continue
@@ -178,6 +202,7 @@ class PopupService : Service() {
                 // while the TV is off, start over: whatever happened meanwhile is old news
                 primed = false
                 last.clear()
+                lastNote = null
             }
             bg.postDelayed(this, if (screenOn) 2000L else 10_000L)
         }
@@ -329,6 +354,104 @@ class PopupService : Service() {
         if (animate) v.animate().alpha(0f).setDuration(200).withEndAction { remove() }.start() else remove()
         // a test pop-up started the service while pop-ups are switched off: nothing left to do
         val c = cfg
-        if (animate && (c == null || !c.haEnabled || !c.popups || c.popupTriggers.isEmpty())) stopSelf()
+        if (animate && (c == null || !needed(c)) && noteView == null) stopSelf()
+    }
+
+    // ---------- notifications ----------
+
+    /** One notification: an icon name (ic_<icon>), a level (info / warn / alert), a title and a text. */
+    private data class Note(val icon: String, val level: String, val title: String, val text: String)
+
+    /**
+     * The helper holds "id|icon|level|title|text"; the id is the time it was sent (seconds), so the
+     * same text sent twice still counts as new. A notification older than two minutes is not shown
+     * (the TV was just switched on, or the service just started).
+     */
+    private fun checkNote(c: Config, api: HaClient) {
+        val raw = try { api.state(c.notifyEntity).optString("state") } catch (e: Exception) { null } ?: return
+        val before = lastNote
+        lastNote = raw
+        if (before == null || raw == before) return
+        val p = raw.split('|')
+        if (p.size < 5) return
+        val sent = p[0].trim().toLongOrNull() ?: return
+        if (Math.abs(System.currentTimeMillis() / 1000 - sent) > 120) return
+        val note = Note(p[1].trim(), p[2].trim(), p[3].trim(), p.drop(4).joinToString("|").trim())
+        if (note.title.isBlank() && note.text.isBlank()) return
+        main.post { showNote(note) }
+    }
+
+    private fun showNote(n: Note) {
+        val c = cfg ?: return
+        if (!allowed(this)) return
+        hideNote(false)
+        val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        val d = resources.displayMetrics.density
+        val accent = when (n.level) {
+            "alert" -> 0xFFF09595.toInt()
+            "warn" -> 0xFFFAC775.toInt()
+            else -> C.ON
+        }
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = rounded(0xF2101114.toInt(), 12f * d, (2 * d).toInt(), (accent and 0x00FFFFFF) or 0x88000000.toInt())
+            setPadding((12 * d).toInt(), (10 * d).toInt(), (14 * d).toInt(), (10 * d).toInt())
+        }
+        val iconRes = resources.getIdentifier("ic_" + n.icon.lowercase().replace(Regex("[^a-z0-9_]"), ""), "drawable", packageName)
+        card.addView(ImageView(this).apply {
+            setImageResource(if (iconRes != 0) iconRes else R.drawable.ic_home)
+            setColorFilter(accent)
+        }, LinearLayout.LayoutParams((22 * d).toInt(), (22 * d).toInt()).apply { rightMargin = (12 * d).toInt() })
+        val texts = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        if (n.title.isNotBlank()) texts.addView(label(n.title, 12f, C.TEXT, bold = true).apply { maxLines = 1 })
+        if (n.text.isNotBlank()) texts.addView(label(n.text, 10f, C.TEXT2).apply { maxLines = 3 })
+        card.addView(texts, LinearLayout.LayoutParams(0, -2, 1f))
+        val lp = WindowManager.LayoutParams(
+            (300 * d).toInt(), WindowManager.LayoutParams.WRAP_CONTENT,
+            if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
+            // never takes the remote's keys: the app underneath stays in control
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.END
+            x = (28 * d).toInt()
+            y = (28 * d).toInt()
+        }
+        try {
+            wm.addView(card, lp)
+        } catch (e: Exception) {
+            return
+        }
+        noteView = card
+        noteUntil = System.currentTimeMillis() + c.notifySeconds * 1000L
+        card.alpha = 0f
+        card.translationX = 24 * d
+        card.animate().alpha(1f).translationX(0f).setDuration(260).setInterpolator(DecelerateInterpolator(2f)).start()
+        main.removeCallbacks(noteLife)
+        main.postDelayed(noteLife, 500L)
+    }
+
+    private val noteLife = object : Runnable {
+        override fun run() {
+            if (noteView == null) return
+            if (System.currentTimeMillis() > noteUntil) hideNote(true) else main.postDelayed(this, 500L)
+        }
+    }
+
+    private fun hideNote(animate: Boolean) {
+        val v = noteView ?: return
+        noteView = null
+        main.removeCallbacks(noteLife)
+        val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        fun remove() {
+            try { wm.removeView(v) } catch (e: Exception) { }
+        }
+        if (animate) v.animate().alpha(0f).setDuration(220).withEndAction { remove() }.start() else remove()
+        // a test card started the service while nothing is being watched: nothing left to do
+        val c = cfg
+        if (animate && (c == null || !needed(c)) && overlay == null) stopSelf()
     }
 }

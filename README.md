@@ -152,6 +152,24 @@ Frigate's RTSP restream (`rtsp://{host}:8554/{camera}` by default, editable), wi
 player; the Frigate add-on has to publish its port 8554. A stream that does not start within ten
 seconds falls back to the still pictures.
 
+## Notifications
+
+Home Assistant can show a short message on the TV, as a card in the top right corner over
+whatever is on. The card takes no keys, so the remote keeps working in the app, and it goes away
+by itself after a few seconds (Settings › Home Assistant › Notifications: on/off, how long, a test
+card). It uses the same background service and the same "draw over other apps" permission as the
+camera pop-ups, and only runs while the TV is on.
+
+Home Assistant writes the message into a text helper, `input_text.tv_notification` by default
+(Settings › Home Assistant › Notifications › Text helper), as
+
+    <sent, unix seconds>|<icon>|<level>|<title>|<text>
+
+for example `1794651277|garage|warn|Garage gate open|Open for 15 minutes`. The icon is a
+drawable name without `ic_` (`garage`, `storm`, `washer`, `bin`, `bell`, `door`, `car` ...;
+unknown names show a house), the level `info`, `warn` or `alert` colours it. A message older than
+two minutes is not shown. A text helper holds at most 255 characters, so keep it short.
+
 ## Today
 
 The calendar button next to the settings opens a panel with what needs a look at home (open doors

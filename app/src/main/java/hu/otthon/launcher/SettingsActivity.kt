@@ -815,6 +815,38 @@ class SettingsActivity : PanelActivity() {
                 status.valueView.text = if (v != null) "Connected  ·  Home Assistant $v" else "Not reachable"
             }
         }
+        section("Notifications")
+        toggle("Show Home Assistant notifications", cfg.notify) { on ->
+            edit { r -> ConfigStore.obj(r, "notify").put("enabled", on) }
+            PopupService.sync(this)
+        }
+        note("Short messages from Home Assistant's \"TV notification\" script appear as a card in the top right corner for a few seconds, over whatever is on. The card takes no keys: the remote keeps working in the app.")
+        if (cfg.notify) {
+            if (!PopupService.allowed(this)) {
+                row("Allow cards over other apps", "needs Home Assistant") {
+                    Adb.run(this, cfg, PopupService.allowCommand(this)) { r ->
+                        Bg.main.postDelayed({
+                            toast(if (r == Adb.Result.OK && PopupService.allowed(this)) "Allowed" else Adb.explain(r))
+                            change { }
+                        }, 600)
+                    }
+                }
+            }
+            val lengths = listOf(8, 12, 20, 30)
+            add(SegmentRow(this, "Show for", lengths.map { "$it s" }, lengths.indexOf(cfg.notifySeconds).let { if (it < 0) 1 else it }) { i ->
+                ConfigStore.edit(this) { r -> ConfigStore.obj(r, "notify").put("seconds", lengths[i]) }
+                cfg = Config.load(this)
+                PopupService.sync(this)
+            })
+            row("Text helper", cfg.notifyEntity) {
+                pick("Helper the notifications are written to", "input_text") { entity, _ ->
+                    edit { r -> ConfigStore.obj(r, "notify").put("entity", entity) }
+                    PopupService.sync(this)
+                }
+            }
+            row("Show a test notification") { PopupService.testNote(this) }
+        }
+
         section("Sunrise and sunset")
         row("Location", String.format(Locale.US, "%.2f, %.2f", cfg.lat, cfg.lon))
         if (client != null) row("Use Home Assistant's location") {
