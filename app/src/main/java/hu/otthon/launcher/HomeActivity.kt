@@ -47,6 +47,9 @@ class HomeActivity : Activity() {
     private var expanded = false
     /** Where the sliding page ends up: 0 on the home screen, negative while the rows are up. */
     private var pageTarget = 0f
+    /** Where the slide to the recommendations is, 0 (home screen) to the full shift; one spring drives it all. */
+    private var slideShift = 1f
+    private val slide = Follow(11f) { y -> applySlide(y) }
     private var critters: CritterLayer? = null
     private var lastBottomFocus: View? = null
     private var recoLoading = false
@@ -196,6 +199,8 @@ class HomeActivity : Activity() {
         }
         reco = RecoPanel(this)
         recoScroll.addView(reco, FrameLayout.LayoutParams(-1, -2))
+        // the focused row always comes to the top of the list, so each step moves by one row
+        recoScroll.anchor = { v -> reco.scrollFor(v) }
         recoBox.addView(recoScroll, LinearLayout.LayoutParams(-1, 0, 1f))
         page.addView(recoBox, FrameLayout.LayoutParams(-1, 0))
         FocusGlide.install(recoBox)
@@ -308,28 +313,72 @@ class HomeActivity : Activity() {
         recoBox.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
         val shift = -(bottom.top + content.top - dp(22f)).toFloat()
         pageTarget = shift
-        val ms = if (Motion.level == Motion.OFF) 0L else 320L
-        page.animate().translationY(shift).setDuration(ms).setInterpolator(android.view.animation.DecelerateInterpolator(2f)).start()
-        recoDim.animate().alpha(1f).setDuration(ms).start()
-        recoBox.animate().alpha(1f).setDuration(ms).start()
+        slideShift = shift
         critters?.paused = true
-        reco.firstFocusable?.requestFocus()
-        loadReco()
+        recoScroll.reset()
+        reco.firstFocusable?.let { f ->
+            f.requestFocus()
+            reco.emphasize(f)
+        }
+        startSlide()
+        slide.onRest = {
+            endSlide()
+            // fresh rows only once the page has settled, never in the middle of the motion
+            if (expanded) loadReco()
+        }
+        slide.to(shift)
     }
 
     private fun collapse(moveFocus: Boolean) {
         if (!expanded) return
         expanded = false
         pageTarget = 0f
-        val ms = if (Motion.level == Motion.OFF) 0L else 280L
-        page.animate().translationY(0f).setDuration(ms).setInterpolator(android.view.animation.DecelerateInterpolator(2f)).start()
-        recoDim.animate().alpha(0f).setDuration(ms).start()
-        recoBox.animate().alpha(0f).setDuration(ms).start()
         critters?.paused = false
         if (moveFocus) (lastBottomFocus?.takeIf { it.isAttachedToWindow && isInside(it, bottom) } ?: bottom.getChildAt(0))?.requestFocus()
         recoBox.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
-        recoScroll.scrollTo(0, 0)
+        startSlide()
+        slide.onRest = {
+            endSlide()
+            if (!expanded) {
+                recoScroll.reset()
+                reco.emphasize(null)
+            }
+        }
+        slide.to(0f)
         showMoreHint()
+    }
+
+    /**
+     * One frame of the slide: the page moves up, the rows rise and fade in a little behind it,
+     * the screen darkens, and the photo behind drifts and zooms slightly, for depth.
+     */
+    private fun applySlide(y: Float) {
+        page.translationY = y
+        val k = if (slideShift == 0f) 0f else (y / slideShift).coerceIn(0f, 1f)
+        recoDim.alpha = k
+        recoBox.alpha = k * k
+        reco.translationY = (1f - k) * dp(40f)
+        if (Motion.level == Motion.FULL) {
+            backdrop.pivotY = 0f
+            backdrop.pivotX = backdrop.width / 2f
+            backdrop.scaleX = 1f + 0.06f * k
+            backdrop.scaleY = 1f + 0.06f * k
+            backdrop.translationY = slideShift * 0.05f * k
+        }
+    }
+
+    /**
+     * The photo is drawn once into a ready-made layer while it drifts, so moving and zooming it
+     * costs next to nothing. (The page itself changes during the slide, the cursor moves on it,
+     * so a layer would have to be redrawn every frame and would only cost.)
+     */
+    private fun startSlide() {
+        if (slide.running) return
+        backdrop.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+    }
+
+    private fun endSlide() {
+        backdrop.setLayerType(View.LAYER_TYPE_NONE, null)
     }
 
     /** Reads the apps' rows in the background; the first rows are the favorites' apps. */

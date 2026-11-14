@@ -236,6 +236,25 @@ object Reco {
 
     fun cached(uri: String): Bitmap? = synchronized(pictures) { pictures[uri] }
 
+    /**
+     * Pictures load on two low-priority threads of their own, so a screenful of them neither
+     * holds up Home Assistant's calls nor takes the processor from the scrolling.
+     */
+    private val pictureThreads = java.util.concurrent.Executors.newFixedThreadPool(2) { r ->
+        Thread {
+            android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND)
+            r.run()
+        }
+    }
+
+    fun loadPicture(ctx: Context, uri: String, width: Int, done: (Bitmap) -> Unit) {
+        val app = ctx.applicationContext
+        pictureThreads.execute {
+            val b = try { picture(app, uri, width) } catch (e: Exception) { null }
+            if (b != null) Bg.main.post { done(b) }
+        }
+    }
+
     /** A programme's picture, made about [width] pixels wide. Background thread only. */
     fun picture(ctx: Context, uri: String, width: Int): Bitmap? {
         cached(uri)?.let { return it }
@@ -254,7 +273,11 @@ object Reco {
         BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
         var sample = 1
         while (bounds.outWidth / (sample * 2) >= width) sample *= 2
-        val b = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample }) ?: return null
+        // half the memory of full colour; posters have no transparency to lose
+        val b = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply {
+            inSampleSize = sample
+            inPreferredConfig = Bitmap.Config.RGB_565
+        }) ?: return null
         synchronized(pictures) { pictures[uri] = b }
         return b
     }
@@ -287,14 +310,21 @@ class RecoCard(ctx: Context, val program: Reco.Program, val row: Reco.Row, glow:
         FocusGlide.shape(this, ctx.dp(8f).toFloat(), 0f)
         FocusGlide.glow(this, glow)
         setOnFocusChangeListener { v, f ->
-            v.animate().scaleX(if (f) 1.1f else 1f).scaleY(if (f) 1.1f else 1f).setDuration(160).start()
+            v.animate().scaleX(if (f) 1.1f else 1f).scaleY(if (f) 1.1f else 1f).setDuration(240).setInterpolator(Motion.EASE).start()
             Neighbors.push(v, f)
         }
     }
 
-    fun setPicture(b: Bitmap) {
+    /** Shows the picture; one that arrives while the card is on screen fades in. */
+    fun setPicture(b: Bitmap, fade: Boolean = false) {
         image.setImageBitmap(b)
-        getChildAt(1)?.visibility = View.GONE
+        val name = getChildAt(1)
+        if (fade && Motion.level != Motion.OFF) {
+            image.alpha = 0f
+            image.animate().alpha(1f).setDuration(220).withEndAction { name?.visibility = View.GONE }.start()
+        } else {
+            name?.visibility = View.GONE
+        }
     }
 
     override fun dispatchDraw(canvas: Canvas) {
@@ -365,6 +395,8 @@ class RecoPanel(private val act: android.app.Activity) : LinearLayout(act) {
         val side = act.dp(48f)
         val cardH = act.dp(112f)
         for (row in rows) {
+            // one block per row, heading and cards together, so the row moves and dims as one
+            val block = LinearLayout(act).apply { orientation = VERTICAL; clipChildren = false; clipToPadding = false }
             val head = LinearLayout(act).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
             if (row.pkg.isNotEmpty()) {
                 try {
@@ -373,10 +405,9 @@ class RecoPanel(private val act: android.app.Activity) : LinearLayout(act) {
                 } catch (e: Exception) { }
             }
             head.addView(act.label(row.title, 12f, C.TEXT, bold = true).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END })
-            addView(head, LayoutParams(-1, -2).apply {
+            block.addView(head, LayoutParams(-1, -2).apply {
                 leftMargin = side
                 rightMargin = side
-                topMargin = if (childCount > 0) act.dp(24f) else 0
             })
             val scroller = RowScroller(act)
             scroller.setPadding(side, act.dp(12f), side, act.dp(12f))
@@ -390,7 +421,10 @@ class RecoPanel(private val act: android.app.Activity) : LinearLayout(act) {
                 card.onFocusChangeListener.let { old ->
                     card.setOnFocusChangeListener { v, f ->
                         old?.onFocusChange(v, f)
-                        if (f) onCard?.invoke(card)
+                        if (f) {
+                            emphasize(card)
+                            onCard?.invoke(card)
+                        }
                     }
                 }
                 val w = (cardH * p.aspect.coerceIn(0.6f, 1.8f)).toInt()
@@ -400,15 +434,42 @@ class RecoPanel(private val act: android.app.Activity) : LinearLayout(act) {
                     if (cached != null) {
                         card.setPicture(cached)
                     } else {
-                        val app = act.applicationContext
-                        Bg.run({ Reco.picture(app, uri, w) }) { b -> if (b != null) card.setPicture(b) }
+                        Reco.loadPicture(act, uri, (w * 1.1f).toInt()) { b -> card.setPicture(b, fade = true) }
                     }
                 }
             }
-            addView(scroller, LayoutParams(-1, -2))
+            block.addView(scroller, LayoutParams(-1, -2))
+            addView(block, LayoutParams(-1, -2).apply { topMargin = if (childCount > 0) act.dp(24f) else 0 })
         }
         if (focusedKey != null) {
             allCards().firstOrNull { it.row.key + "/" + it.program.id == focusedKey }?.requestFocus()
+        }
+    }
+
+    /** The row (heading and cards) that [v] is in, as a direct child of this panel. */
+    private fun blockOf(v: View): View? {
+        var c: View? = v
+        while (c != null) {
+            val p = c.parent
+            if (p === this) return c
+            c = p as? View
+        }
+        return null
+    }
+
+    /**
+     * Where the list scrolls to for a focused card: its row's heading at the top, so moving
+     * between rows always moves the whole list by one row, the same way each time.
+     */
+    fun scrollFor(v: View): Int? = blockOf(v)?.top
+
+    /** Brings the focused row forward and lets the others recede a little. */
+    fun emphasize(focused: View?) {
+        val block = focused?.let { blockOf(it) }
+        for (i in 0 until childCount) {
+            val c = getChildAt(i)
+            val a = if (block == null || c === block) 1f else 0.5f
+            if (c.alpha != a) c.animate().alpha(a).setDuration(260).setInterpolator(Motion.EASE).start()
         }
     }
 

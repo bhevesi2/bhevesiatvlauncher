@@ -240,6 +240,75 @@ object Motion {
     const val REDUCED = 1
     const val FULL = 2
     var level = FULL
+
+    /** The "emphasized" easing: a quick start that settles slowly and softly. */
+    val EASE: android.view.animation.Interpolator = android.view.animation.PathInterpolator(0.2f, 0f, 0f, 1f)
+}
+
+/**
+ * Follows a target the way a critically damped spring does: it never overshoots, and a new
+ * target on the way bends the motion smoothly instead of restarting it. [stiffness] is the
+ * spring's angular frequency: about 14 settles in half a second. Runs on the display's frames.
+ */
+class Follow(private val stiffness: Float, private val apply: (Float) -> Unit) : android.view.Choreographer.FrameCallback {
+    var value = 0f
+        private set
+    var target = 0f
+        private set
+    private var velocity = 0f
+    private var last = 0L
+    var running = false
+        private set
+    /** Called once the value has come to rest on the target. */
+    var onRest: (() -> Unit)? = null
+
+    fun snap(v: Float) {
+        stop()
+        value = v
+        target = v
+        apply(v)
+        onRest?.invoke()
+    }
+
+    fun to(t: Float) {
+        target = t
+        if (Motion.level == Motion.OFF) { snap(t); return }
+        if (!running) {
+            if (value == t) return
+            running = true
+            last = 0L
+            android.view.Choreographer.getInstance().postFrameCallback(this)
+        }
+    }
+
+    fun stop() {
+        if (running) android.view.Choreographer.getInstance().removeFrameCallback(this)
+        running = false
+        velocity = 0f
+    }
+
+    override fun doFrame(now: Long) {
+        if (!running) return
+        val dt = if (last == 0L) 1f / 60f else ((now - last) / 1e9f).coerceIn(0.001f, 0.05f)
+        last = now
+        val w = stiffness
+        // the exact step of a critically damped spring, so it stays smooth on slow frames too
+        val x = value - target
+        val e = kotlin.math.exp(-w * dt)
+        val nx = (x + (velocity + w * x) * dt) * e
+        velocity = (velocity - w * (velocity + w * x) * dt) * e
+        value = target + nx
+        if (kotlin.math.abs(nx) < 0.4f && kotlin.math.abs(velocity) < 8f) {
+            value = target
+            velocity = 0f
+            running = false
+            apply(value)
+            onRest?.invoke()
+            return
+        }
+        apply(value)
+        android.view.Choreographer.getInstance().postFrameCallback(this)
+    }
 }
 
 /** The launcher's settings live in one JSON file that both the settings screens and adb can edit. */

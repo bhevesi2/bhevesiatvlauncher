@@ -282,8 +282,8 @@ class CamTile(ctx: Context, val item: HaItem, radius: Float, labelSp: Float, zoo
  * within a quarter of a second, so this one runs its own animation and retargets it.
  */
 class RowScroller(ctx: Context) : HorizontalScrollView(ctx) {
-    private var anim: ValueAnimator? = null
-    private var goal = 0
+    private val glide = Follow(17f) { scrollTo(Math.round(it), 0) }
+    private val goal get() = glide.target.toInt()
 
     init {
         isHorizontalScrollBarEnabled = false
@@ -294,7 +294,7 @@ class RowScroller(ctx: Context) : HorizontalScrollView(ctx) {
 
     override fun computeScrollDeltaToGetChildRectOnScreen(rect: Rect): Int {
         if (childCount == 0 || width == 0) return 0
-        val base = if (anim?.isRunning == true) goal else scrollX
+        val base = if (glide.running) goal else scrollX
         val left = base + paddingLeft
         val right = base + width - paddingRight
         val to = when {
@@ -315,27 +315,22 @@ class RowScroller(ctx: Context) : HorizontalScrollView(ctx) {
     }
 
     private fun glideTo(to: Int) {
-        val running = anim?.isRunning == true
-        if (if (running) to == goal else to == scrollX) return
-        anim?.cancel()
-        goal = to
-        if (Motion.level == Motion.OFF) {
-            scrollTo(to, 0)
-            return
-        }
-        anim = ValueAnimator.ofInt(scrollX, to).apply {
-            duration = 260
-            interpolator = DecelerateInterpolator(1.8f)
-            addUpdateListener { scrollTo(it.animatedValue as Int, 0) }
-            start()
-        }
+        if (if (glide.running) to == goal else to == scrollX) return
+        if (!glide.running) glide.snap(scrollX.toFloat())
+        glide.to(to.toFloat())
     }
 }
 
 /** Vertical list with the same gliding scroll as [RowScroller]. */
 class ColScroller(ctx: Context) : ScrollView(ctx) {
-    private var anim: ValueAnimator? = null
-    private var goal = 0
+    private val glide = Follow(13f) { scrollTo(0, Math.round(it)) }
+    private val goal get() = glide.target.toInt()
+
+    /**
+     * Where the list should be scrolled to for the focused [View], or null for the default
+     * (scroll only as far as needed). Lets a list keep its focused row in one place.
+     */
+    var anchor: ((View) -> Int?)? = null
 
     init {
         isVerticalScrollBarEnabled = false
@@ -344,7 +339,9 @@ class ColScroller(ctx: Context) : ScrollView(ctx) {
 
     override fun computeScrollDeltaToGetChildRectOnScreen(rect: Rect): Int {
         if (childCount == 0 || height == 0) return 0
-        val base = if (anim?.isRunning == true) goal else scrollY
+        val max = maxOf(0, getChildAt(0).height + paddingTop + paddingBottom - height)
+        findFocus()?.let { f -> anchor?.invoke(f) }?.let { glideTo(it.coerceIn(0, max)); return 0 }
+        val base = if (glide.running) goal else scrollY
         val top = base + paddingTop
         val bottom = base + height - paddingBottom
         var to = when {
@@ -352,7 +349,6 @@ class ColScroller(ctx: Context) : ScrollView(ctx) {
             rect.bottom > bottom -> base + rect.bottom - bottom
             else -> base
         }
-        val max = maxOf(0, getChildAt(0).height + paddingTop + paddingBottom - height)
         // Close to either end: go all the way, so a heading above the first row is not left cut.
         val near = context.dp(48f)
         if (to < near && rect.bottom <= height - paddingBottom) to = 0
@@ -365,25 +361,19 @@ class ColScroller(ctx: Context) : ScrollView(ctx) {
         val current = findFocus()
         val next = if (current == null) null else FocusFinder.getInstance().findNextFocus(this, current, direction)
         if (next != null && next !== this) return next.requestFocus(direction)
-        anim?.cancel()      // nothing more to focus: let the list scroll its last part into view
+        glide.stop()        // nothing more to focus: let the list scroll its last part into view
         return super.arrowScroll(direction)
     }
 
+    /** Jumps to the top without gliding. */
+    fun reset() {
+        glide.snap(0f)
+    }
+
     private fun glideTo(to: Int) {
-        val running = anim?.isRunning == true
-        if (if (running) to == goal else to == scrollY) return
-        anim?.cancel()
-        goal = to
-        if (Motion.level == Motion.OFF) {
-            scrollTo(0, to)
-            return
-        }
-        anim = ValueAnimator.ofInt(scrollY, to).apply {
-            duration = 260
-            interpolator = DecelerateInterpolator(1.8f)
-            addUpdateListener { scrollTo(0, it.animatedValue as Int) }
-            start()
-        }
+        if (if (glide.running) to == goal else to == scrollY) return
+        if (!glide.running) glide.snap(scrollY.toFloat())
+        glide.to(to.toFloat())
     }
 }
 
@@ -624,8 +614,8 @@ class FocusGlide private constructor(private val host: View) {
             fromColor = nowColor
             t = 0f
             move = ValueAnimator.ofFloat(0f, 1f).apply {
-                duration = 200
-                interpolator = DecelerateInterpolator(1.7f)
+                duration = 260
+                interpolator = Motion.EASE
                 addUpdateListener { t = it.animatedValue as Float; host.invalidate() }
                 start()
             }
