@@ -31,6 +31,19 @@ object Adb {
         }) { r -> done(r ?: Result.FAILED) }
     }
 
+    /** The same as [run], on the calling thread: for work that already runs in the background. */
+    fun runHere(cfg: Config, command: String, timeoutMs: Int = 25000): Result {
+        if (!cfg.haEnabled) return Result.NO_HA
+        val client = HaClient(cfg.haUrl!!, cfg.haToken!!)
+        val entity = cfg.adbEntity ?: findTv(client) ?: return Result.NO_TV
+        return try {
+            client.call("androidtv", "adb_command", JSONObject().put("entity_id", entity).put("command", command), timeoutMs)
+            Result.OK
+        } catch (e: Exception) {
+            Result.FAILED
+        }
+    }
+
     /** This TV among Home Assistant's players: the ADB integration names it after its address. */
     private fun findTv(client: HaClient): String? {
         val players = client.states().filter { it.domain == "media_player" }

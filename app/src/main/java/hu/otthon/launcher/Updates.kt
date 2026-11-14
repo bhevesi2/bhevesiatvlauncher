@@ -1,6 +1,8 @@
 package hu.otthon.launcher
 
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
 import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
@@ -97,4 +99,49 @@ object Updates {
     fun installCommand(ctx: Context, apk: File): String =
         "cp '${apk.absolutePath}' /data/local/tmp/otthon-update.apk && pm install -r /data/local/tmp/otthon-update.apk; " +
             "rm -f /data/local/tmp/otthon-update.apk; am start -n ${ctx.packageName}/.HomeActivity"
+
+    /**
+     * Checks GitHub and, when there is a newer build, downloads it and has Home Assistant
+     * install it. For a start from outside ([UpdateReceiver]); background thread only.
+     */
+    fun updateNow(ctx: Context, force: Boolean = false): String {
+        val r = latest() ?: return "GitHub not reachable"
+        remember(ctx, r)
+        if (!force && !isNewer(ctx, r)) return "up to date"
+        val apk = download(ctx, r) ?: return "download failed"
+        // the install replaces this app, so the call may end with the process; that is fine
+        val res = Adb.runHere(Config.load(ctx), installCommand(ctx, apk), 90000)
+        return Adb.explain(res)
+    }
+}
+
+/**
+ * Lets Home Assistant or a PC start an update over ADB, on every TV at once:
+ *
+ *     am broadcast -n hu.otthon.launcher/.UpdateReceiver -a hu.otthon.launcher.UPDATE
+ *
+ * Only the TV's own shell can send it: the receiver asks for the DUMP permission, which ADB's
+ * shell has and apps cannot get. Add `--ez force true` to install the latest build even when it
+ * is not newer.
+ */
+class UpdateReceiver : BroadcastReceiver() {
+    companion object {
+        const val ACTION = "hu.otthon.launcher.UPDATE"
+    }
+
+    override fun onReceive(ctx: Context, intent: Intent) {
+        if (intent.action != ACTION) return
+        val force = intent.getBooleanExtra("force", false)
+        val app = ctx.applicationContext
+        val pending = goAsync()
+        Thread {
+            try {
+                android.util.Log.i("OtthonUpdate", Updates.updateNow(app, force))
+            } catch (e: Exception) {
+                android.util.Log.w("OtthonUpdate", "update failed", e)
+            } finally {
+                try { pending.finish() } catch (e: Exception) { }
+            }
+        }.start()
+    }
 }

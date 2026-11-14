@@ -181,7 +181,16 @@ at home; sunrise, sunset and whether it is a workday sit under the clock.
 
 Settings › About › Check for updates looks at the latest GitHub release; OK downloads it and has
 Home Assistant install it over ADB (copied to `/data/local/tmp` first: the package manager may not
-read the app's own folder). The home screen checks every six hours and puts a dot on the
+read the app's own folder).
+
+Home Assistant (or a PC) can start an update on a TV over ADB, without touching the TV:
+
+    adb shell am broadcast -n hu.otthon.launcher/.UpdateReceiver -a hu.otthon.launcher.UPDATE
+
+The launcher checks GitHub, downloads a newer build and has Home Assistant install it. Only the
+TV's shell can send this (the receiver requires the `DUMP` permission). `--ez force true`
+installs the latest release even when it is not newer. The Home Assistant script
+"Update TV launchers" sends it to every TV. The home screen checks every six hours and puts a dot on the
 settings button when there is something newer.
 
 ## Making it the default home app
