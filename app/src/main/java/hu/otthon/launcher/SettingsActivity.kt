@@ -763,12 +763,24 @@ class SettingsActivity : PanelActivity() {
         row("Name", k.name) {
             Popup.text(this, "Name", k.name, "The kids screen says: Hi, …!") { v -> if (v.isNotBlank()) kidsEdit { it.put("name", v) } }
         }
-        row("PIN", if (k.pin.isBlank()) "Not set" else "••••") { askPin() }
-        if (k.pin.isBlank()) note("Without a PIN anyone can leave the kids profile.")
+        row("Grown-ups' profile name", k.mainName) {
+            Popup.text(this, "Grown-ups' profile name", k.mainName, "Shown on the profile picker") { v -> if (v.isNotBlank()) kidsEdit { it.put("main_name", v) } }
+        }
+        val pin = KidsTime.pin(this, cfg)
+        row("PIN", if (pin.isBlank()) "Not set" else if (KidsTime.haPinHelper) "•••• · Home Assistant" else "••••") { askPin() }
+        note(when {
+            KidsTime.haPinHelper -> "The PIN is kept in Home Assistant (Kids TV PIN), shared by every TV, and can be changed there as well. A PIN set here is saved there too."
+            pin.isBlank() -> "Without a PIN anyone can open the grown-ups' profile."
+            else -> "The PIN opens the grown-ups' profile, from the kids screen and on the profile picker."
+        })
         val count = k.apps.count { Apps.one(this, it) != null }
         row("Allowed apps", if (count == 1) "1 app" else "$count apps") { open(Page("Allowed apps") { kidsAppsPage() }) }
-        toggle("Start in the kids profile", k.startKids) { on -> kidsEdit { it.put("start_kids", on) } }
-        note("Whenever the TV goes to sleep or starts, it comes back in the kids profile, so the grown-ups' profile is never left open.")
+        val wakes = listOf("ask", "kids", "last")
+        add(SegmentRow(this, "When the TV wakes up", listOf("Who's watching?", "Kids profile", "Last profile"), wakes.indexOf(k.onWake).coerceAtLeast(0)) { i ->
+            KidsStore.edit(this) { it.put("on_wake", wakes[i]); it.remove("start_kids") }
+            cfg = Config.load(this)
+        })
+        note("Who's watching? shows the profiles as big round pictures whenever the TV wakes up or starts; the grown-ups' profile then asks for the PIN, so it is never left open for the kids.")
 
         section("App lock")
         val guard = KeyService.running
@@ -815,13 +827,16 @@ class SettingsActivity : PanelActivity() {
     }
 
     private fun askPin() {
-        PinPad.ask(this, "New PIN", "Needed to leave the kids profile") { a ->
+        PinPad.ask(this, "New PIN", "Opens the grown-ups' profile") { a ->
             PinPad.ask(this, "The same PIN again", null) { b ->
-                if (a == b) {
-                    kidsEdit { it.put("pin", a) }
-                    toast("PIN saved")
-                } else {
+                if (a != b) {
                     toast("The two PINs were different, try again")
+                    return@ask
+                }
+                val c = cfg
+                Bg.run({ KidsTime.savePin(this, c, a) }) { ok ->
+                    toast(if (ok == true) "PIN saved" else "Couldn't save the PIN")
+                    change { }
                 }
             }
         }

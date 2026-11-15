@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- An HDMI plug: the inputs (sources) on the home screen. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
+    <path android:pathData="M4 8h16v4.5l-2.5 2.5h-11L4 12.5z" android:strokeColor="#FFFFFFFF" android:strokeWidth="1.8" android:strokeLineJoin="round" android:fillColor="#00000000" />
+    <path android:pathData="M8 11h8" android:strokeColor="#FFFFFFFF" android:strokeWidth="1.8" android:strokeLineCap="round" android:fillColor="#00000000" />
+    <path android:pathData="M9 15v3h6v-3" android:strokeColor="#FFFFFFFF" android:strokeWidth="1.8" android:strokeLineJoin="round" android:strokeLineCap="round" android:fillColor="#00000000" />
+</vector>

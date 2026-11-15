@@ -47,8 +47,10 @@ data class Kids(
     val apps: List<String>,
     /** Empty: leaving the kids profile needs no PIN. */
     val pin: String,
-    /** Switch to the kids profile whenever the TV goes to sleep or starts. */
-    val startKids: Boolean,
+    /** What the TV shows when it wakes up or starts: "ask" (who's watching?), "kids" or "last". */
+    val onWake: String,
+    /** The grown-ups' profile, as named on the profile picker. */
+    val mainName: String,
     /** Minutes a day; 0 = no limit. Used when Home Assistant has no "Kids TV" helpers. */
     val limit: Int,
     /** "19:30" or null. */
@@ -73,7 +75,10 @@ data class Kids(
                 name = j.optString("name", "").ifBlank { "Kids" },
                 apps = apps,
                 pin = j.optString("pin", ""),
-                startKids = j.optBoolean("start_kids", false),
+                onWake = j.optString("on_wake", "").let { w ->
+                    if (w == "ask" || w == "kids" || w == "last") w else if (j.optBoolean("start_kids", false)) "kids" else "ask"
+                },
+                mainName = j.optString("main_name", "").ifBlank { "Grown-ups" },
                 limit = j.optInt("limit", 0).coerceIn(0, 600),
                 bedtime = j.optString("bedtime", "").ifBlank { null },
                 wake = j.optString("wake", "").ifBlank { null }
@@ -96,14 +101,39 @@ object Profile {
     /** Things that redraw when the profile changes (the home screen). */
     val listeners = ArrayList<() -> Unit>()
 
-    /** After the TV has started: the kids profile, when it is set to start with it. */
+    /** True while the profile picker should come up on the home screen. */
+    fun askPending(ctx: Context, cfg: Config): Boolean = cfg.kids.on && Prefs.of(ctx).getBoolean("kids_ask", false)
+
+    fun clearAsk(ctx: Context) = Prefs.of(ctx).edit().putBoolean("kids_ask", false).apply()
+
+    /**
+     * The TV went to sleep (or has just started): get ready for whoever comes next, by asking who
+     * is watching or by going to the kids profile. True when the home screen should come to the front.
+     */
+    fun onSleep(ctx: Context, cfg: Config): Boolean {
+        val k = cfg.kids
+        if (!k.on) return false
+        return when (k.onWake) {
+            "ask" -> {
+                Prefs.of(ctx).edit().putBoolean("kids_ask", true).apply()
+                true
+            }
+            "kids" -> {
+                set(ctx, true)
+                true
+            }
+            else -> false
+        }
+    }
+
+    /** After the TV has started: the same as after it went to sleep. */
     fun checkBoot(ctx: Context, cfg: Config) {
         val boot = System.currentTimeMillis() - SystemClock.elapsedRealtime()
         val p = Prefs.of(ctx)
         val last = p.getLong("boot_at", 0L)
         if (Math.abs(boot - last) > 120_000L) {
             p.edit().putLong("boot_at", boot).apply()
-            if (cfg.kids.on && cfg.kids.startKids && last != 0L) set(ctx, true)
+            if (last != 0L) onSleep(ctx, cfg)
         }
     }
 }
@@ -119,6 +149,7 @@ object KidsTime {
     const val EXTRA = "input_number.kids_tv_extra_minutes"
     const val BEDTIME = "input_datetime.kids_tv_bedtime"
     const val WAKE = "input_datetime.kids_tv_wake_up"
+    const val PIN = "input_text.kids_tv_pin"
 
     enum class Reason { PAUSED, EARLY, BEDTIME, USED_UP }
 
@@ -134,6 +165,9 @@ object KidsTime {
     @Volatile private var haWake: String? = null
     @Volatile private var haAt = 0L
     @Volatile var haReady = false
+        private set
+    /** True when Home Assistant has the PIN helper: the PIN is then set and kept there. */
+    @Volatile var haPinHelper = false
         private set
 
     private fun today() = LocalDate.now().toString()
@@ -165,9 +199,41 @@ object KidsTime {
         haBedtime = st(BEDTIME)?.take(5)
         haWake = st(WAKE)?.take(5)
         haReady = haLimit != null || haUsed != null || haAllowed != null
+        // the PIN: kept here too, so it also works while Home Assistant cannot be reached
+        val pin = try { ha.state(PIN).optString("state", null) } catch (x: Exception) { null }
+        haPinHelper = pin != null
+        if (pin != null) {
+            appCtx?.let { c -> Prefs.of(c).edit().putString("kids_ha_pin", if (pin.matches(PIN_FORMAT)) pin else "").apply() }
+        }
+    }
+
+    private val PIN_FORMAT = Regex("^[0-9]{4}$")
+    @Volatile var appCtx: Context? = null
+
+    /** The PIN that opens the grown-ups' profile: Home Assistant's when it has one, otherwise this TV's. */
+    fun pin(ctx: Context, cfg: Config): String {
+        appCtx = ctx.applicationContext
+        val ha = Prefs.of(ctx).getString("kids_ha_pin", "") ?: ""
+        return if (ha.matches(PIN_FORMAT)) ha else cfg.kids.pin
+    }
+
+    /** Saves a new PIN: in Home Assistant when it keeps the PIN, on this TV otherwise. Blocking. */
+    fun savePin(ctx: Context, cfg: Config, pin: String): Boolean {
+        appCtx = ctx.applicationContext
+        if (haPinHelper && cfg.haEnabled) {
+            return try {
+                HaClient(cfg.haUrl!!, cfg.haToken!!).call("input_text", "set_value", JSONObject().put("entity_id", PIN).put("value", pin))
+                Prefs.of(ctx).edit().putString("kids_ha_pin", pin).apply()
+                true
+            } catch (e: Exception) {
+                false
+            }
+        }
+        return KidsStore.edit(ctx) { it.put("pin", pin) }
     }
 
     fun status(ctx: Context, cfg: Config): Status {
+        appCtx = ctx.applicationContext
         val k = cfg.kids
         val limit = haLimit ?: k.limit
         val used = maxOf(haUsed ?: 0, if (haUsed == null) localUsed(ctx) else 0)
@@ -266,6 +332,13 @@ object KidsGuard {
 // ---------- looks ----------
 
 object KidsLook {
+    /** The grown-ups' avatar: a calm blue-violet. */
+    const val GROWN = 0xFF6F8BFF.toInt()
+    const val GROWN2 = 0xFF9F7BFF.toInt()
+
+    fun kidAvatar(k: Kids) = AvatarDrawable(k.name.take(1).uppercase(), CANDY[0])
+    fun grownAvatar(k: Kids) = AvatarDrawable(k.mainName.take(1).uppercase(), GROWN, GROWN2)
+
     /** Candy colours for the tiles' frames and the avatar. */
     val CANDY = intArrayOf(0xFFFF8FB8.toInt(), 0xFFFFD166.toInt(), 0xFF7DE2B5.toInt(), 0xFF74C0FC.toInt(), 0xFFC3A6FF.toInt(), 0xFFFFA37A.toInt())
 
@@ -273,7 +346,7 @@ object KidsLook {
 }
 
 /** A round avatar: the first letter on a candy gradient, or a person outline for the grown-ups' profile. */
-class AvatarDrawable(private val letter: String?, private val color: Int) : Drawable() {
+class AvatarDrawable(private val letter: String?, private val color: Int, private val color2: Int = 0) : Drawable() {
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     private val path = Path()
 
@@ -283,7 +356,8 @@ class AvatarDrawable(private val letter: String?, private val color: Int) : Draw
         val cx = b.exactCenterX()
         val cy = b.exactCenterY()
         if (letter != null) {
-            p.shader = LinearGradient(cx - r, cy - r, cx + r, cy + r, color, KidsLook.CANDY[(KidsLook.CANDY.indexOf(color) + 2).coerceAtLeast(0) % KidsLook.CANDY.size], Shader.TileMode.CLAMP)
+            val second = if (color2 != 0) color2 else KidsLook.CANDY[(KidsLook.CANDY.indexOf(color) + 2).coerceAtLeast(0) % KidsLook.CANDY.size]
+            p.shader = LinearGradient(cx - r, cy - r, cx + r, cy + r, color, second, Shader.TileMode.CLAMP)
             c.drawCircle(cx, cy, r, p)
             p.shader = null
             p.color = Color.WHITE
@@ -475,7 +549,7 @@ class KidsHome(private val act: Activity, private val onAvatar: () -> Unit) : Fr
         val k = cfg.kids
         kids = k
         hello.text = "Hi, ${k.name}!"
-        avatar.setImageDrawable(AvatarDrawable(k.name.take(1).uppercase(), KidsLook.CANDY[0]))
+        avatar.setImageDrawable(KidsLook.kidAvatar(k))
         tiles.removeAllViews()
         val w = act.dp(250f)
         apps.forEachIndexed { i, app ->
@@ -704,4 +778,89 @@ object KidsStore {
     fun edit(ctx: Context, block: (JSONObject) -> Unit) = ConfigStore.edit(ctx) { r -> block(ConfigStore.obj(r, "kids")) }
 
     fun setApps(ctx: Context, apps: List<String>) = edit(ctx) { k -> k.put("apps", JSONArray().apply { apps.forEach { put(it) } }) }
+}
+
+/**
+ * "Who's watching?": the profiles as big round avatars, shown when the TV wakes up or starts.
+ * The grown-ups' profile asks for the PIN; the kids' opens straight away. Back does nothing here.
+ */
+class ProfilePicker(private val act: Activity, private val onPick: (kids: Boolean) -> Unit) : FrameLayout(act) {
+    private val row = LinearLayout(act)
+    private val items = ArrayList<View>()
+    private val note: TextView
+
+    init {
+        isClickable = true
+        isFocusable = false
+        background = android.graphics.drawable.GradientDrawable(
+            android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
+            intArrayOf(0xF2070910.toInt(), 0xE60E1220.toInt(), 0xF2070910.toInt())
+        )
+        val col = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL }
+        col.addView(act.label("Who's watching?", 34f, C.TEXT, light = true).apply { letterSpacing = -0.01f })
+        row.orientation = LinearLayout.HORIZONTAL
+        row.gravity = Gravity.CENTER
+        row.clipChildren = false
+        col.addView(row, LinearLayout.LayoutParams(-2, -2).apply { topMargin = act.dp(44f) })
+        note = act.label("", 13f, C.TEXT3).apply { gravity = Gravity.CENTER; alpha = 0f }
+        col.addView(note, LinearLayout.LayoutParams(-2, -2).apply { topMargin = act.dp(30f) })
+        addView(col, LayoutParams(-2, -2, Gravity.CENTER))
+        clipChildren = false
+        col.clipChildren = false
+    }
+
+    fun show(k: Kids, kidsLast: Boolean) {
+        row.removeAllViews()
+        items.clear()
+        val grown = item(KidsLook.grownAvatar(k), k.mainName) { onPick(false) }
+        val kid = item(KidsLook.kidAvatar(k), k.name) { onPick(true) }
+        row.addView(grown)
+        row.addView(kid, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = act.dp(64f) })
+        visibility = View.VISIBLE
+        alpha = 0f
+        animate().alpha(1f).setDuration(260).start()
+        row.translationY = act.dp(16f).toFloat()
+        row.animate().translationY(0f).setDuration(420).setInterpolator(Motion.EASE).start()
+        (if (kidsLast) kid else grown).getChildAt(0).requestFocus()
+    }
+
+    fun hide() {
+        animate().alpha(0f).setDuration(200).withEndAction { visibility = View.GONE }.start()
+    }
+
+    fun say(text: String) {
+        note.text = text
+        note.animate().cancel()
+        note.alpha = 1f
+        note.animate().alpha(0f).setStartDelay(2600).setDuration(400).start()
+    }
+
+    private fun item(avatar: Drawable, name: String, click: () -> Unit): LinearLayout {
+        val box = LinearLayout(act).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; clipChildren = false }
+        val ring = android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.OVAL
+            setStroke(act.dp(4f), Color.WHITE)
+        }
+        val img = ImageView(act).apply {
+            setImageDrawable(avatar)
+            isFocusable = true
+            isClickable = true
+            contentDescription = name
+            setPadding(act.dp(8f), act.dp(8f), act.dp(8f), act.dp(8f))
+            setOnClickListener { click() }
+        }
+        val label = act.label(name, 18f, C.TEXT3).apply { gravity = Gravity.CENTER; setPadding(0, act.dp(16f), 0, 0) }
+        img.setOnFocusChangeListener { v, f ->
+            v.foreground = if (f) ring else null
+            val s = if (f) 1.1f else 1f
+            v.animate().scaleX(s).scaleY(s).setDuration(if (f) 320 else 180)
+                .setInterpolator(if (f && Motion.level == Motion.FULL) OvershootInterpolator(1.8f) else Motion.EASE).start()
+            label.setTextColor(if (f) C.TEXT else C.TEXT3)
+            label.typeface = if (f) Typeface.create("sans-serif-medium", Typeface.NORMAL) else Typeface.create("sans-serif", Typeface.NORMAL)
+        }
+        box.addView(img, LinearLayout.LayoutParams(act.dp(136f), act.dp(136f)))
+        box.addView(label, LinearLayout.LayoutParams(act.dp(180f), -2))
+        items.add(img)
+        return box
+    }
 }

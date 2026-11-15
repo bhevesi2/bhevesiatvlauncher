@@ -99,8 +99,15 @@ class KeyService : AccessibilityService() {
 
     private val screenOff = object : android.content.BroadcastReceiver() {
         override fun onReceive(c: Context?, i: android.content.Intent?) {
-            val k = config()?.kids ?: return
-            if (k.on && k.startKids) Profile.set(this@KeyService, true)
+            val c = config() ?: return
+            // ready for whoever comes next: the profile picker (or the kids profile) on the home screen
+            if (Profile.onSleep(this@KeyService, c)) {
+                try {
+                    startActivity(android.content.Intent(this@KeyService, HomeActivity::class.java)
+                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or android.content.Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                        .putExtra("wake", true))
+                } catch (e: Exception) { }
+            }
         }
     }
 

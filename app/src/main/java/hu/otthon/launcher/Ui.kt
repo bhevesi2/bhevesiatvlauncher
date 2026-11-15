@@ -58,6 +58,28 @@ object C {
 
 fun Context.dp(v: Float): Int = (v * resources.displayMetrics.density + 0.5f).toInt()
 
+/**
+ * The look of the home screen's controls, in the manner of Google TV: round icon buttons, pills
+ * and a status capsule, all on the same dark frosted glass with a hairline edge; the focused one
+ * turns light (the gliding cursor) and grows a little.
+ */
+object Look {
+    /** Dark glass under every control, so it reads on a bright photo or snow too. */
+    const val SURFACE = 0x700B0D12
+    const val HAIRLINE = 0x26FFFFFF
+    const val DIVIDER = 0x38FFFFFF
+    /** How much a focused control grows. */
+    const val GROW = 1.08f
+
+    fun surface(ctx: Context, radius: Float): GradientDrawable = rounded(SURFACE, radius, ctx.dp(1f), HAIRLINE)
+
+    /** The small grow and settle of a control taking or leaving focus. */
+    fun grow(v: View, focused: Boolean, by: Float = GROW) {
+        val s = if (focused) by else 1f
+        v.animate().scaleX(s).scaleY(s).setDuration(if (focused) 220 else 160).setInterpolator(Motion.EASE).start()
+    }
+}
+
 fun rounded(color: Int, radius: Float, stroke: Int = 0, strokeColor: Int = 0): GradientDrawable =
     GradientDrawable().apply {
         setColor(color)
@@ -78,41 +100,43 @@ fun Context.label(text: String, sp: Float, color: Int = C.TEXT, bold: Boolean = 
         includeFontPadding = false
     }
 
-/** Non-focusable status chip (icon + text). */
-fun Context.chip(iconRes: Int, text: String): TextView = label(text, 12f, C.TEXT).apply {
+/** One status in the status capsule (icon + text); the capsule itself is the glass. */
+fun Context.chip(iconRes: Int, text: String): TextView = label(text, 13f, C.TEXT2).apply {
     val d = getDrawable(iconRes)!!.mutate()
-    d.setBounds(0, 0, dp(13f), dp(13f))
-    d.setTint(C.TEXT)
+    d.setBounds(0, 0, dp(15f), dp(15f))
+    d.setTint(C.TEXT2)
     setCompoundDrawables(d, null, null, null)
-    compoundDrawablePadding = dp(5f)
+    compoundDrawablePadding = dp(7f)
     gravity = Gravity.CENTER_VERTICAL
-    setPadding(dp(10f), dp(6f), dp(12f), dp(6f))
-    background = rounded(C.GLASS_SOFT, dp(20f).toFloat(), 1, C.BORDER)
+    maxLines = 1
+    setPadding(0, 0, 0, 0)
 }
 
 /** Focusable pill button: dark glass, turns light when focused. */
 fun Context.pill(text: String, iconRes: Int?, onClick: () -> Unit): TextView {
     val ctx = this
-    return label(text, 11f, C.TEXT).apply {
+    return label(text, 13f, C.TEXT, bold = true).apply {
         isFocusable = true
         isClickable = true
         maxLines = 1
         gravity = Gravity.CENTER_VERTICAL
-        setPadding(dp(12f), dp(7f), dp(14f), dp(7f))
-        val icon: Drawable? = iconRes?.let { ctx.getDrawable(it)!!.mutate().apply { setBounds(0, 0, dp(12f), dp(12f)) } }
+        setPadding(dp(if (iconRes != null) 14f else 18f), dp(10f), dp(18f), dp(10f))
+        val icon: Drawable? = iconRes?.let { ctx.getDrawable(it)!!.mutate().apply { setBounds(0, 0, dp(16f), dp(16f)) } }
         if (icon != null) {
             setCompoundDrawables(icon, null, null, null)
-            compoundDrawablePadding = dp(5f)
+            compoundDrawablePadding = dp(8f)
         }
         FocusGlide.shape(this, -1f)
         fun paint(focused: Boolean) {
-            background = if (focused) FocusGlide.fill(this, dp(20f).toFloat())
-            else rounded(C.GLASS, dp(20f).toFloat(), 1, C.BORDER)
+            background = if (focused) FocusGlide.fill(this, dp(22f).toFloat()) else Look.surface(ctx, dp(22f).toFloat())
             setTextColor(if (focused) C.DARK else C.TEXT)
             icon?.setTint(if (focused) C.DARK else C.TEXT)
         }
         paint(false)
-        setOnFocusChangeListener { _, f -> paint(f) }
+        setOnFocusChangeListener { v, f ->
+            paint(f)
+            Look.grow(v, f, 1.05f)
+        }
         setOnClickListener { onClick() }
     }
 }

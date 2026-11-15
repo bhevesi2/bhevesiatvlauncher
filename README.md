@@ -109,6 +109,14 @@ asks for the first time (Allow). OK opens a programme, Hold OK moves its row up 
 is something below. Settings › Home screen › Recommendations switches them off, chooses the apps
 and Continue watching, and resets the row order.
 
+## Look
+
+The home screen's controls share one look, in the manner of Google TV: round icon buttons (Today,
+TV settings, Launcher settings, All apps, Dashboard, Cameras), the statuses together in one glass
+capsule with thin lines between them, and pills for the scenes and the inputs. All of them sit on
+the same dark frosted glass with a hairline edge; the focused one turns light and grows a little.
+The profile avatar is in the top right corner.
+
 ## Little visitors
 
 Settings › Appearance › Bears and bunnies (Off / A few / Lots) lets a few drawn bears and bunnies
@@ -147,8 +155,10 @@ that bounce when the cursor arrives, and below them what those apps recommend; t
 bears walk on the big tiles too. There are no Home Assistant panels, cameras, settings or other
 apps. The round avatar at the top right switches profiles: from the grown-ups' screen straight
 into the kids profile, back only with the PIN (entered with the arrows, or the number buttons).
-"Start in the kids profile" brings the TV back in the kids profile whenever it goes to sleep or
-starts.
+"When the TV wakes up" decides what greets whoever turns the TV on: "Who's watching?" (the
+profiles as big round pictures; the grown-ups' one asks for the PIN), straight into the kids
+profile, or the last profile. The PIN can also be kept in Home Assistant (`input_text.kids_tv_pin`,
+a password field): every TV then uses it, and a PIN set on a TV is saved there.
 
 The app lock (the same accessibility service as the colour buttons, switched on over ADB) sees
 every app that comes to the front. In the kids profile anything else than the allowed apps,

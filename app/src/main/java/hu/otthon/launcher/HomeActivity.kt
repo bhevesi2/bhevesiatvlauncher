@@ -76,6 +76,7 @@ class HomeActivity : Activity() {
 
     // the kids profile: its own screen in place of the usual one
     private lateinit var kidsHome: KidsHome
+    private lateinit var picker: ProfilePicker
     private var kidsOn = false
     private var kidsAsleepSince = 0L
     private var kidsSentToSleep = ""
@@ -162,9 +163,9 @@ class HomeActivity : Activity() {
         top.addView(clockCol)
         top.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         chipsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        top.addView(chipsRow)
+        top.addView(chipsRow, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(12f) })
         topButtons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        top.addView(topButtons)
+        top.addView(topButtons, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(10f); topMargin = dp(12f) })
         content.addView(top, LinearLayout.LayoutParams(-1, -2).apply { leftMargin = side; rightMargin = side })
 
         buildNowPlaying()
@@ -200,6 +201,10 @@ class HomeActivity : Activity() {
         critters = layer
         root.addView(layer, FrameLayout.LayoutParams(-1, -1))
         root.addView(hint, FrameLayout.LayoutParams(-2, -2))
+        // "Who's watching?" over everything, when the TV wakes up
+        picker = ProfilePicker(this) { kids -> pick(kids) }
+        picker.visibility = View.GONE
+        root.addView(picker, FrameLayout.LayoutParams(-1, -1))
 
         setContentView(root)
     }
@@ -447,6 +452,11 @@ class HomeActivity : Activity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (picker.visibility == View.VISIBLE) {
+            // a profile has to be chosen; Back does nothing here
+            if (event.keyCode == KeyEvent.KEYCODE_BACK) return true
+            return super.dispatchKeyEvent(event)
+        }
         if (kidsOn) {
             // the kids screen: no colour buttons, no recommendations page, Back does nothing
             return super.dispatchKeyEvent(event)
@@ -528,17 +538,18 @@ class HomeActivity : Activity() {
     private fun iconButton(icon: Int, name: String, above: Boolean, onClick: () -> Unit): ImageView {
         val v = ImageView(this)
         v.setImageResource(icon)
-        v.setPadding(dp(9f), dp(9f), dp(9f), dp(9f))
+        v.setPadding(dp(12f), dp(12f), dp(12f), dp(12f))
         v.isFocusable = true
         v.isClickable = true
         v.contentDescription = name
-        val normal = rounded(C.GLASS_SOFT, dp(18f).toFloat(), 1, C.BORDER)
+        val normal = Look.surface(this, dp(22f).toFloat())
         v.background = normal
         v.setColorFilter(C.TEXT)
         FocusGlide.shape(v, -1f)
         v.setOnFocusChangeListener { _, f ->
-            v.background = if (f) FocusGlide.fill(v, dp(18f).toFloat()) else normal
+            v.background = if (f) FocusGlide.fill(v, dp(22f).toFloat()) else normal
             v.setColorFilter(if (f) C.DARK else C.TEXT)
+            Look.grow(v, f)
             if (f) showHint(v, name, above) else hideHint(v)
         }
         v.setOnClickListener { onClick() }
@@ -553,8 +564,8 @@ class HomeActivity : Activity() {
     }
 
     private fun addIcon(row: LinearLayout, v: View) {
-        val lp = LinearLayout.LayoutParams(dp(36f), dp(36f))
-        if (row.childCount > 0) lp.leftMargin = dp(8f)
+        val lp = LinearLayout.LayoutParams(dp(44f), dp(44f))
+        if (row.childCount > 0) lp.leftMargin = dp(10f)
         row.addView(v, lp)
     }
 
@@ -617,37 +628,43 @@ class HomeActivity : Activity() {
         // top right, icon only: Today, TV settings and launcher settings. (Google TV home is in
         // Settings › About, it is not needed every day.)
         topButtons.removeAllViews()
-        if (cfg.kids.on) {
-            // the kids profile, one press away
-            val k = cfg.kids
-            val av = ImageView(this).apply {
-                setImageDrawable(AvatarDrawable(k.name.take(1).uppercase(), KidsLook.CANDY[0]))
-                isFocusable = true
-                isClickable = true
-                contentDescription = k.name
-                FocusGlide.shape(this, -1f)
-                setOnFocusChangeListener { v, f ->
-                    v.animate().scaleX(if (f) 1.12f else 1f).scaleY(if (f) 1.12f else 1f).setDuration(160).start()
-                    if (f) showHint(v, "${k.name}'s profile", false) else hideHint(v)
-                }
-                setOnClickListener { Profile.set(this@HomeActivity, true) }
-            }
-            topButtons.addView(av, LinearLayout.LayoutParams(dp(36f), dp(36f)).apply { leftMargin = dp(7f) })
-        }
         if (cfg.haEnabled) {
             val today = iconButton(R.drawable.ic_today, "Today", false) { open(TodayActivity::class.java) }
-            topButtons.addView(today, LinearLayout.LayoutParams(dp(36f), dp(36f)).apply { leftMargin = dp(7f) })
+            topButtons.addView(today, LinearLayout.LayoutParams(dp(44f), dp(44f)).apply { leftMargin = dp(10f) })
         }
         val tvGear = iconButton(R.drawable.ic_tv_gear, "TV settings", false) {
             if (!Apps.openSystemSettings(this)) toast("Android settings are not available")
         }
-        topButtons.addView(tvGear, LinearLayout.LayoutParams(dp(36f), dp(36f)).apply { leftMargin = dp(7f) })
+        topButtons.addView(tvGear, LinearLayout.LayoutParams(dp(44f), dp(44f)).apply { leftMargin = dp(10f) })
         val gear = iconButton(R.drawable.ic_gear, "Launcher settings", false) {
             open(SettingsActivity::class.java)
         }
         gearButton = gear
         markUpdate()
-        topButtons.addView(gear, LinearLayout.LayoutParams(dp(36f), dp(36f)).apply { leftMargin = dp(7f) })
+        topButtons.addView(gear, LinearLayout.LayoutParams(dp(44f), dp(44f)).apply { leftMargin = dp(10f) })
+        if (cfg.kids.on) {
+            // the profiles, in the top right corner like on Google TV: one press into the kids profile
+            val k = cfg.kids
+            val av = ImageView(this).apply {
+                setImageDrawable(KidsLook.kidAvatar(k))
+                isFocusable = true
+                isClickable = true
+                contentDescription = k.name
+                setPadding(dp(3f), dp(3f), dp(3f), dp(3f))
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL
+                    setColor(Look.SURFACE)
+                    setStroke(dp(1f), Look.HAIRLINE)
+                }
+                FocusGlide.shape(this, -1f)
+                setOnFocusChangeListener { v, f ->
+                    Look.grow(v, f, 1.12f)
+                    if (f) showHint(v, "${k.name}'s profile", false) else hideHint(v)
+                }
+                setOnClickListener { Profile.set(this@HomeActivity, true) }
+            }
+            topButtons.addView(av, LinearLayout.LayoutParams(dp(44f), dp(44f)).apply { leftMargin = dp(20f) })
+        }
 
         // bottom row: icon buttons on the left, quick actions in the middle, inputs on the right
         bottom.removeAllViews()
@@ -674,7 +691,7 @@ class HomeActivity : Activity() {
         if (cfg.haEnabled) {
             cfg.scenes.take(6).forEachIndexed { i, sc ->
                 val lp = LinearLayout.LayoutParams(-2, -2)
-                if (i > 0) lp.leftMargin = dp(6f)
+                if (i > 0) lp.leftMargin = dp(10f)
                 actions.addView(pill(sc.title, sceneIcon(sc)) { runScene(sc) }, lp)
             }
         }
@@ -696,16 +713,23 @@ class HomeActivity : Activity() {
         }
         inputs.take(6).forEach { inp ->
             val lp = LinearLayout.LayoutParams(-2, -2)
-            if (inputRow.childCount > 0) lp.leftMargin = dp(6f)
+            if (inputRow.childCount > 0) lp.leftMargin = dp(10f)
             val text = if (inp.device != null) "${inp.name} · ${inp.device}" else inp.name
-            inputRow.addView(pill(text, null) { if (!Inputs.open(this, inp.id)) toast("Can't switch to ${inp.name}") }, lp)
+            inputRow.addView(pill(text, R.drawable.ic_input) { if (!Inputs.open(this, inp.id)) toast("Can't switch to ${inp.name}") }, lp)
         }
         bottom.addView(inputRow)
 
-        // status chips
+        // the statuses, together in one glass capsule, with thin lines between them
         chipsRow.removeAllViews()
         chipViews.clear()
         weatherChipView = null
+        fun divider() {
+            if (chipsRow.childCount == 0) return
+            chipsRow.addView(View(this).apply { setBackgroundColor(Look.DIVIDER) }, LinearLayout.LayoutParams(dp(1f), dp(16f)).apply {
+                leftMargin = dp(14f)
+                rightMargin = dp(14f)
+            })
+        }
         if (cfg.haEnabled) {
             if (cfg.weatherChip && cfg.weather != null) {
                 val w = chip(R.drawable.ic_cloud, "–")
@@ -713,10 +737,19 @@ class HomeActivity : Activity() {
                 chipsRow.addView(w, LinearLayout.LayoutParams(-2, -2))
             }
             cfg.status.take(4).forEach { s ->
+                divider()
                 val v = chip(statusIcon(s), if (s.label.isBlank()) "–" else "${s.label} –")
-                chipsRow.addView(v, LinearLayout.LayoutParams(-2, -2).apply { if (chipsRow.childCount > 0) leftMargin = dp(7f) })
+                chipsRow.addView(v, LinearLayout.LayoutParams(-2, -2))
                 chipViews.add(s to v)
             }
+        }
+        if (chipsRow.childCount > 0) {
+            chipsRow.background = Look.surface(this, dp(22f).toFloat())
+            chipsRow.setPadding(dp(18f), 0, dp(18f), 0)
+            chipsRow.minimumHeight = dp(44f)
+            chipsRow.visibility = View.VISIBLE
+        } else {
+            chipsRow.visibility = View.GONE
         }
         if (!cfg.haEnabled || cfg.nowPlaying == null) npCard.visibility = View.GONE
 
@@ -793,6 +826,7 @@ class HomeActivity : Activity() {
         }
         registerReceiver(tick, IntentFilter(Intent.ACTION_TIME_TICK))
         onMinute()
+        askProfile()
         PopupService.sync(this)
         markUpdate()
         checkUpdates()
@@ -815,6 +849,14 @@ class HomeActivity : Activity() {
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         collapse(false)
+        if (intent?.getBooleanExtra("wake", false) == true) {
+            signature = ""
+            if (resumed) {
+                reload()
+                askProfile()
+            }
+            return
+        }
         if (kidsOn) {
             // sent back here by the kids profile's guard: say why, kindly
             val blocked = intent?.getStringExtra("kids_blocked")
@@ -874,8 +916,8 @@ class HomeActivity : Activity() {
                 val t = s.optJSONObject("attributes")?.optDouble("temperature", Double.NaN) ?: Double.NaN
                 w.text = if (t.isNaN()) "–" else Fmt.num(Math.round(t).toDouble(), "°")
                 val d = getDrawable(weatherIcon(s.optString("state")))!!.mutate()
-                d.setBounds(0, 0, dp(14f), dp(14f))
-                d.setTint(C.TEXT)
+                d.setBounds(0, 0, dp(15f), dp(15f))
+                d.setTint(C.TEXT2)
                 w.setCompoundDrawables(d, null, null, null)
             }
         }
@@ -1004,14 +1046,47 @@ class HomeActivity : Activity() {
 
     /** The avatar on the kids screen: back to the grown-ups' profile, with the PIN. */
     private fun leaveKids() {
-        val pin = cfg.kids.pin
-        if (pin.isBlank()) {
-            Profile.set(this, false)
+        withPin({ kidsHome.say("That's not the PIN 🔒") }) { Profile.set(this, false) }
+    }
+
+    /**
+     * Asks for the PIN (Home Assistant's newest one, read first) and runs [ok] when it is right.
+     * Without a PIN [ok] runs straight away.
+     */
+    private fun withPin(wrong: () -> Unit, ok: () -> Unit) {
+        val c = cfg
+        val app = applicationContext
+        Bg.run({ KidsTime.refresh(c, true); KidsTime.pin(app, c) }) { p ->
+            val pin = p ?: KidsTime.pin(this, c)
+            if (pin.isBlank()) {
+                ok()
+                return@run
+            }
+            PinPad.ask(this, "${c.kids.mainName}'s profile", "Enter the PIN") { entered ->
+                if (entered == pin) ok() else wrong()
+            }
+        }
+    }
+
+    /** Shows "Who's watching?" when the TV has just woken up or started. */
+    private fun askProfile() {
+        if (!Profile.askPending(this, cfg)) {
+            if (picker.visibility == View.VISIBLE && !cfg.kids.on) picker.visibility = View.GONE
             return
         }
-        PinPad.ask(this, "Grown-ups' profile", "Enter the PIN") { entered ->
-            if (entered == pin) Profile.set(this, false) else kidsHome.say("That's not the PIN 🔒")
+        if (picker.visibility == View.VISIBLE) return
+        critters?.paused = true
+        picker.show(cfg.kids, kidsOn)
+    }
+
+    private fun pick(kids: Boolean) {
+        fun done() {
+            Profile.clearAsk(this)
+            picker.hide()
+            critters?.paused = expanded
+            if (kids != kidsOn) Profile.set(this, kids)
         }
+        if (kids) done() else withPin({ picker.say("That's not the PIN") }) { done() }
     }
 
     /** What the allowed apps recommend, at most two rows. */
