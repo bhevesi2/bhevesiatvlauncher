@@ -146,6 +146,18 @@ time of day like the other landscapes (pink dawn, blue day, violet dusk, moonlit
 windows). They are drawn from data in `assets/winter/`, made by `tools/winter/gen.py`;
 `python3 tools/winter/gen.py --preview out/` draws every scene at every time of day as PNGs.
 
+## Music Assistant
+
+The note button in the bottom row (next to Cameras) opens Music Assistant: Home has rows of
+covers (recently played albums, playlists, radio, the artists played most, recently added
+albums), and tabs show every playlist, album, artist or radio station as a grid. The search
+button looks through the library and every provider. OK plays at once; hold OK for play next,
+add to the queue, or radio mode (more like this). "Play on" at the top right picks the player:
+it starts with the one last chosen on this TV, or a Music Assistant player in the TV's room. The
+bar at the bottom shows what that player is playing, with previous / play-pause / next, and the
+remote's media buttons control it too. The button hides itself when Home Assistant has no Music
+Assistant. (Hold OK on the now-playing card still opens the Roon zones.)
+
 ## Kids profile
 
 Settings › Kids profile turns on a second profile for the kids: their name, a four-digit PIN,

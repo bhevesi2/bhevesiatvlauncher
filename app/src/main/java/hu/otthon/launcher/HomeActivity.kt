@@ -681,6 +681,12 @@ class HomeActivity : Activity() {
                     open(CamerasActivity::class.java)
                 })
             }
+            // Music Assistant: hidden once the screen found that Home Assistant has none
+            if (Prefs.of(this).getBoolean("ma_present", true)) {
+                addIcon(icons, iconButton(R.drawable.ic_music, "Music", true) {
+                    open(MaActivity::class.java)
+                })
+            }
         }
         bottom.addView(icons)
 

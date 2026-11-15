@@ -77,6 +77,22 @@ class HaClient(private val base: String, private val token: String) {
         }
     }
 
+    /** Calls a service that answers with data (Music Assistant's library, search) and returns that answer. */
+    fun callResponse(domain: String, service: String, data: JSONObject, readMs: Int = 15000): JSONObject {
+        val c = open("/api/services/$domain/$service?return_response", readMs)
+        try {
+            c.requestMethod = "POST"
+            c.doOutput = true
+            c.outputStream.use { it.write(data.toString().toByteArray()) }
+            val code = c.responseCode
+            if (code !in 200..299) throw IllegalStateException("HTTP $code")
+            val j = JSONObject(c.inputStream.bufferedReader().readText())
+            return j.optJSONObject("service_response") ?: JSONObject()
+        } finally {
+            c.disconnect()
+        }
+    }
+
     /** Renders a template in Home Assistant and returns the text. Needs an administrator's token. */
     fun template(template: String): String {
         val c = open("/api/template", 10000)
