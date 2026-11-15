@@ -148,13 +148,17 @@ windows). They are drawn from data in `assets/winter/`, made by `tools/winter/ge
 
 ## Music Assistant
 
-The note button in the bottom row (next to Cameras) opens Music Assistant: Home has rows of
+The note button in the bottom row (next to Cameras) opens Music Assistant, in two halves: the
+library on the left, Now playing on the right (the player it plays on, a big cover, the track,
+the file's quality such as DSF · 705.6 kHz, a progress bar, previous / play / next, volume, and
+what comes next). Covers Music Assistant has no picture for get a gradient with the name on it.
+When nothing is chosen as the now-playing card in the settings, the home screen's card follows
+the Music Assistant player last used here; hold OK on it to open this screen. Home has rows of
 covers (recently played albums, playlists, radio, the artists played most, recently added
 albums), and tabs show every playlist, album, artist or radio station as a grid. The search
 button looks through the library and every provider. OK plays at once; hold OK for play next,
 add to the queue, or radio mode (more like this). "Play on" at the top right picks the player:
 it starts with the one last chosen on this TV, or a Music Assistant player in the TV's room. The
-bar at the bottom shows what that player is playing, with previous / play-pause / next, and the
 remote's media buttons control it too. The button hides itself when Home Assistant has no Music
 Assistant. (Hold OK on the now-playing card still opens the Roon zones.)
 

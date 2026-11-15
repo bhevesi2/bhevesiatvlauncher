@@ -96,14 +96,18 @@ object Updates {
      * Installs over the running launcher, then opens it again. The package manager may not read
      * the app's own folder on the shared storage, so the file goes through /data/local/tmp.
      */
-    fun installCommand(ctx: Context, apk: File): String =
-        "cp '${apk.absolutePath}' /data/local/tmp/otthon-update.apk && pm install -r /data/local/tmp/otthon-update.apk; " +
+    fun installCommand(ctx: Context, apk: File): String {
+        val steps = "cp ${apk.absolutePath} /data/local/tmp/otthon-update.apk && pm install -r /data/local/tmp/otthon-update.apk; " +
             "rm -f /data/local/tmp/otthon-update.apk; " +
             // Android leaves the accessibility service unbound after an update even though it is
             // still listed: setting the list again makes it bind (app lock, colour buttons)
             "cur=\$(settings get secure enabled_accessibility_services); case \"\$cur\" in *KeyService*) " +
             "settings delete secure enabled_accessibility_services; settings put secure enabled_accessibility_services \"\$cur\" ;; esac; " +
             "am start -n ${ctx.packageName}/.HomeActivity"
+        // In the background on the TV: Home Assistant's ADB connection gives up on a command after
+        // about nine seconds, and an install takes longer, so it would be cut off half way.
+        return "nohup sh -c '$steps' >/dev/null 2>&1 &"
+    }
 
     /**
      * Checks GitHub and, when there is a newer build, downloads it and has Home Assistant

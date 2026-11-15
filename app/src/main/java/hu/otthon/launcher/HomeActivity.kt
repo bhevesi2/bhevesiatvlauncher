@@ -494,7 +494,7 @@ class HomeActivity : Activity() {
             FocusGlide.shape(this, dp(9f).toFloat())
             setOnFocusChangeListener { _, f -> paintNowPlaying(f) }
             setOnClickListener { togglePlay() }
-            setOnLongClickListener { open(MusicActivity::class.java); true }
+            setOnLongClickListener { open(if (cfg.nowPlaying == null) MaActivity::class.java else MusicActivity::class.java); true }
         }
         npCover = ImageView(this).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
@@ -762,7 +762,7 @@ class HomeActivity : Activity() {
         } else {
             chipsRow.visibility = View.GONE
         }
-        if (!cfg.haEnabled || cfg.nowPlaying == null) npCard.visibility = View.GONE
+        if (!cfg.haEnabled || npEntity() == null) npCard.visibility = View.GONE
 
         val idx = focusFav.coerceIn(0, maxOf(0, favRow.childCount - 1))
         favRow.getChildAt(idx)?.takeIf { it.isFocusable }?.requestFocus()
@@ -844,7 +844,7 @@ class HomeActivity : Activity() {
         loadReco()
         if (ha != null) {
             Bg.main.post(statusLoop)
-            if (cfg.nowPlaying != null) Bg.main.post(npLoop)
+            if (npEntity() != null) Bg.main.post(npLoop)
         }
     }
 
@@ -949,9 +949,20 @@ class HomeActivity : Activity() {
         }
     }
 
+    /**
+     * The player on the now-playing card: the one chosen in the settings (a Roon zone), or else
+     * the Music Assistant player last used on this TV's Music screen.
+     */
+    private fun npEntity(): String? {
+        if (kidsOn) return null
+        cfg.nowPlaying?.let { return it }
+        val p = Prefs.of(this)
+        return if (p.getBoolean("ma_present", true)) p.getString("ma_player", null) else null
+    }
+
     private fun refreshNowPlaying() {
         val client = ha ?: return
-        val entity = cfg.nowPlaying ?: return
+        val entity = npEntity() ?: return
         Bg.run({ client.state(entity) }) { s ->
             if (s == null || !resumed) return@run
             val state = s.optString("state")
@@ -964,7 +975,8 @@ class HomeActivity : Activity() {
                 return@run
             }
             npCard.visibility = View.VISIBLE
-            npLabel.text = cfg.nowPlayingLabel
+            npLabel.text = if (cfg.nowPlaying != null) cfg.nowPlayingLabel
+                else "Now playing · " + s.optJSONObject("attributes")?.optString("friendly_name", "").orEmpty().trim()
             npTitle.text = a!!.optString("media_title", "")
             val artist = a.optString("media_artist", "")
             val album = a.optString("media_album_name", "")
@@ -997,7 +1009,7 @@ class HomeActivity : Activity() {
 
     private fun togglePlay() {
         val client = ha ?: return
-        val entity = cfg.nowPlaying ?: return
+        val entity = npEntity() ?: return
         Bg.run({ client.call("media_player", "media_play_pause", entity) }) {
             Bg.main.postDelayed({ refreshNowPlaying() }, 600)
         }
