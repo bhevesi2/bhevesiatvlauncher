@@ -816,6 +816,7 @@ class HomeActivity : Activity() {
         super.onResume()
         resumed = true
         reload()
+        ServiceKeeper.ensure(this, cfg)
         critters?.setCount(cfg.critters, cfg.christmas)
         critters?.paused = expanded
         if (awayOnOwnScreen) {

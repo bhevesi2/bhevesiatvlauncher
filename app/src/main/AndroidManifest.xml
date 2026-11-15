@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- Granted once over ADB (pm grant): lets the launcher switch its own accessibility service
+         (app lock, colour buttons) back on after an update, when Android leaves it unbound. -->
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- camera pop-ups over other apps (granted over ADB) and the service that watches for them -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />

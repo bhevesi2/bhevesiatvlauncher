@@ -55,7 +55,8 @@ object ColorKeys {
     /** Adds [KeyService] to the TV's accessibility services, keeping any others. */
     fun enableCommand(ctx: Context): String {
         val c = component(ctx)
-        return "cur=\$(settings get secure enabled_accessibility_services); " +
+        return "pm grant ${ctx.packageName} android.permission.WRITE_SECURE_SETTINGS; " +
+            "cur=\$(settings get secure enabled_accessibility_services); " +
             "case \"\$cur\" in *KeyService*) ;; ''|null) settings put secure enabled_accessibility_services $c ;; " +
             "*) settings put secure enabled_accessibility_services \"\$cur:$c\" ;; esac; " +
             "settings put secure accessibility_enabled 1"
@@ -67,6 +68,32 @@ object ColorKeys {
             "new=\$(echo \"\$cur\" | sed 's/[^:]*KeyService//; s/::/:/; s/^://; s/:\$//'); " +
             "if [ -z \"\$new\" ] || [ \"\$new\" = null ]; then settings delete secure enabled_accessibility_services; settings put secure accessibility_enabled 0; " +
             "else settings put secure enabled_accessibility_services \"\$new\"; fi"
+}
+
+/**
+ * Android leaves an accessibility service unbound after its app is updated, although the TV's
+ * settings still list it. With WRITE_SECURE_SETTINGS (granted once over ADB, kept across
+ * updates) the launcher sets the list again itself, which makes Android bind it.
+ */
+object ServiceKeeper {
+    private var lastTry = 0L
+
+    fun ensure(ctx: Context, cfg: Config) {
+        if (!(cfg.colorKeysEverywhere || cfg.kids.on) || KeyService.running) return
+        if (ctx.checkSelfPermission("android.permission.WRITE_SECURE_SETTINGS") != android.content.pm.PackageManager.PERMISSION_GRANTED) return
+        val now = System.currentTimeMillis()
+        if (now - lastTry < 60_000L) return
+        lastTry = now
+        try {
+            val cr = ctx.contentResolver
+            val me = "${ctx.packageName}/${KeyService::class.java.name}"
+            val others = (android.provider.Settings.Secure.getString(cr, "enabled_accessibility_services") ?: "")
+                .split(':').filter { it.isNotBlank() && !it.contains("KeyService") }
+            android.provider.Settings.Secure.putString(cr, "enabled_accessibility_services", others.joinToString(":"))
+            android.provider.Settings.Secure.putString(cr, "enabled_accessibility_services", (others + me).joinToString(":"))
+            android.provider.Settings.Secure.putString(cr, "accessibility_enabled", "1")
+        } catch (e: Exception) { }
+    }
 }
 
 /**
