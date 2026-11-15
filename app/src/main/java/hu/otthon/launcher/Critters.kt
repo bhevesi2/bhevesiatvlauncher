@@ -22,7 +22,8 @@ import kotlin.random.Random
  */
 class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View(ctx) {
 
-    private enum class State { WALK, IDLE, JUMP, LADDER }
+    /** AWAY: off screen fetching something. FLOAT: flying about after a magic cookie. */
+    private enum class State { WALK, IDLE, JUMP, LADDER, AWAY, FLOAT }
 
     private inner class Critter(val bunny: Boolean, val coat: Int, val light: Int, val deer: Boolean = false) {
         var on: View? = null
@@ -54,6 +55,29 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
         var px = 0f
         var py = 0f
         var alpha = 0f
+        // Christmas: a little tree (0) or a present (1) on its back, to be set down somewhere
+        var carry = -1
+        var carryColor = 0
+        var placing = false
+        /** A jump out of the screen, to (offX, offY), to fetch a tree or a present. */
+        var exiting = false
+        var offX = 0f
+        var offY = 0f
+        // a magic cookie, then a flight trailing glitter
+        var cookie = false
+        var floatT = 0f
+        var floatTime = 12f
+        var floatFrom = 0f
+        var floatAlt = 0f
+        var trail = 0f
+        var trailAt = 0f
+    }
+
+    /** A tree or a present a reindeer set down on top of a tile. */
+    private class Decor(val on: View, val x: Float, val kind: Int, val color: Int) {
+        var age = 0f
+        var alpha = 0f
+        var dying = false
     }
 
     private val d = resources.displayMetrics.density
@@ -100,6 +124,9 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
         sleighT = -1f
         sleighWait = 8f
         sparkles.clear()
+        decor.clear()
+        deliverWait = 25f + Random.nextFloat() * 20f
+        cookieWait = 90f + Random.nextFloat() * 60f
         if (xmas) {
             val coats = listOf(
                 0xFFA0703F.toInt() to 0xFFEBD8BA.toInt(),
@@ -134,7 +161,7 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
     fun onFocus(v: View?) {
         if (v == null) return
         for (c in critters) {
-            if (c.on !== v || c.state == State.JUMP || c.state == State.LADDER) continue
+            if (c.on !== v || c.state == State.JUMP || c.state == State.LADDER || c.cookie) continue
             if (c.bunny || c.deer) {
                 c.eating = false
                 startJump(c, v, c.x, 0.45f)
@@ -255,10 +282,26 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
             places = platforms()
             placesAt = now
         }
-        if (christmas) updateSleigh(dt)
+        if (christmas) {
+            updateSleigh(dt)
+            updateChristmas(dt)
+        }
         for (c in critters) {
             c.phase += dt
             c.alpha = min(1f, c.alpha + dt * 2f)
+            if (c.trail > 0f) {
+                c.trail -= dt
+                trailSparkle(c, dt)
+            }
+            if (c.state == State.AWAY) {
+                c.timer -= dt
+                if (c.timer <= 0f) comeBack(c)
+                continue
+            }
+            if (c.state == State.FLOAT) {
+                updateFloat(c, dt)
+                continue
+            }
             val on = c.on
             val r = on?.let { rect(it) }
             if (c.state != State.JUMP && (on == null || r == null)) {
@@ -268,7 +311,14 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
             when (c.state) {
                 State.IDLE -> {
                     c.timer -= dt
+                    // setting a tree or a present down, half way through the bow
+                    if (c.placing && c.carry >= 0 && c.timer < c.eatTotal * 0.5f) putDown(c, r!!)
+                    if (c.timer <= 0f && c.cookie) {
+                        startFloat(c)
+                        continue
+                    }
                     if (c.timer <= 0f) {
+                        c.placing = false
                         c.state = State.WALK
                         c.wave = false
                         c.eating = false
@@ -287,6 +337,13 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
                         c.x = c.x.coerceIn(edge, max(edge, r!!.width() - edge))
                         val moved = Random.nextFloat() < 0.65f && (if (c.bunny || c.deer) jumpAcross(c, r) else bearAcross(c, r))
                         if (!moved) c.dir = -c.dir
+                    } else if (c.timer <= 0f && c.carry >= 0) {
+                        // found a good spot: bow down and leave the tree or present there
+                        c.state = State.IDLE
+                        c.eating = true
+                        c.placing = true
+                        c.timer = 1.5f
+                        c.eatTotal = 1.5f
                     } else if (c.timer <= 0f) {
                         c.state = State.IDLE
                         c.wave = !c.bunny && !c.deer && Random.nextFloat() < 0.35f
@@ -301,6 +358,17 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
                 }
                 State.JUMP -> {
                     c.t += dt / c.jumpTime
+                    if (c.exiting) {
+                        if (c.t >= 1f) {
+                            // gone to fetch something; back in a few seconds
+                            c.exiting = false
+                            c.state = State.AWAY
+                            c.on = null
+                            c.alpha = 0f
+                            c.timer = 2.5f + Random.nextFloat() * 3f
+                            continue
+                        }
+                    } else {
                     val to = c.target
                     val tr = to?.let { rect(it) }
                     if (to == null || tr == null) {
@@ -310,9 +378,10 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
                     if (c.t >= 1f) {
                         c.on = to
                         c.x = c.targetX.coerceIn(4 * d, max(4 * d, tr.width() - 4 * d))
-                        c.state = if (Random.nextFloat() < 0.4f) State.IDLE else State.WALK
+                        c.state = if (Random.nextFloat() < 0.4f && c.carry < 0) State.IDLE else State.WALK
                         c.timer = 1f + Random.nextFloat() * 3f
                         c.walkOver = false
+                    }
                     }
                 }
                 State.LADDER -> {
@@ -350,6 +419,8 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
                         }
                     }
                 }
+                // handled above, before the platform check
+                State.AWAY, State.FLOAT -> {}
             }
             // where it is on screen now
             if (c.state == State.LADDER) {
@@ -358,9 +429,16 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
                 c.px = e[0] + (e[2] - e[0]) * k
                 c.py = e[1] + (e[3] - e[1]) * k
             } else if (c.state == State.JUMP) {
-                val tr = rect(c.target!!) ?: continue
-                val tx = tr.left + c.targetX
-                val ty = tr.top
+                val tx: Float
+                val ty: Float
+                if (c.exiting) {
+                    tx = c.offX
+                    ty = c.offY
+                } else {
+                    val tr = rect(c.target!!) ?: continue
+                    tx = tr.left + c.targetX
+                    ty = tr.top
+                }
                 val k = c.t.coerceIn(0f, 1f)
                 val arc = if (c.walkOver) 0f else 26 * d + max(0f, c.fromY - ty) * 0.6f
                 c.px = c.fromX + (tx - c.fromX) * k
@@ -475,8 +553,10 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
 
     override fun onDraw(canvas: Canvas) {
         for (c in critters) if (!c.bunny && c.state == State.LADDER) drawLadder(canvas, c)
+        if (decor.isNotEmpty()) drawDecor(canvas)
         for (c in critters) {
-            if (c.on == null && c.state != State.JUMP) continue
+            if (c.state == State.AWAY) continue
+            if (c.on == null && c.state != State.JUMP && c.state != State.FLOAT) continue
             val save = canvas.save()
             canvas.translate(c.px, c.py)
             canvas.scale(c.dir * d * SIZE, d * SIZE)
@@ -667,8 +747,11 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
     private var sx = 0f
     private var sy = 0f
     private var sTilt = 0f
-    /** Gold dust the sleigh leaves behind: x, y, age 0..1. */
+    /** Gold dust the sleigh leaves behind, glitter behind a flying reindeer: x, y, age 0..1, colour. */
     private val sparkles = ArrayList<FloatArray>()
+    private val GLITTER = intArrayOf(
+        0xFFFFE08A.toInt(), 0xFFFF9EC7.toInt(), 0xFF9EE7FF.toInt(), 0xFFC9A6FF.toInt(), 0xFFA6FFC9.toInt(), 0xFFFFFFFF.toInt()
+    )
     private val SLEIGH = 1.25f
     private val path = android.graphics.Path()
 
@@ -703,10 +786,10 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
         val dy = -50f * d + kotlin.math.cos(t * Math.PI.toFloat() * 3f) * wave * Math.PI.toFloat() * 3f
         sTilt = Math.toDegrees(kotlin.math.atan2(dy.toDouble(), travel.toDouble())).toFloat()
         sparkleAt -= dt
-        if (sparkleAt <= 0f && sparkles.size < 70) {
+        if (sparkleAt <= 0f && sparkles.size < 120) {
             sparkleAt = 0.045f
             // from the back of the runners
-            sparkles.add(floatArrayOf(sx - sleighDir * 22f * s + (Random.nextFloat() - 0.5f) * 6f * d, sy - 2f * s + (Random.nextFloat() - 0.5f) * 6f * d, 0f))
+            sparkles.add(floatArrayOf(sx - sleighDir * 22f * s + (Random.nextFloat() - 0.5f) * 6f * d, sy - 2f * s + (Random.nextFloat() - 0.5f) * 6f * d, 0f, 0f))
         }
     }
 
@@ -715,7 +798,7 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
             val k = sp[2]
             val a = ((1f - k) * 230).toInt()
             val r = (2.4f - 1.6f * k) * d
-            fill(0xFFFFE08A.toInt(), a)
+            fill(GLITTER[sp[3].toInt().coerceIn(0, GLITTER.size - 1)], a)
             val y = sp[1] + k * 14f * d
             canvas.drawCircle(sp[0], y, r * 0.55f, p)
             p.style = Paint.Style.STROKE
@@ -857,8 +940,9 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
     /** A reindeer on a tile: walks, leaps across gaps and nibbles at the frost now and then. */
     private fun grazingDeer(canvas: Canvas, c: Critter, a: Int) {
         val walking = c.state == State.WALK || (c.state == State.JUMP && c.walkOver)
-        val leaping = c.state == State.JUMP && !c.walkOver
-        val swing = if (walking) sin(c.phase * 8f) else 0f
+        val flying = c.state == State.FLOAT
+        val leaping = (c.state == State.JUMP && !c.walkOver) || flying
+        val swing = if (walking) sin(c.phase * 8f) else if (flying) sin(c.phase * 5f) * 0.35f else 0f
         val graze = if (c.eating && c.state == State.IDLE) {
             // lower the head over half a second, raise it at the end
             val down = min(c.eatTotal - c.timer, c.timer).coerceIn(0f, 0.5f) * 2f
@@ -867,7 +951,17 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
         canvas.save()
         canvas.scale(0.92f, 0.92f)
         if (walking) canvas.translate(0f, -abs(swing) * 0.8f)
+        if (flying) canvas.rotate(sin(c.phase * 1.7f) * 5f, 0f, -14f)
+        if (c.cookie && c.state == State.IDLE) magicCookie(canvas, c, a)
         reindeer(canvas, c.coat, c.light, a, c.phase, swing, if (leaping) 1f else 0f, graze, true)
+        if (c.carry >= 0) {
+            // riding on its back, a little smaller
+            canvas.save()
+            canvas.translate(-1.5f, -19.6f)
+            canvas.scale(0.72f, 0.72f)
+            drawItem(canvas, c.carry, c.carryColor, a, c.phase)
+            canvas.restore()
+        }
         canvas.restore()
     }
 
@@ -974,5 +1068,268 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
         val g = ((c shr 8) and 0xFF) * 4 / 5
         val b = (c and 0xFF) * 4 / 5
         return (0xFF shl 24) or (r shl 16) or (g shl 8) or b
+    }
+
+    // ---------- Christmas: presents, little trees and magic cookies ----------
+
+    private val decor = ArrayList<Decor>()
+    /** At most this many trees and presents stay; the oldest fades away when one more arrives. */
+    private val MAX_DECOR = 4
+    private var deliverWait = 30f
+    private var cookieWait = 120f
+    private val WRAP = intArrayOf(0xFFD84343.toInt(), 0xFF2E7DD1.toInt(), 0xFFF2C230.toInt(), 0xFF8E5BD8.toInt(), 0xFF2E9E5B.toInt())
+
+    private fun updateChristmas(dt: Float) {
+        for (o in decor) {
+            o.age += dt
+            o.alpha = if (o.dying) o.alpha - dt / 1.5f else min(1f, o.alpha + dt * 3f)
+        }
+        decor.removeAll { (it.dying && it.alpha <= 0f) || !it.on.isAttachedToWindow }
+        if (width == 0 || critters.isEmpty()) return
+        val idle = critters.filter {
+            (it.state == State.WALK || it.state == State.IDLE) && it.on != null && it.carry < 0 && !it.cookie && !it.placing
+        }
+        // now and then one of them goes to fetch a little tree or a present
+        deliverWait -= dt
+        if (deliverWait <= 0f) {
+            val busy = critters.any { it.state == State.AWAY || it.exiting || it.carry >= 0 }
+            val c = if (busy) null else idle.randomOrNull()
+            if (c == null) {
+                deliverWait = 5f
+            } else {
+                deliverWait = 60f + Random.nextFloat() * 60f
+                fetch(c)
+            }
+        }
+        // and once in a long while one finds a magic cookie
+        cookieWait -= dt
+        if (cookieWait <= 0f) {
+            val flying = critters.any { it.state == State.FLOAT || it.cookie }
+            val c = if (flying) null else idle.filter { it.state == State.IDLE || it.state == State.WALK }.randomOrNull()
+            if (c == null) {
+                cookieWait = 6f
+            } else {
+                cookieWait = 150f + Random.nextFloat() * 150f
+                c.cookie = true
+                c.state = State.IDLE
+                c.wave = false
+                c.eating = true
+                c.timer = 3.4f
+                c.eatTotal = 3.4f
+            }
+        }
+    }
+
+    /** Leap out over the nearer side edge of the screen. */
+    private fun fetch(c: Critter) {
+        val left = c.px < width / 2f
+        c.fromX = c.px
+        c.fromY = c.py
+        c.offX = if (left) -40f * d else width + 40f * d
+        c.offY = c.py - 70f * d
+        c.dir = if (left) -1f else 1f
+        c.t = 0f
+        c.jumpTime = max(0.7f, abs(c.offX - c.px) / (260f * d))
+        c.state = State.JUMP
+        c.exiting = true
+        c.walkOver = false
+        c.eating = false
+        c.wave = false
+    }
+
+    /** Back with a tree or a present, leaping in from the side onto a tile. */
+    private fun comeBack(c: Critter) {
+        val list = places.filter { rect(it) != null }
+        if (list.isEmpty()) {
+            c.timer = 2f
+            return
+        }
+        val v = list[Random.nextInt(list.size)]
+        val r = rect(v)!!
+        val fromLeft = r.centerX() < width / 2f
+        c.carry = if (Random.nextFloat() < 0.5f) 0 else 1
+        c.carryColor = WRAP[Random.nextInt(WRAP.size)]
+        c.fromX = if (fromLeft) -30f * d else width + 30f * d
+        c.fromY = r.top - 90f * d
+        c.px = c.fromX
+        c.py = c.fromY
+        c.target = v
+        c.targetX = 14f * d + Random.nextFloat() * max(1f, r.width() - 28f * d)
+        c.t = 0f
+        c.jumpTime = 1.2f + abs(r.left + c.targetX - c.fromX) / (900f * d)
+        c.state = State.JUMP
+        c.walkOver = false
+        c.exiting = false
+        c.dir = if (fromLeft) 1f else -1f
+        c.alpha = 1f
+    }
+
+    private fun putDown(c: Critter, r: RectF) {
+        val on = c.on ?: return
+        val x = (c.x + c.dir * 17f * d * SIZE).coerceIn(9f * d, max(9f * d, r.width() - 9f * d))
+        decor.add(Decor(on, x, c.carry, c.carryColor))
+        c.carry = -1
+        c.placing = false
+        // a little puff of gold where it landed
+        for (i in 0 until 8) {
+            sparkles.add(floatArrayOf(r.left + x + (Random.nextFloat() - 0.5f) * 22f * d, r.top - Random.nextFloat() * 22f * d, Random.nextFloat() * 0.3f, 0f))
+        }
+        val alive = decor.filter { !it.dying }
+        if (alive.size > MAX_DECOR) alive.first().dying = true
+    }
+
+    private fun startFloat(c: Critter) {
+        c.cookie = false
+        c.eating = false
+        c.state = State.FLOAT
+        c.on = null
+        c.floatT = 0f
+        c.floatTime = 11f + Random.nextFloat() * 5f
+        c.floatFrom = c.py
+        c.floatAlt = height * (0.16f + Random.nextFloat() * 0.2f)
+        c.trail = c.floatTime + 1.8f
+        for (i in 0 until 14) {
+            sparkles.add(floatArrayOf(c.px + (Random.nextFloat() - 0.5f) * 34f * d, c.py - Random.nextFloat() * 34f * d, Random.nextFloat() * 0.2f, (1 + Random.nextInt(GLITTER.size - 1)).toFloat()))
+        }
+    }
+
+    private fun updateFloat(c: Critter, dt: Float) {
+        c.floatT += dt
+        val margin = 50f * d
+        c.px += c.dir * 72f * d * dt
+        if (c.px < margin) c.dir = 1f
+        if (c.px > width - margin) c.dir = -1f
+        // up into the air over two seconds, then bobbing gently along
+        val k = min(1f, c.floatT / 2.4f)
+        val rise = k * k * (3f - 2f * k)
+        val cruise = c.floatAlt + sin(c.floatT * 1.3f) * 24f * d
+        c.py = c.floatFrom + (cruise - c.floatFrom) * rise
+        if (c.floatT >= c.floatTime) {
+            // the magic wears off: glide down onto a tile, the nearest one ahead if possible
+            val list = places.mapNotNull { v -> rect(v)?.let { v to it } }
+            if (list.isEmpty()) {
+                c.floatTime += 2f
+                return
+            }
+            val (v, r) = list.minByOrNull { (_, r) -> abs(r.centerX() - (c.px + c.dir * 120f * d)) + abs(r.top - c.py) * 0.3f }!!
+            startJump(c, v, (c.px - r.left).coerceIn(14f * d, max(14f * d, r.width() - 14f * d)), 1.5f)
+        }
+    }
+
+    private fun trailSparkle(c: Critter, dt: Float) {
+        if (c.state != State.FLOAT && c.state != State.JUMP) return
+        c.trailAt -= dt
+        if (c.trailAt > 0f || sparkles.size >= 160) return
+        c.trailAt = 0.04f
+        val bx = c.px - c.dir * 11f * d * SIZE
+        val by = c.py - 13f * d * SIZE
+        sparkles.add(floatArrayOf(bx + (Random.nextFloat() - 0.5f) * 8f * d, by + (Random.nextFloat() - 0.5f) * 10f * d, 0f, (1 + Random.nextInt(GLITTER.size - 1)).toFloat()))
+    }
+
+    private fun drawDecor(canvas: Canvas) {
+        for (o in decor) {
+            val r = rect(o.on) ?: continue
+            val a = (o.alpha.coerceIn(0f, 1f) * 255).toInt()
+            if (a <= 0) continue
+            val save = canvas.save()
+            canvas.translate(r.left + o.x, r.top)
+            // pops up a little bigger, then settles
+            val pop = if (o.age < 0.5f) 0.6f + 0.5f * sin(o.age / 0.5f * Math.PI.toFloat() * 0.75f) else 1f
+            canvas.scale(d * SIZE * pop, d * SIZE * pop)
+            drawItem(canvas, o.kind, o.color, a, o.age)
+            canvas.restoreToCount(save)
+        }
+    }
+
+    /** A little decorated tree (0) or a wrapped present (1), standing at (0, 0). */
+    private fun drawItem(canvas: Canvas, kind: Int, color: Int, a: Int, t: Float) {
+        if (kind == 0) {
+            fill(0xFF6B4226.toInt(), a)
+            canvas.drawRect(-1.4f, -3.4f, 1.4f, 0f, p)
+            val greens = intArrayOf(0xFF2A7048.toInt(), 0xFF338556.toInt(), 0xFF3C9A62.toInt())
+            val tiers = arrayOf(floatArrayOf(-8f, -3f, -13f), floatArrayOf(-6.6f, -8.6f, -18f), floatArrayOf(-5f, -13.6f, -23f))
+            for ((i, tr) in tiers.withIndex()) {
+                fill(greens[i], a)
+                path.reset()
+                path.moveTo(tr[0], tr[1])
+                path.lineTo(0f, tr[2])
+                path.lineTo(-tr[0], tr[1])
+                path.close()
+                canvas.drawPath(path, p)
+                // a dab of snow on each tier
+                fill(0xFFF4F8FC.toInt(), a * 3 / 4)
+                ellipse(canvas, tr[0] * 0.35f, tr[1] - 1.8f, 2.2f, 0.9f)
+            }
+            // twinkling baubles
+            val dots = floatArrayOf(-4.2f, -5.2f, 3.6f, -6.2f, -2.4f, -10.6f, 2.8f, -11.6f, -0.6f, -15.8f, 1.8f, -19.2f)
+            val cols = intArrayOf(0xFFFF5A5A.toInt(), 0xFFFFD45A.toInt(), 0xFF5AA8FF.toInt(), 0xFFFF7AD0.toInt(), 0xFFFFD45A.toInt(), 0xFFFF5A5A.toInt())
+            for (i in 0 until dots.size / 2) {
+                val tw = 0.55f + 0.45f * sin(t * 4f + i * 1.7f)
+                fill(cols[i], (a * tw).toInt())
+                canvas.drawCircle(dots[i * 2], dots[i * 2 + 1], 1.1f, p)
+            }
+            // gold star
+            fill(0xFFFFD34A.toInt(), a)
+            path.reset()
+            for (i in 0 until 10) {
+                val ang = -Math.PI / 2 + i * Math.PI / 5
+                val rr = if (i % 2 == 0) 2.8f else 1.2f
+                val x = (rr * kotlin.math.cos(ang)).toFloat()
+                val y = -24f + (rr * sin(ang)).toFloat()
+                if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            }
+            path.close()
+            canvas.drawPath(path, p)
+        } else {
+            val ribbon = if (color == 0xFFF2C230.toInt()) 0xFFD84343.toInt() else 0xFFF2D27A.toInt()
+            fill(color, a)
+            canvas.drawRect(-6f, -10f, 6f, 0f, p)
+            fill(darker(color), a)
+            canvas.drawRect(-6.8f, -12.4f, 6.8f, -9.6f, p)
+            fill(ribbon, a)
+            canvas.drawRect(-1f, -12.4f, 1f, 0f, p)
+            canvas.drawRect(-6f, -6f, 6f, -4.4f, p)
+            // the bow
+            canvas.save()
+            canvas.rotate(-28f, -2.2f, -13.6f)
+            ellipse(canvas, -2.2f, -13.6f, 2.4f, 1.3f)
+            canvas.restore()
+            canvas.save()
+            canvas.rotate(28f, 2.2f, -13.6f)
+            ellipse(canvas, 2.2f, -13.6f, 2.4f, 1.3f)
+            canvas.restore()
+            ellipse(canvas, 0f, -13f, 1f, 1f)
+        }
+    }
+
+    /** A glowing cookie on the tile in front of the muzzle, smaller with every bite. */
+    private fun magicCookie(canvas: Canvas, c: Critter, a: Int) {
+        val left = (c.timer / c.eatTotal).coerceIn(0f, 1f)
+        val r = 2.8f * (0.3f + 0.7f * left)
+        val x = 20.5f
+        val y = -r
+        fill(0xFFFFE6A0.toInt(), a / 4)
+        canvas.drawCircle(x, y, r + 2.6f, p)
+        fill(0xFFD9A35B.toInt(), a)
+        canvas.drawCircle(x, y, r, p)
+        fill(0xFF5A3420.toInt(), a)
+        canvas.drawCircle(x - r * 0.4f, y - r * 0.2f, r * 0.18f, p)
+        canvas.drawCircle(x + r * 0.35f, y + r * 0.3f, r * 0.16f, p)
+        canvas.drawCircle(x + r * 0.1f, y - r * 0.55f, r * 0.14f, p)
+        // a few twinkles around it: this one is magic
+        p.style = Paint.Style.STROKE
+        p.strokeWidth = 0.5f
+        p.strokeCap = Paint.Cap.ROUND
+        for (i in 0 until 3) {
+            val tw = sin(c.phase * 5f + i * 2.1f)
+            if (tw < 0f) continue
+            fill(GLITTER[1 + i], (a * tw).toInt())
+            val sx = x + (i - 1) * 4.2f
+            val sy = y - 4.6f - (i % 2) * 2f
+            val rr = 1.4f * tw
+            canvas.drawLine(sx - rr, sy, sx + rr, sy, p)
+            canvas.drawLine(sx, sy - rr, sx, sy + rr, p)
+        }
+        p.style = Paint.Style.FILL
     }
 }

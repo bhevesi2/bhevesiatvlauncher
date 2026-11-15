@@ -333,6 +333,15 @@ class SettingsActivity : PanelActivity() {
      * action of the open row (which may have moved to [moveTo]), or on its header once closed.
      */
     private fun change(close: Boolean = false, moveTo: String? = null, work: () -> Unit) {
+        // Something that finished in the background (apps found, a check done) while the user is
+        // already stepping through the menu on the left: rebuild the page, but leave the cursor
+        // in the menu. Otherwise it would jump to the right in the middle of the menu.
+        if (navViews.any { it.isFocused }) {
+            if (close) openKey = null else if (moveTo != null) openKey = moveTo
+            work()
+            render(-1)
+            return
+        }
         val f = focusedRow() ?: pendingFocus
         pendingFocus = f
         val before = paneRows()

@@ -1024,6 +1024,7 @@ object Popup {
  */
 class Backdrop(ctx: Context) : FrameLayout(ctx) {
     private val landscape = LandscapeView(ctx)
+    private val snow = SnowView(ctx)
     private val photoA = ImageView(ctx).apply { scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0f }
     private val photoB = ImageView(ctx).apply { scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0f }
     private val dimView = View(ctx)
@@ -1036,6 +1037,7 @@ class Backdrop(ctx: Context) : FrameLayout(ctx) {
         addView(landscape, LayoutParams(-1, -1))
         addView(photoA, LayoutParams(-1, -1))
         addView(photoB, LayoutParams(-1, -1))
+        addView(snow, LayoutParams(-1, -1))
         addView(dimView, LayoutParams(-1, -1))
     }
 
@@ -1054,13 +1056,38 @@ class Backdrop(ctx: Context) : FrameLayout(ctx) {
         }
     }
 
-    fun show(bg: String, phase: Phase, animate: Boolean) {
+    fun show(chosen: String, phase: Phase, animate: Boolean) {
+        // Christmas mode brings its own landscapes, a different one every hour
+        val xmas = if (FocusGlide.festive) Winter.current(context) else null
+        val bg = if (xmas != null) "xmas:$xmas" else chosen
         val turn = if (Backgrounds.isPhoto(bg)) Backgrounds.variant(context, bg, phase) ?: "" else ""
         val k = bg + "/" + phase.key + "/" + turn
         if (k == key) return
         val anim = animate && key != null
+        val wasXmas = key?.startsWith("xmas:") == true
         key = k
         val g = ++gen
+        if (xmas != null) {
+            val app = context.applicationContext
+            Bg.run({ Winter.scene(app, xmas) }) { scene ->
+                if (g != gen) return@run
+                if (scene == null) {
+                    showLandscape("alpine", phase, anim)
+                    return@run
+                }
+                landscape.setWinter(scene)
+                showLandscape("xmas", phase, false)
+                // fade in when Christmas mode is switched on; the hourly change is just a swap
+                if (anim && !wasXmas) {
+                    landscape.alpha = 0f
+                    landscape.animate().alpha(1f).setDuration(1500).start()
+                }
+                snow.active = true
+            }
+            return
+        }
+        snow.active = false
+        landscape.setWinter(null)
         if (Backgrounds.isPhoto(bg)) {
             val app = context.applicationContext
             Bg.run({ Backgrounds.photo(app, bg, phase) }) { bmp ->

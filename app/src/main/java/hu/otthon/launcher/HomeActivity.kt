@@ -575,18 +575,17 @@ class HomeActivity : Activity() {
             }, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER_VERTICAL })
         }
 
-        // top right: Google TV home and launcher settings, icon only
+        // top right, icon only: Today, TV settings and launcher settings. (Google TV home is in
+        // Settings › About, it is not needed every day.)
         topButtons.removeAllViews()
-        if (Apps.stockHomeIntent(this) != null) {
-            val g = iconButton(R.drawable.ic_exit, "Google TV home", false) {
-                if (!Apps.openStockHome(this)) toast("Google TV home is not available")
-            }
-            topButtons.addView(g, LinearLayout.LayoutParams(dp(36f), dp(36f)).apply { leftMargin = dp(7f) })
-        }
         if (cfg.haEnabled) {
             val today = iconButton(R.drawable.ic_today, "Today", false) { open(TodayActivity::class.java) }
             topButtons.addView(today, LinearLayout.LayoutParams(dp(36f), dp(36f)).apply { leftMargin = dp(7f) })
         }
+        val tvGear = iconButton(R.drawable.ic_tv_gear, "TV settings", false) {
+            if (!Apps.openSystemSettings(this)) toast("Android settings are not available")
+        }
+        topButtons.addView(tvGear, LinearLayout.LayoutParams(dp(36f), dp(36f)).apply { leftMargin = dp(7f) })
         val gear = iconButton(R.drawable.ic_gear, "Launcher settings", false) {
             open(SettingsActivity::class.java)
         }
@@ -599,9 +598,6 @@ class HomeActivity : Activity() {
         val icons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         addIcon(icons, iconButton(R.drawable.ic_grid, "All apps", true) {
             open(AllAppsActivity::class.java)
-        })
-        addIcon(icons, iconButton(R.drawable.ic_tv_gear, "TV settings", true) {
-            if (!Apps.openSystemSettings(this)) toast("Android settings are not available")
         })
         if (cfg.haEnabled) {
             addIcon(icons, iconButton(R.drawable.ic_dashboard, "Home Assistant dashboard", true) {

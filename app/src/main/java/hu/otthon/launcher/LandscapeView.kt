@@ -44,6 +44,11 @@ class LandscapeView(context: Context) : View(context) {
 
     private var palette = Palette.of(Phase.NAPPAL)
     private var animator: ValueAnimator? = null
+    private var phase = Phase.NAPPAL
+
+    /** The Christmas landscape shown instead of the lake or the hills, or null. */
+    private var winter: Winter.Scene? = null
+    private var wpal: Winter.Pal? = null
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
 
     private val stars = floatArrayOf(
@@ -98,16 +103,33 @@ class LandscapeView(context: Context) : View(context) {
         close()
     }
 
+    /**
+     * Shows a Christmas landscape (or the normal ones again with null). It is drawn once into a
+     * layer, so the snow falling over it and the reindeer do not make it redraw every frame.
+     */
+    fun setWinter(scene: Winter.Scene?) {
+        if (scene === winter) return
+        winter = scene
+        wpal = if (scene != null) Winter.palette(context, phase) else null
+        setLayerType(if (scene != null) LAYER_TYPE_HARDWARE else LAYER_TYPE_NONE, null)
+        invalidate()
+    }
+
     fun setPhase(p: Phase, animate: Boolean) {
+        phase = p
         val target = Palette.of(p)
+        val wTarget = if (winter != null) Winter.palette(context, p) else null
         animator?.cancel()
-        if (!animate) { palette = target; invalidate(); return }
+        if (!animate) { palette = target; wpal = wTarget; invalidate(); return }
         val from = palette
+        val wFrom = wpal
         animator = ValueAnimator.ofFloat(0f, 1f).apply {
             duration = 4000
             interpolator = DecelerateInterpolator()
             addUpdateListener {
-                palette = Palette.lerp(from, target, it.animatedValue as Float)
+                val t = it.animatedValue as Float
+                palette = Palette.lerp(from, target, t)
+                if (wTarget != null) wpal = if (wFrom != null) Winter.Pal.lerp(wFrom, wTarget, t) else wTarget
                 invalidate()
             }
             start()
@@ -121,6 +143,13 @@ class LandscapeView(context: Context) : View(context) {
         canvas.save()
         canvas.translate((w - 1920f * s) / 2f, (h - 1080f * s) / 2f)
         canvas.scale(s, s)
+        val ws = winter
+        val wp = wpal
+        if (ws != null && wp != null) {
+            Winter.draw(canvas, ws, wp, paint)
+            canvas.restore()
+            return
+        }
         val p = palette
 
         paint.shader = LinearGradient(0f, 0f, 0f, 1080f, p.s1, p.s2, Shader.TileMode.CLAMP)

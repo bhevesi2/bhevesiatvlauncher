@@ -125,6 +125,19 @@ and pulled by two pairs of reindeer, flies across the screen and leaves a trail 
 halfway across Santa waves. The app tiles light up with a twinkling string of fairy lights
 instead of the coloured glow.
 
+Every minute or two one reindeer leaps off the edge of the screen and comes back with a little
+decorated tree or a wrapped present on its back, finds a spot and sets it down on top of a tile.
+At most four stay; when another one arrives the oldest fades away. Once in a few minutes one
+finds a magic cookie, eats it and floats around in the air for a while, trailing glitter, then
+glides back down.
+
+The background becomes a Christmas landscape with gently falling snow, whatever background is
+chosen: a snowy village with a lit tree on the square, a log cabin in the forest with a snowman,
+and a frozen lake under the northern lights. They take turns, a new one every hour, and follow the
+time of day like the other landscapes (pink dawn, blue day, violet dusk, moonlit night with warm
+windows). They are drawn from data in `assets/winter/`, made by `tools/winter/gen.py`;
+`python3 tools/winter/gen.py --preview out/` draws every scene at every time of day as PNGs.
+
 ## Colour buttons
 
 Settings › Remote gives each of the remote's red, green, yellow and blue buttons a Home Assistant
