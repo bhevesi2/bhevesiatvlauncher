@@ -138,6 +138,33 @@ time of day like the other landscapes (pink dawn, blue day, violet dusk, moonlit
 windows). They are drawn from data in `assets/winter/`, made by `tools/winter/gen.py`;
 `python3 tools/winter/gen.py --preview out/` draws every scene at every time of day as PNGs.
 
+## Kids profile
+
+Settings › Kids profile turns on a second profile for the kids: their name, a four-digit PIN,
+and the apps they may use (YouTube Kids, Disney+ and Netflix to start with, if installed). Their
+home screen has a big clock and a hello, the allowed apps on big tiles with candy-coloured frames
+that bounce when the cursor arrives, and below them what those apps recommend; the reindeer or
+bears walk on the big tiles too. There are no Home Assistant panels, cameras, settings or other
+apps. The round avatar at the top right switches profiles: from the grown-ups' screen straight
+into the kids profile, back only with the PIN (entered with the arrows, or the number buttons).
+"Start in the kids profile" brings the TV back in the kids profile whenever it goes to sleep or
+starts.
+
+The app lock (the same accessibility service as the colour buttons, switched on over ADB) sees
+every app that comes to the front. In the kids profile anything else than the allowed apps,
+opened by voice search, from another app or cast from a phone, and also the TV settings, the
+Play Store and the stock home screens, sends the TV straight back to the kids screen with a
+friendly note. System overlays (volume, keyboard, screensaver) are left alone.
+
+Time: with Home Assistant's "Kids TV" helpers (`input_number.kids_tv_daily_limit`,
+`input_number.kids_tv_minutes_today`, `input_number.kids_tv_extra_minutes`,
+`input_datetime.kids_tv_bedtime`, `input_datetime.kids_tv_wake_up`, `input_boolean.kids_tv_allowed`)
+the daily time, bedtime and wake-up are shared by every TV and set from the phone; every minute
+spent in an allowed app is added to `kids_tv_minutes_today`. Without them the settings page has
+its own daily time, bedtime and wake-up for this TV. When the time is over, before wake-up, after
+bedtime or while "allowed" is off, the kids screen shows a sleepy moon with floating Zzz instead
+of the apps, and ten minutes later (bedtime, time over) the TV goes to sleep.
+
 ## Colour buttons
 
 Settings › Remote gives each of the remote's red, green, yellow and blue buttons a Home Assistant

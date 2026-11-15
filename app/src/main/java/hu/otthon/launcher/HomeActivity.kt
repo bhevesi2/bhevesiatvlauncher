@@ -74,6 +74,21 @@ class HomeActivity : Activity() {
     private var awayOnOwnScreen = false
     private var shiftIndex = 0
 
+    // the kids profile: its own screen in place of the usual one
+    private lateinit var kidsHome: KidsHome
+    private var kidsOn = false
+    private var kidsAsleepSince = 0L
+    private var kidsSentToSleep = ""
+    private val onProfile: () -> Unit = {
+        signature = ""
+        if (resumed) {
+            reload()
+            critters?.setCount(cfg.critters, cfg.christmas)
+            loadReco()
+            onMinute()
+        }
+    }
+
     private val timeFmt = DateTimeFormatter.ofPattern("HH:mm", Locale.ENGLISH)
     private val dateFmt = DateTimeFormatter.ofPattern("EEEE, MMMM d", Locale.ENGLISH)
 
@@ -97,6 +112,12 @@ class HomeActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         buildUi()
+        Profile.listeners.add(onProfile)
+    }
+
+    override fun onDestroy() {
+        Profile.listeners.remove(onProfile)
+        super.onDestroy()
     }
 
     // ---------- UI ----------
@@ -125,6 +146,10 @@ class HomeActivity : Activity() {
         }
         page.addView(content, FrameLayout.LayoutParams(-1, -1))
         FocusGlide.install(content)
+        kidsHome = KidsHome(this) { leaveKids() }
+        kidsHome.visibility = View.GONE
+        page.addView(kidsHome, FrameLayout.LayoutParams(-1, -1))
+        FocusGlide.install(kidsHome)
         buildReco()
 
         // top row
@@ -265,6 +290,7 @@ class HomeActivity : Activity() {
 
     /** Everything on the home screen the critters may stand on. */
     private fun critterPlaces(): List<View> {
+        if (kidsOn) return kidsHome.places()
         val out = ArrayList<View>()
         for (row in listOf(favRow, chipsRow, topButtons)) for (i in 0 until row.childCount) out.add(row.getChildAt(i))
         fun walk(v: View) {
@@ -299,7 +325,7 @@ class HomeActivity : Activity() {
 
     /** Shows the mark when there is something below; brighter while the cursor is on the bottom row. */
     private fun showMoreHint() {
-        val there = cfg.recommendations && reco.firstFocusable != null && !expanded
+        val there = cfg.recommendations && reco.firstFocusable != null && !expanded && !kidsOn
         val onBottom = currentFocus?.let { isInside(it, bottom) } == true
         val target = if (!there) 0f else if (onBottom) 1f else 0.75f
         if (there) moreHint.visibility = View.VISIBLE
@@ -383,6 +409,10 @@ class HomeActivity : Activity() {
 
     /** Reads the apps' rows in the background; the first rows are the favorites' apps. */
     private fun loadReco() {
+        if (kidsOn) {
+            loadKidsReco()
+            return
+        }
         if (!cfg.recommendations) {
             recoBox.visibility = View.GONE
             showMoreHint()
@@ -417,6 +447,10 @@ class HomeActivity : Activity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (kidsOn) {
+            // the kids screen: no colour buttons, no recommendations page, Back does nothing
+            return super.dispatchKeyEvent(event)
+        }
         // the remote's colour buttons; when they work everywhere, KeyService has them already
         if (!(cfg.colorKeysEverywhere && KeyService.running) && ColorKeys.handle(this, cfg, event)) return true
         val down = event.action == KeyEvent.ACTION_DOWN
@@ -575,9 +609,31 @@ class HomeActivity : Activity() {
             }, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER_VERTICAL })
         }
 
+        if (kidsOn) {
+            bindKids()
+            return
+        }
+
         // top right, icon only: Today, TV settings and launcher settings. (Google TV home is in
         // Settings › About, it is not needed every day.)
         topButtons.removeAllViews()
+        if (cfg.kids.on) {
+            // the kids profile, one press away
+            val k = cfg.kids
+            val av = ImageView(this).apply {
+                setImageDrawable(AvatarDrawable(k.name.take(1).uppercase(), KidsLook.CANDY[0]))
+                isFocusable = true
+                isClickable = true
+                contentDescription = k.name
+                FocusGlide.shape(this, -1f)
+                setOnFocusChangeListener { v, f ->
+                    v.animate().scaleX(if (f) 1.12f else 1f).scaleY(if (f) 1.12f else 1f).setDuration(160).start()
+                    if (f) showHint(v, "${k.name}'s profile", false) else hideHint(v)
+                }
+                setOnClickListener { Profile.set(this@HomeActivity, true) }
+            }
+            topButtons.addView(av, LinearLayout.LayoutParams(dp(36f), dp(36f)).apply { leftMargin = dp(7f) })
+        }
         if (cfg.haEnabled) {
             val today = iconButton(R.drawable.ic_today, "Today", false) { open(TodayActivity::class.java) }
             topButtons.addView(today, LinearLayout.LayoutParams(dp(36f), dp(36f)).apply { leftMargin = dp(7f) })
@@ -694,9 +750,18 @@ class HomeActivity : Activity() {
 
     private fun reload(focusFav: Int = 0) {
         cfg = Config.load(this)
+        Profile.checkBoot(this, cfg)
         ha = if (cfg.haEnabled) HaClient(cfg.haUrl!!, cfg.haToken!!) else null
         backdrop.setDim(cfg.dim)
-        val sig = cfg.toString() + FavStore.get(this, cfg).joinToString() + Inputs.all(this).size
+        val kids = Profile.kids(this, cfg)
+        if (kids != kidsOn) {
+            kidsOn = kids
+            content.visibility = if (kids) View.GONE else View.VISIBLE
+            kidsHome.visibility = if (kids) View.VISIBLE else View.GONE
+            if (kids) collapse(false)
+            hint.visibility = View.INVISIBLE
+        }
+        val sig = kids.toString() + cfg.toString() + FavStore.get(this, cfg).joinToString() + Inputs.all(this).size
         if (sig != signature) {
             signature = sig
             rebuildDynamic(focusFav)
@@ -750,6 +815,15 @@ class HomeActivity : Activity() {
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
         collapse(false)
+        if (kidsOn) {
+            // sent back here by the kids profile's guard: say why, kindly
+            val blocked = intent?.getStringExtra("kids_blocked")
+            val reason = intent?.getStringExtra("kids_reason").orEmpty()
+            if (blocked != null && reason.isEmpty()) kidsHome.say(if (blocked.isBlank()) "That one is not for now 🙈" else "$blocked is not for now 🙈")
+            if (reason.isNotEmpty()) updateKids(force = true)
+            if (!kidsHome.asleep) kidsHome.firstTile()?.requestFocus()
+            return
+        }
         favRow.getChildAt(0)?.takeIf { it.isFocusable }?.requestFocus()
     }
 
@@ -759,7 +833,7 @@ class HomeActivity : Activity() {
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_MENU) {
+        if (keyCode == KeyEvent.KEYCODE_MENU && !kidsOn) {
             (currentFocus as? AppTile)?.let { favMenu(it.app); return true }
         }
         return super.onKeyDown(keyCode, event)
@@ -771,6 +845,10 @@ class HomeActivity : Activity() {
         val now = ZonedDateTime.now()
         clock.text = now.format(timeFmt)
         date.text = now.format(dateFmt)
+        if (kidsOn) {
+            kidsHome.clock.text = now.format(timeFmt)
+            updateKids(force = false)
+        }
         backdrop.show(cfg.background, Backgrounds.phase(this, cfg), true)
         // OLED: shift static content by a few pixels every minute
         val shifts = arrayOf(0 to 0, 2 to 1, -1 to 2, -2 to -1, 1 to -2, 2 to -1, -1 to -1)
@@ -876,6 +954,89 @@ class HomeActivity : Activity() {
         val client = ha ?: return
         Bg.run({ Actions.fire(client, s); true }) { ok ->
             toast(if (ok == true) "${s.title} ✓" else "Couldn't run ${s.title}")
+        }
+    }
+
+    // ---------- the kids profile ----------
+
+    private fun bindKids() {
+        val apps = cfg.kids.apps.mapNotNull { Apps.one(this, it) }
+        kidsHome.bind(cfg, apps) { app ->
+            if (!Apps.launch(this, app.pkg)) kidsHome.say("${app.label} does not open 🙈")
+        }
+        kidsHome.reco.onHold = null
+        kidsHome.firstTile()?.requestFocus() ?: kidsHome.avatar.requestFocus()
+        updateKids(force = true)
+    }
+
+    /** Time left and the sleep screen; Home Assistant's helpers are read at most once a minute. */
+    private fun updateKids(force: Boolean) {
+        val c = cfg
+        val app = applicationContext
+        Bg.run({
+            KidsTime.refresh(c, force)
+            KidsTime.status(app, c)
+        }) { st ->
+            if (st == null || !kidsOn) return@run
+            kidsHome.showStatus(st)
+            sleepTvLater(st)
+        }
+    }
+
+    /**
+     * Ten minutes after the sleep screen came up for bedtime or the end of the day's time, the TV
+     * goes to sleep too (once a day, through Home Assistant's ADB connection).
+     */
+    private fun sleepTvLater(st: KidsTime.Status) {
+        val r = st.blocked
+        if (r != KidsTime.Reason.BEDTIME && r != KidsTime.Reason.USED_UP) {
+            kidsAsleepSince = 0L
+            return
+        }
+        val now = System.currentTimeMillis()
+        if (kidsAsleepSince == 0L) kidsAsleepSince = now
+        val today = java.time.LocalDate.now().toString() + r.name
+        if (now - kidsAsleepSince >= 10 * 60_000L && kidsSentToSleep != today && cfg.haEnabled) {
+            kidsSentToSleep = today
+            Adb.run(this, cfg, "input keyevent KEYCODE_SLEEP") { }
+        }
+    }
+
+    /** The avatar on the kids screen: back to the grown-ups' profile, with the PIN. */
+    private fun leaveKids() {
+        val pin = cfg.kids.pin
+        if (pin.isBlank()) {
+            Profile.set(this, false)
+            return
+        }
+        PinPad.ask(this, "Grown-ups' profile", "Enter the PIN") { entered ->
+            if (entered == pin) Profile.set(this, false) else kidsHome.say("That's not the PIN 🔒")
+        }
+    }
+
+    /** What the allowed apps recommend, at most two rows. */
+    private fun loadKidsReco() {
+        if (!cfg.recommendations || !Reco.allowed(this) || recoLoading) {
+            if (!cfg.recommendations) kidsHome.reco.visibility = View.GONE
+            return
+        }
+        recoLoading = true
+        val app = applicationContext
+        val allowed = cfg.kids.apps.toSet()
+        val hidden = cfg.recoHidden
+        Bg.run({
+            Reco.load(app, cfg.kids.apps, hidden, true, emptyList()).mapNotNull { row ->
+                when {
+                    row.pkg.isEmpty() -> row.copy(programs = row.programs.filter { it.pkg in allowed }).takeIf { it.programs.isNotEmpty() }
+                    row.pkg in allowed -> row
+                    else -> null
+                }
+            }.take(2)
+        }) { rows ->
+            recoLoading = false
+            if (!kidsOn) return@run
+            kidsHome.reco.visibility = if (rows.isNullOrEmpty()) View.GONE else View.VISIBLE
+            if (!rows.isNullOrEmpty()) kidsHome.reco.show(rows) { pkg -> Apps.one(this, pkg)?.let { AppColors.of(it) } ?: 0xFFE9E7E2.toInt() }
         }
     }
 

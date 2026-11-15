@@ -75,7 +75,9 @@ data class Config(
     /** The remote's colour buttons ("red", "green", "yellow", "blue") and what each one does. */
     val colorKeys: Map<String, HaItem>,
     /** True: the colour buttons work in every app (KeyService), not only on the home screen. */
-    val colorKeysEverywhere: Boolean
+    val colorKeysEverywhere: Boolean,
+    /** The kids profile: its apps, PIN and time limits. */
+    val kids: Kids
 ) {
     val haEnabled: Boolean get() = haOn && !haUrl.isNullOrBlank() && !haToken.isNullOrBlank()
 
@@ -148,7 +150,8 @@ data class Config(
                 critters = json.optInt("critters", 0).coerceIn(0, 2),
                 christmas = json.optBoolean("christmas", false),
                 colorKeys = colorKeys(json.optJSONObject("color_keys")),
-                colorKeysEverywhere = json.optBoolean("color_keys_everywhere", false)
+                colorKeysEverywhere = json.optBoolean("color_keys_everywhere", false),
+                kids = Kids.from(json.optJSONObject("kids"))
             )
         }
 

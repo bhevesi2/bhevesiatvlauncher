@@ -72,6 +72,11 @@ object ColorKeys {
 /**
  * Sees the remote's colour buttons in every app, before the app does, and runs their actions.
  * Buttons without an action pass through untouched (teletext, the programme guide …).
+ *
+ * It also keeps the kids profile safe: it sees every app that comes to the front and sends the
+ * TV back to the kids home screen when it is not one of the allowed apps (or the TV time is
+ * over), counts the minutes spent in the allowed apps, and switches to the kids profile when the
+ * TV goes to sleep, if it is set to start with it.
  */
 class KeyService : AccessibilityService() {
     companion object {
@@ -80,31 +85,89 @@ class KeyService : AccessibilityService() {
 
     private var cfg: Config? = null
     private var cfgAt = 0L
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var lastCount = 0L
+
+    private fun config(): Config? {
+        val now = System.currentTimeMillis()
+        return cfg?.takeIf { now - cfgAt < 5000 } ?: try {
+            Config.load(this).also { cfg = it; cfgAt = now }
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private val screenOff = object : android.content.BroadcastReceiver() {
+        override fun onReceive(c: Context?, i: android.content.Intent?) {
+            val k = config()?.kids ?: return
+            if (k.on && k.startKids) Profile.set(this@KeyService, true)
+        }
+    }
+
+    /** Twice a minute: is the time over, and one more minute watched? */
+    private val tick = object : Runnable {
+        override fun run() {
+            handler.postDelayed(this, 30_000L)
+            val c = config() ?: return
+            if (!Profile.kids(this@KeyService, c)) return
+            val front = KidsGuard.front ?: return
+            val pm = getSystemService(Context.POWER_SERVICE) as android.os.PowerManager
+            if (!pm.isInteractive) return
+            val app = applicationContext
+            Bg.run({
+                KidsTime.refresh(c)
+                val now = System.currentTimeMillis()
+                val watching = front != packageName && front in c.kids.apps
+                if (watching && now - lastCount >= 59_000L) {
+                    lastCount = now
+                    KidsTime.countMinute(app, c)
+                }
+                KidsTime.status(app, c)
+            }) { st ->
+                if (st != null && front != packageName && KidsGuard.front == front && !KidsGuard.allowed(app, c, front, st)) {
+                    KidsGuard.bounce(app, front, st.blocked)
+                }
+            }
+        }
+    }
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         running = true
+        // the window changes too, not only the keys: the kids profile needs to see which app is in front
+        serviceInfo = serviceInfo?.apply {
+            eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
+        }
+        try { registerReceiver(screenOff, android.content.IntentFilter(android.content.Intent.ACTION_SCREEN_OFF)) } catch (e: Exception) { }
+        handler.postDelayed(tick, 30_000L)
+        config()?.let { Profile.checkBoot(this, it) }
     }
 
     override fun onDestroy() {
         running = false
+        handler.removeCallbacks(tick)
+        try { unregisterReceiver(screenOff) } catch (e: Exception) { }
         super.onDestroy()
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        val pkg = event.packageName?.toString() ?: return
+        if (!KidsGuard.relevant(this, pkg)) return
+        KidsGuard.front = pkg
+        val c = config() ?: return
+        if (!Profile.kids(this, c) || pkg == packageName) return
+        val st = KidsTime.status(this, c)
+        if (!KidsGuard.allowed(this, c, pkg, st)) KidsGuard.bounce(this, pkg, if (pkg in c.kids.apps) st.blocked else null)
+    }
 
     override fun onInterrupt() {}
 
     override fun onKeyEvent(event: KeyEvent): Boolean {
         if (ColorKeys.key(event.keyCode) == null) return false
         // the settings are read again at most every few seconds, not on every key
-        val now = System.currentTimeMillis()
-        val c = cfg?.takeIf { now - cfgAt < 5000 } ?: try {
-            Config.load(this).also { cfg = it; cfgAt = now }
-        } catch (e: Exception) {
-            return false
-        }
-        if (!c.colorKeysEverywhere) return false
+        val c = config() ?: return false
+        if (!c.colorKeysEverywhere || Profile.kids(this, c)) return false
         return ColorKeys.handle(this, c, event)
     }
 }

@@ -54,7 +54,10 @@ class SettingsActivity : PanelActivity() {
     /** Apps that publish recommendations, read once when the Home screen page is first shown. */
     private var publishers: List<Pair<String, String>>? = null
 
-    private val roots = listOf("Appearance", "Favorites", "Home screen", "Cameras", "Inputs", "Remote", "Dashboard", "Home Assistant", "About")
+    private val roots = listOf("Appearance", "Favorites", "Kids profile", "Home screen", "Cameras", "Inputs", "Remote", "Dashboard", "Home Assistant", "About")
+
+    /** The kids profile's time helpers are looked up in Home Assistant once, when its page is first shown. */
+    private var kidsChecked = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -165,13 +168,14 @@ class SettingsActivity : PanelActivity() {
     private fun rootPage(i: Int): Page = when (i) {
         0 -> Page(roots[0]) { backgroundPage() }
         1 -> Page(roots[1]) { favoritesPage() }
-        2 -> Page(roots[2]) { homePage() }
-        3 -> Page(roots[3]) { camerasPage() }
-        4 -> Page(roots[4]) { inputsPage() }
-        5 -> Page(roots[5]) { remotePage() }
-        6 -> Page(roots[6]) { dashboardPage() }
-        7 -> Page(roots[7]) { haPage() }
-        else -> Page(roots[8]) { aboutPage() }
+        2 -> Page(roots[2]) { kidsPage() }
+        3 -> Page(roots[3]) { homePage() }
+        4 -> Page(roots[4]) { camerasPage() }
+        5 -> Page(roots[5]) { inputsPage() }
+        6 -> Page(roots[6]) { remotePage() }
+        7 -> Page(roots[7]) { dashboardPage() }
+        8 -> Page(roots[8]) { haPage() }
+        else -> Page(roots[9]) { aboutPage() }
     }
 
     private fun showRoot(i: Int, focusPane: Boolean) {
@@ -725,6 +729,11 @@ class SettingsActivity : PanelActivity() {
             change { }
             return
         }
+        if (!on && cfg.kids.on) {
+            // the service stays: the kids profile's app lock needs it
+            edit { it.put("color_keys_everywhere", false) }
+            return
+        }
         toast(if (on) "Switching on…" else "Switching off…")
         Adb.run(this, cfg, if (on) ColorKeys.enableCommand(this) else ColorKeys.disableCommand()) { r ->
             Bg.main.postDelayed({
@@ -735,6 +744,129 @@ class SettingsActivity : PanelActivity() {
                     else -> toast("The colour buttons now work on the home screen only")
                 }
                 edit { it.put("color_keys_everywhere", on && (r == Adb.Result.OK)) }
+            }, 1500)
+        }
+    }
+
+    // ---------- kids profile ----------
+
+    private fun kidsEdit(block: (JSONObject) -> Unit) = edit { r -> block(ConfigStore.obj(r, "kids")) }
+
+    private fun kidsPage() {
+        val k = cfg.kids
+        note("A profile for the kids: only the apps you choose, on big friendly tiles, and leaving it needs your PIN. An app they may not use (opened by voice search, from another app, or cast from a phone) sends the TV straight back to their screen.")
+        toggle("Kids profile", k.on) { on ->
+            kidsEdit { it.put("enabled", on) }
+            if (on && k.pin.isBlank()) askPin()
+        }
+        if (!k.on) return
+        row("Name", k.name) {
+            Popup.text(this, "Name", k.name, "The kids screen says: Hi, …!") { v -> if (v.isNotBlank()) kidsEdit { it.put("name", v) } }
+        }
+        row("PIN", if (k.pin.isBlank()) "Not set" else "••••") { askPin() }
+        if (k.pin.isBlank()) note("Without a PIN anyone can leave the kids profile.")
+        val count = k.apps.count { Apps.one(this, it) != null }
+        row("Allowed apps", if (count == 1) "1 app" else "$count apps") { open(Page("Allowed apps") { kidsAppsPage() }) }
+        toggle("Start in the kids profile", k.startKids) { on -> kidsEdit { it.put("start_kids", on) } }
+        note("Whenever the TV goes to sleep or starts, it comes back in the kids profile, so the grown-ups' profile is never left open.")
+
+        section("App lock")
+        val guard = KeyService.running
+        row("App lock", if (guard) "On" else "Off – switch on") { enableGuard() }
+        note(if (guard) "The launcher sees which app comes to the front and closes the ones the kids may not use, also the TV settings and the Play Store."
+             else "Without it the kids profile only hides the other apps. It is switched on over ADB by Home Assistant's Android TV integration (the same service as the colour buttons).")
+
+        section("Time")
+        if (!kidsChecked && cfg.haEnabled) {
+            kidsChecked = true
+            val c = cfg
+            Bg.run({ KidsTime.refresh(c, true) }) { change { } }
+        }
+        if (KidsTime.haReady) {
+            val st = KidsTime.status(this, cfg)
+            row("Time left today", st.left?.let { "$it min" } ?: "No limit")
+            row("Bedtime", st.bedtime ?: "None")
+            row("Wake-up", st.wake ?: "None")
+            note("Set in Home Assistant (Kids TV), for every TV together, so they can be changed from the phone too, where more time can also be added. The minutes watched are counted there.")
+        } else {
+            val limits = listOf(0, 30, 45, 60, 90, 120)
+            add(SegmentRow(this, "Daily time", listOf("No limit", "30 min", "45 min", "1 h", "1½ h", "2 h"), limits.indexOf(k.limit).coerceAtLeast(0)) { i ->
+                KidsStore.edit(this) { it.put("limit", limits[i]) }
+                cfg = Config.load(this)
+            })
+            val beds = listOf("", "19:00", "19:30", "20:00", "20:30", "21:00")
+            add(SegmentRow(this, "Bedtime", listOf("None") + beds.drop(1), beds.indexOf(k.bedtime ?: "").coerceAtLeast(0)) { i ->
+                KidsStore.edit(this) { it.put("bedtime", beds[i]) }
+                cfg = Config.load(this)
+            })
+            val wakes = listOf("", "06:30", "07:00", "07:30", "08:00")
+            add(SegmentRow(this, "Wake-up", listOf("None", "6:30", "7:00", "7:30", "8:00"), wakes.indexOf(k.wake ?: "").coerceAtLeast(0)) { i ->
+                KidsStore.edit(this) { it.put("wake", wakes[i]) }
+                cfg = Config.load(this)
+            })
+            note("After bedtime, before wake-up and when the day's time is used up, the kids screen shows a sleepy moon instead of the apps, and ten minutes later the TV goes to sleep. With Home Assistant's Kids TV helpers these are set there instead.")
+        }
+
+        section("Now")
+        row("Switch to the kids profile") {
+            Profile.set(this, true)
+            finish()
+        }
+    }
+
+    private fun askPin() {
+        PinPad.ask(this, "New PIN", "Needed to leave the kids profile") { a ->
+            PinPad.ask(this, "The same PIN again", null) { b ->
+                if (a == b) {
+                    kidsEdit { it.put("pin", a) }
+                    toast("PIN saved")
+                } else {
+                    toast("The two PINs were different, try again")
+                }
+            }
+        }
+    }
+
+    private fun kidsAppsPage() {
+        note("The apps the kids profile shows and may open, in this order. Tick the ones made for kids, like YouTube Kids; in apps with their own profiles (Netflix, Disney+) choose the kids profile inside the app as well.")
+        val chosen = cfg.kids.apps.toMutableList()
+        val all = Apps.all(this)
+        section("Allowed")
+        val shown = chosen.mapNotNull { p -> all.firstOrNull { it.pkg == p } }
+        if (shown.isEmpty()) note("None yet.")
+        shown.forEachIndexed { i, app ->
+            expand("kid:${app.pkg}", app.label, null) {
+                action("Move left", i > 0) { change(moveTo = "kid:${app.pkg}") { val j = chosen.indexOf(app.pkg); chosen.removeAt(j); chosen.add((j - 1).coerceAtLeast(0), app.pkg); KidsStore.setApps(this, chosen) } }
+                action("Move right", i < shown.size - 1) { change(moveTo = "kid:${app.pkg}") { val j = chosen.indexOf(app.pkg); chosen.removeAt(j); chosen.add((j + 1).coerceAtMost(chosen.size), app.pkg); KidsStore.setApps(this, chosen) } }
+                row("Remove") { change(close = true) { chosen.remove(app.pkg); KidsStore.setApps(this, chosen) } }
+            }
+        }
+        section("Add")
+        for (app in all) {
+            if (app.pkg in chosen) continue
+            row("+  ${app.label}") {
+                change {
+                    chosen.add(app.pkg)
+                    KidsStore.setApps(this, chosen)
+                }
+            }
+        }
+    }
+
+    private fun enableGuard() {
+        if (!cfg.haEnabled) {
+            toast("Set up or switch on Home Assistant first: the TV only lets this be switched on over ADB")
+            return
+        }
+        toast("Switching on…")
+        Adb.run(this, cfg, ColorKeys.enableCommand(this)) { r ->
+            Bg.main.postDelayed({
+                toast(when {
+                    r != Adb.Result.OK -> Adb.explain(r)
+                    !KeyService.running -> "The TV did not start the app lock"
+                    else -> "The app lock is on"
+                })
+                change { }
             }, 1500)
         }
     }
