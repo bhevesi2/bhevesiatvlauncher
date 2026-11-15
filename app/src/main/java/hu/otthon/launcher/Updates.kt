@@ -98,7 +98,12 @@ object Updates {
      */
     fun installCommand(ctx: Context, apk: File): String =
         "cp '${apk.absolutePath}' /data/local/tmp/otthon-update.apk && pm install -r /data/local/tmp/otthon-update.apk; " +
-            "rm -f /data/local/tmp/otthon-update.apk; am start -n ${ctx.packageName}/.HomeActivity"
+            "rm -f /data/local/tmp/otthon-update.apk; " +
+            // Android leaves the accessibility service unbound after an update even though it is
+            // still listed: setting the list again makes it bind (app lock, colour buttons)
+            "cur=\$(settings get secure enabled_accessibility_services); case \"\$cur\" in *KeyService*) " +
+            "settings delete secure enabled_accessibility_services; settings put secure enabled_accessibility_services \"\$cur\" ;; esac; " +
+            "am start -n ${ctx.packageName}/.HomeActivity"
 
     /**
      * Checks GitHub and, when there is a newer build, downloads it and has Home Assistant
