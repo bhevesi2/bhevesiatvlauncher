@@ -148,19 +148,32 @@ windows). They are drawn from data in `assets/winter/`, made by `tools/winter/ge
 
 ## Music Assistant
 
-The note button in the bottom row (next to Cameras) opens Music Assistant, in two halves: the
-library on the left, Now playing on the right (the player it plays on, a big cover, the track,
-the file's quality such as DSF · 705.6 kHz, a progress bar, previous / play / next, volume, and
-what comes next). Covers Music Assistant has no picture for get a gradient with the name on it.
+The note button in the bottom row (next to Cameras) opens Music Assistant as pages, the way the
+streaming apps work. Back goes back a page.
+
+- **Library**, the full width: tabs (Home, Playlists, Albums, Artists, Radio) and search. Home
+  has rows of covers (recently played albums, playlists, radio, the artists played most,
+  recently added albums); the tabs are grids. Covers Music Assistant has no picture for get a
+  gradient with the name on it.
+- **The corner** of every page, one press up: a Now playing chip (small cover, the song, bouncing
+  bars) that opens Now playing, and the player pill that picks where the music plays. It starts
+  with the player last chosen on this TV, or a Music Assistant player in the TV's room. Switching
+  player while music plays offers to move the music along (transfer queue).
+- **An album or a playlist** opens on its own page: the cover, Play / Shuffle / Radio, and the
+  songs (from Home Assistant's media browser). OK on a song plays the album from that song; hold
+  OK for only this song, play next, add to the queue, radio, or another player. The song that is
+  playing is marked.
+- **An artist** opens on a page with Play / Shuffle / Radio and the artist's albums.
+- **Now playing** is a page of its own: the cover large over a blurred copy of it, the song, the
+  artist and album, the file's quality (e.g. DSF · 705.6 kHz), a progress bar, volume / previous
+  / play / next, Go to album, and what comes next.
+- Radio stations and songs in search results play at once; hold OK on any cover for play next,
+  add to the queue, radio mode, or another player.
+
 When nothing is chosen as the now-playing card in the settings, the home screen's card follows
-the Music Assistant player last used here; hold OK on it to open this screen. Home has rows of
-covers (recently played albums, playlists, radio, the artists played most, recently added
-albums), and tabs show every playlist, album, artist or radio station as a grid. The search
-button looks through the library and every provider. OK plays at once; hold OK for play next,
-add to the queue, or radio mode (more like this). "Play on" at the top right picks the player:
-it starts with the one last chosen on this TV, or a Music Assistant player in the TV's room. The
-remote's media buttons control it too. The button hides itself when Home Assistant has no Music
-Assistant. (Hold OK on the now-playing card still opens the Roon zones.)
+the Music Assistant player last used here; hold OK on it to open Now playing. The remote's media
+buttons control the player. The button hides itself when Home Assistant has no Music Assistant.
+(With a Roon card chosen, holding OK on the card still opens the Roon zones.)
 
 ## Kids profile
 

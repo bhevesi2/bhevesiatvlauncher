@@ -494,7 +494,15 @@ class HomeActivity : Activity() {
             FocusGlide.shape(this, dp(9f).toFloat())
             setOnFocusChangeListener { _, f -> paintNowPlaying(f) }
             setOnClickListener { togglePlay() }
-            setOnLongClickListener { open(if (cfg.nowPlaying == null) MaActivity::class.java else MusicActivity::class.java); true }
+            setOnLongClickListener {
+                if (cfg.nowPlaying == null) {
+                    // Music Assistant: straight to its Now playing page
+                    startActivity(Intent(this@HomeActivity, MaActivity::class.java).putExtra("now", true))
+                    overridePendingTransition(0, 0)
+                    awayOnOwnScreen = true
+                } else open(MusicActivity::class.java)
+                true
+            }
         }
         npCover = ImageView(this).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
