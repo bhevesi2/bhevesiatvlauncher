@@ -104,9 +104,7 @@ object Updates {
             "cur=\$(settings get secure enabled_accessibility_services); case \"\$cur\" in *KeyService*) " +
             "settings delete secure enabled_accessibility_services; settings put secure enabled_accessibility_services \"\$cur\" ;; esac; " +
             "am start -n ${ctx.packageName}/.HomeActivity"
-        // In the background on the TV: Home Assistant's ADB connection gives up on a command after
-        // about nine seconds, and an install takes longer, so it would be cut off half way.
-        return "nohup sh -c '$steps' >/dev/null 2>&1 &"
+        return steps
     }
 
     /**
@@ -118,8 +116,14 @@ object Updates {
         remember(ctx, r)
         if (!force && !isNewer(ctx, r)) return "up to date"
         val apk = download(ctx, r) ?: return "download failed"
-        // the install replaces this app, so the call may end with the process; that is fine
-        val res = Adb.runHere(Config.load(ctx), installCommand(ctx, apk), 90000)
+        // The install replaces this app, so a call that works ends with the process. Home
+        // Assistant's ADB connection to a TV drops now and then, and a command sent just then is
+        // lost: while this app is still alive half a minute later, it tries again (three times).
+        var res = Adb.Result.FAILED
+        for (attempt in 1..3) {
+            res = Adb.runHere(Config.load(ctx), installCommand(ctx, apk), 90000)
+            try { Thread.sleep(25_000) } catch (e: InterruptedException) { break }
+        }
         return Adb.explain(res)
     }
 }
@@ -142,14 +146,13 @@ class UpdateReceiver : BroadcastReceiver() {
         if (intent.action != ACTION) return
         val force = intent.getBooleanExtra("force", false)
         val app = ctx.applicationContext
-        val pending = goAsync()
+        // The download and the retries take longer than a broadcast may last, so the work goes on
+        // in its own thread; the launcher's process stays alive (it is the home screen).
         Thread {
             try {
                 android.util.Log.i("OtthonUpdate", Updates.updateNow(app, force))
             } catch (e: Exception) {
                 android.util.Log.w("OtthonUpdate", "update failed", e)
-            } finally {
-                try { pending.finish() } catch (e: Exception) { }
             }
         }.start()
     }
