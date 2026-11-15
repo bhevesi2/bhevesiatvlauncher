@@ -101,42 +101,42 @@ fun Context.label(text: String, sp: Float, color: Int = C.TEXT, bold: Boolean = 
     }
 
 /** One status in the status capsule (icon + text); the capsule itself is the glass. */
-fun Context.chip(iconRes: Int, text: String): TextView = label(text, 13f, C.TEXT2).apply {
+fun Context.chip(iconRes: Int, text: String): TextView = label(text, 12f, C.TEXT2).apply {
     val d = getDrawable(iconRes)!!.mutate()
-    d.setBounds(0, 0, dp(15f), dp(15f))
+    d.setBounds(0, 0, dp(13f), dp(13f))
     d.setTint(C.TEXT2)
     setCompoundDrawables(d, null, null, null)
-    compoundDrawablePadding = dp(7f)
+    compoundDrawablePadding = dp(6f)
     gravity = Gravity.CENTER_VERTICAL
     maxLines = 1
+    maxWidth = dp(240f)
+    ellipsize = android.text.TextUtils.TruncateAt.END
     setPadding(0, 0, 0, 0)
 }
 
 /** Focusable pill button: dark glass, turns light when focused. */
 fun Context.pill(text: String, iconRes: Int?, onClick: () -> Unit): TextView {
     val ctx = this
-    return label(text, 13f, C.TEXT, bold = true).apply {
+    return label(text, 12f, C.TEXT, bold = true).apply {
         isFocusable = true
         isClickable = true
         maxLines = 1
         gravity = Gravity.CENTER_VERTICAL
-        setPadding(dp(if (iconRes != null) 14f else 18f), dp(10f), dp(18f), dp(10f))
-        val icon: Drawable? = iconRes?.let { ctx.getDrawable(it)!!.mutate().apply { setBounds(0, 0, dp(16f), dp(16f)) } }
+        setPadding(dp(if (iconRes != null) 12f else 15f), dp(8f), dp(15f), dp(8f))
+        val icon: Drawable? = iconRes?.let { ctx.getDrawable(it)!!.mutate().apply { setBounds(0, 0, dp(14f), dp(14f)) } }
         if (icon != null) {
             setCompoundDrawables(icon, null, null, null)
-            compoundDrawablePadding = dp(8f)
+            compoundDrawablePadding = dp(6f)
         }
         FocusGlide.shape(this, -1f)
         fun paint(focused: Boolean) {
-            background = if (focused) FocusGlide.fill(this, dp(22f).toFloat()) else Look.surface(ctx, dp(22f).toFloat())
+            background = if (focused) FocusGlide.fill(this, dp(18f).toFloat()) else Look.surface(ctx, dp(18f).toFloat())
             setTextColor(if (focused) C.DARK else C.TEXT)
             icon?.setTint(if (focused) C.DARK else C.TEXT)
         }
         paint(false)
-        setOnFocusChangeListener { v, f ->
-            paint(f)
-            Look.grow(v, f, 1.05f)
-        }
+        // pills sit in scrolling rows, which would cut off a pill that grows: they only light up
+        setOnFocusChangeListener { _, f -> paint(f) }
         setOnClickListener { onClick() }
     }
 }

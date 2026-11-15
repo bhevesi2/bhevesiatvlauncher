@@ -538,16 +538,16 @@ class HomeActivity : Activity() {
     private fun iconButton(icon: Int, name: String, above: Boolean, onClick: () -> Unit): ImageView {
         val v = ImageView(this)
         v.setImageResource(icon)
-        v.setPadding(dp(12f), dp(12f), dp(12f), dp(12f))
+        v.setPadding(dp(10f), dp(10f), dp(10f), dp(10f))
         v.isFocusable = true
         v.isClickable = true
         v.contentDescription = name
-        val normal = Look.surface(this, dp(22f).toFloat())
+        val normal = Look.surface(this, dp(20f).toFloat())
         v.background = normal
         v.setColorFilter(C.TEXT)
         FocusGlide.shape(v, -1f)
         v.setOnFocusChangeListener { _, f ->
-            v.background = if (f) FocusGlide.fill(v, dp(22f).toFloat()) else normal
+            v.background = if (f) FocusGlide.fill(v, dp(20f).toFloat()) else normal
             v.setColorFilter(if (f) C.DARK else C.TEXT)
             Look.grow(v, f)
             if (f) showHint(v, name, above) else hideHint(v)
@@ -564,8 +564,8 @@ class HomeActivity : Activity() {
     }
 
     private fun addIcon(row: LinearLayout, v: View) {
-        val lp = LinearLayout.LayoutParams(dp(44f), dp(44f))
-        if (row.childCount > 0) lp.leftMargin = dp(10f)
+        val lp = LinearLayout.LayoutParams(dp(40f), dp(40f))
+        if (row.childCount > 0) lp.leftMargin = dp(8f)
         row.addView(v, lp)
     }
 
@@ -630,18 +630,18 @@ class HomeActivity : Activity() {
         topButtons.removeAllViews()
         if (cfg.haEnabled) {
             val today = iconButton(R.drawable.ic_today, "Today", false) { open(TodayActivity::class.java) }
-            topButtons.addView(today, LinearLayout.LayoutParams(dp(44f), dp(44f)).apply { leftMargin = dp(10f) })
+            topButtons.addView(today, LinearLayout.LayoutParams(dp(40f), dp(40f)).apply { leftMargin = dp(8f) })
         }
         val tvGear = iconButton(R.drawable.ic_tv_gear, "TV settings", false) {
             if (!Apps.openSystemSettings(this)) toast("Android settings are not available")
         }
-        topButtons.addView(tvGear, LinearLayout.LayoutParams(dp(44f), dp(44f)).apply { leftMargin = dp(10f) })
+        topButtons.addView(tvGear, LinearLayout.LayoutParams(dp(40f), dp(40f)).apply { leftMargin = dp(8f) })
         val gear = iconButton(R.drawable.ic_gear, "Launcher settings", false) {
             open(SettingsActivity::class.java)
         }
         gearButton = gear
         markUpdate()
-        topButtons.addView(gear, LinearLayout.LayoutParams(dp(44f), dp(44f)).apply { leftMargin = dp(10f) })
+        topButtons.addView(gear, LinearLayout.LayoutParams(dp(40f), dp(40f)).apply { leftMargin = dp(8f) })
         if (cfg.kids.on) {
             // the profiles, in the top right corner like on Google TV: one press into the kids profile
             val k = cfg.kids
@@ -663,7 +663,7 @@ class HomeActivity : Activity() {
                 }
                 setOnClickListener { Profile.set(this@HomeActivity, true) }
             }
-            topButtons.addView(av, LinearLayout.LayoutParams(dp(44f), dp(44f)).apply { leftMargin = dp(20f) })
+            topButtons.addView(av, LinearLayout.LayoutParams(dp(40f), dp(40f)).apply { leftMargin = dp(14f) })
         }
 
         // bottom row: icon buttons on the left, quick actions in the middle, inputs on the right
@@ -697,7 +697,7 @@ class HomeActivity : Activity() {
         if (cfg.haEnabled) {
             cfg.scenes.take(6).forEachIndexed { i, sc ->
                 val lp = LinearLayout.LayoutParams(-2, -2)
-                if (i > 0) lp.leftMargin = dp(10f)
+                if (i > 0) lp.leftMargin = dp(8f)
                 actions.addView(pill(sc.title, sceneIcon(sc)) { runScene(sc) }, lp)
             }
         }
@@ -712,16 +712,21 @@ class HomeActivity : Activity() {
             rightMargin = dp(16f)
         })
 
+        // the TV and the inputs: one "Inputs" pill with a list, so the row never runs out of room
         val inputs = Inputs.visible(this, cfg)
         val inputRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        if (Inputs.hasTv(this)) {
-            inputRow.addView(pill("TV", R.drawable.ic_tv) { if (!Inputs.openTv(this)) toast("TV is not available") })
-        }
-        inputs.take(6).forEach { inp ->
-            val lp = LinearLayout.LayoutParams(-2, -2)
-            if (inputRow.childCount > 0) lp.leftMargin = dp(10f)
+        val choices = ArrayList<Pair<String, () -> Unit>>()
+        if (Inputs.hasTv(this)) choices.add("TV" to { if (!Inputs.openTv(this)) toast("TV is not available") })
+        inputs.forEach { inp ->
             val text = if (inp.device != null) "${inp.name} · ${inp.device}" else inp.name
-            inputRow.addView(pill(text, R.drawable.ic_input) { if (!Inputs.open(this, inp.id)) toast("Can't switch to ${inp.name}") }, lp)
+            choices.add(text to { if (!Inputs.open(this, inp.id)) toast("Can't switch to ${inp.name}") })
+        }
+        when (choices.size) {
+            0 -> {}
+            1 -> inputRow.addView(pill(choices[0].first, if (choices[0].first == "TV") R.drawable.ic_tv else R.drawable.ic_input) { choices[0].second() })
+            else -> inputRow.addView(pill("Inputs", R.drawable.ic_input) {
+                Popup.menu(this, "Inputs", choices.map { it.first }) { i -> choices[i].second() }
+            })
         }
         bottom.addView(inputRow)
 
@@ -731,9 +736,9 @@ class HomeActivity : Activity() {
         weatherChipView = null
         fun divider() {
             if (chipsRow.childCount == 0) return
-            chipsRow.addView(View(this).apply { setBackgroundColor(Look.DIVIDER) }, LinearLayout.LayoutParams(dp(1f), dp(16f)).apply {
-                leftMargin = dp(14f)
-                rightMargin = dp(14f)
+            chipsRow.addView(View(this).apply { setBackgroundColor(Look.DIVIDER) }, LinearLayout.LayoutParams(dp(1f), dp(14f)).apply {
+                leftMargin = dp(11f)
+                rightMargin = dp(11f)
             })
         }
         if (cfg.haEnabled) {
@@ -750,9 +755,9 @@ class HomeActivity : Activity() {
             }
         }
         if (chipsRow.childCount > 0) {
-            chipsRow.background = Look.surface(this, dp(22f).toFloat())
-            chipsRow.setPadding(dp(18f), 0, dp(18f), 0)
-            chipsRow.minimumHeight = dp(44f)
+            chipsRow.background = Look.surface(this, dp(20f).toFloat())
+            chipsRow.setPadding(dp(15f), 0, dp(15f), 0)
+            chipsRow.minimumHeight = dp(40f)
             chipsRow.visibility = View.VISIBLE
         } else {
             chipsRow.visibility = View.GONE
@@ -922,7 +927,7 @@ class HomeActivity : Activity() {
                 val t = s.optJSONObject("attributes")?.optDouble("temperature", Double.NaN) ?: Double.NaN
                 w.text = if (t.isNaN()) "–" else Fmt.num(Math.round(t).toDouble(), "°")
                 val d = getDrawable(weatherIcon(s.optString("state")))!!.mutate()
-                d.setBounds(0, 0, dp(15f), dp(15f))
+                d.setBounds(0, 0, dp(13f), dp(13f))
                 d.setTint(C.TEXT2)
                 w.setCompoundDrawables(d, null, null, null)
             }

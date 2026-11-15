@@ -123,7 +123,7 @@ class MaActivity : PanelActivity() {
             head.addView(p, LinearLayout.LayoutParams(-2, -2).apply { if (i > 0) leftMargin = dp(8f) })
         }
         head.addView(roundButton(R.drawable.ic_grid, "Search") { search() }.apply { setImageDrawable(searchIcon()) },
-            LinearLayout.LayoutParams(dp(44f), dp(44f)).apply { leftMargin = dp(12f) })
+            LinearLayout.LayoutParams(dp(40f), dp(40f)).apply { leftMargin = dp(12f) })
         head.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         playOn = pill("Play on …", R.drawable.ic_music) { choosePlayer() }
         head.addView(playOn)
@@ -174,16 +174,16 @@ class MaActivity : PanelActivity() {
 
     private fun roundButton(icon: Int, name: String, onClick: () -> Unit): ImageView = ImageView(this).apply {
         setImageResource(icon)
-        setPadding(dp(12f), dp(12f), dp(12f), dp(12f))
+        setPadding(dp(10f), dp(10f), dp(10f), dp(10f))
         isFocusable = true
         isClickable = true
         contentDescription = name
-        val normal = Look.surface(this@MaActivity, dp(22f).toFloat())
+        val normal = Look.surface(this@MaActivity, dp(20f).toFloat())
         background = normal
         setColorFilter(C.TEXT)
         FocusGlide.shape(this, -1f)
         setOnFocusChangeListener { v, f ->
-            background = if (f) FocusGlide.fill(this, dp(22f).toFloat()) else normal
+            background = if (f) FocusGlide.fill(this, dp(20f).toFloat()) else normal
             setColorFilter(if (f) C.DARK else C.TEXT)
             Look.grow(v, f)
         }
@@ -211,10 +211,10 @@ class MaActivity : PanelActivity() {
         text.addView(barTitle)
         text.addView(barArtist)
         bar.addView(text, LinearLayout.LayoutParams(0, -2, 1f))
-        bar.addView(roundButton(R.drawable.ic_prev, "Previous") { send("media_previous_track") }, LinearLayout.LayoutParams(dp(44f), dp(44f)))
+        bar.addView(roundButton(R.drawable.ic_prev, "Previous") { send("media_previous_track") }, LinearLayout.LayoutParams(dp(40f), dp(40f)))
         barPlay = roundButton(R.drawable.ic_play, "Play / pause") { send("media_play_pause") }
-        bar.addView(barPlay, LinearLayout.LayoutParams(dp(44f), dp(44f)).apply { leftMargin = dp(10f) })
-        bar.addView(roundButton(R.drawable.ic_next, "Next") { send("media_next_track") }, LinearLayout.LayoutParams(dp(44f), dp(44f)).apply { leftMargin = dp(10f) })
+        bar.addView(barPlay, LinearLayout.LayoutParams(dp(40f), dp(40f)).apply { leftMargin = dp(10f) })
+        bar.addView(roundButton(R.drawable.ic_next, "Next") { send("media_next_track") }, LinearLayout.LayoutParams(dp(40f), dp(40f)).apply { leftMargin = dp(10f) })
     }
 
     private fun showMessage(text: String) {
@@ -226,7 +226,7 @@ class MaActivity : PanelActivity() {
     private fun paintTabs() {
         tabs.forEachIndexed { i, t ->
             // the open tab keeps a light edge, so it can be told apart without the cursor on it
-            if (!t.isFocused) t.background = if (i == tab) rounded(Look.SURFACE, dp(22f).toFloat(), dp(2f), 0xCCFFFFFF.toInt()) else Look.surface(this, dp(22f).toFloat())
+            if (!t.isFocused) t.background = if (i == tab) rounded(Look.SURFACE, dp(18f).toFloat(), dp(2f), 0xCCFFFFFF.toInt()) else Look.surface(this, dp(18f).toFloat())
         }
     }
 
