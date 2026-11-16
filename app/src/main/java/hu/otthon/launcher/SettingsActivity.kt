@@ -720,6 +720,16 @@ class SettingsActivity : PanelActivity() {
         })
         if (everywhere && !KeyService.running) note("Waiting for the TV to start the button service. If this stays, choose “In every app” again.")
         note("In every app, the launcher watches the colour buttons through an accessibility service, switched on over ADB by Home Assistant's Android TV integration. Only buttons that have an action are taken over; the others keep working as before in the apps, for example for teletext or the programme guide.")
+        section("Gear button")
+        val modes = SettingsKey.MODES
+        add(SegmentRow(this, "Gear button opens", listOf("Automatic", "Display & sound", "All settings", "TV decides"),
+            modes.indexOf(cfg.settingsKey).coerceAtLeast(0)) { i ->
+            edit { it.put("settings_key", modes[i]) }
+            if (modes[i] != "tv" && !KeyService.running && cfg.haEnabled) {
+                Adb.run(this, cfg, ColorKeys.enableCommand(this)) { r -> if (r != Adb.Result.OK) toast(Adb.explain(r)) }
+            }
+        })
+        note("Google TV home answers the gear button with its settings panel. Automatic: while Google TV home is switched off, the button opens Display & sound instead, in every app (through the same accessibility service as the colour buttons).")
     }
 
     private fun setColorKeysEverywhere(on: Boolean) {

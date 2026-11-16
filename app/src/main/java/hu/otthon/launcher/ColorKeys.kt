@@ -71,6 +71,56 @@ object ColorKeys {
 }
 
 /**
+ * The remote's gear button. Google TV remotes send it as KEYCODE_NOTIFICATION (TCL) or
+ * KEYCODE_SETTINGS, and Google TV home opens its settings panel for it. With Google TV home
+ * switched off nobody answers it, so [KeyService] catches it and opens a settings page instead.
+ */
+object SettingsKey {
+    /** "auto": only while Google TV home is switched off; "tv": always leave it to the TV. */
+    val MODES = listOf("auto", "display_sound", "settings", "tv")
+
+    private val CODES = setOf(KeyEvent.KEYCODE_SETTINGS, KeyEvent.KEYCODE_NOTIFICATION)
+
+    fun isKey(keyCode: Int) = keyCode in CODES
+
+    private fun stockOn(ctx: Context): Boolean = try {
+        ctx.packageManager.getApplicationInfo(Apps.stock(ctx), 0).enabled
+    } catch (e: Exception) {
+        false
+    }
+
+    /** True when the launcher takes the gear button over with [cfg]'s setting. */
+    fun wanted(ctx: Context, cfg: Config): Boolean = when (cfg.settingsKey) {
+        "tv" -> false
+        "auto" -> !stockOn(ctx)
+        else -> true
+    }
+
+    private fun intents(cfg: Config): List<android.content.Intent> {
+        val all = android.content.Intent(android.provider.Settings.ACTION_SETTINGS)
+        if (cfg.settingsKey == "settings") return listOf(all)
+        return listOf(
+            android.content.Intent().setClassName("com.android.tv.settings", "com.android.tv.settings.device.displaysound.DisplaySoundActivity"),
+            android.content.Intent(android.provider.Settings.ACTION_DISPLAY_SETTINGS),
+            all
+        )
+    }
+
+    /** Opens the chosen page; true when the key was used (its down and up both). */
+    fun handle(ctx: Context, cfg: Config, event: KeyEvent): Boolean {
+        if (!isKey(event.keyCode) || !wanted(ctx, cfg)) return false
+        if (event.action != KeyEvent.ACTION_DOWN || event.repeatCount != 0) return true
+        for (i in intents(cfg)) {
+            try {
+                ctx.startActivity(i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+                return true
+            } catch (e: Exception) { }
+        }
+        return true
+    }
+}
+
+/**
  * Android leaves an accessibility service unbound after its app is updated, although the TV's
  * settings still list it. With WRITE_SECURE_SETTINGS (granted once over ADB, kept across
  * updates) the launcher sets the list again itself, which makes Android bind it.
@@ -79,7 +129,7 @@ object ServiceKeeper {
     private var lastTry = 0L
 
     fun ensure(ctx: Context, cfg: Config) {
-        if (!(cfg.colorKeysEverywhere || cfg.kids.on) || KeyService.running) return
+        if (!(cfg.colorKeysEverywhere || cfg.kids.on || SettingsKey.wanted(ctx, cfg)) || KeyService.running) return
         if (ctx.checkSelfPermission("android.permission.WRITE_SECURE_SETTINGS") != android.content.pm.PackageManager.PERMISSION_GRANTED) return
         val now = System.currentTimeMillis()
         if (now - lastTry < 60_000L) return
@@ -198,6 +248,12 @@ class KeyService : AccessibilityService() {
     override fun onInterrupt() {}
 
     override fun onKeyEvent(event: KeyEvent): Boolean {
+        if (SettingsKey.isKey(event.keyCode)) {
+            val c = config() ?: return false
+            // no settings for the kids: the button stays with the TV (which, without Google TV home, ignores it)
+            if (Profile.kids(this, c)) return false
+            return SettingsKey.handle(this, c, event)
+        }
         if (ColorKeys.key(event.keyCode) == null) return false
         // the settings are read again at most every few seconds, not on every key
         val c = config() ?: return false
