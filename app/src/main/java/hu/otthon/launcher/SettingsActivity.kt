@@ -737,7 +737,7 @@ class SettingsActivity : PanelActivity() {
         add(SegmentRow(this, "Colour buttons work", listOf("On the home screen", "In every app"), if (everywhere) 1 else 0) { i ->
             setColorKeysEverywhere(i == 1)
         })
-        if (everywhere && !KeyService.running) note("Waiting for the TV to start the button service. If this stays, choose “In every app” again.")
+        if (everywhere && !KeyService.isOn(this)) note("Waiting for the TV to start the button service. If this stays, choose “In every app” again.")
         note("In every app, the launcher watches the colour buttons through an accessibility service, switched on over ADB by Home Assistant's Android TV integration. Only buttons that have an action are taken over; the others keep working as before in the apps, for example for teletext or the programme guide.")
         section("Gear button")
         val modes = SettingsKey.MODES
@@ -746,7 +746,7 @@ class SettingsActivity : PanelActivity() {
         row("Gear button opens", names[cur]) {
             Popup.menu(this, "Gear button opens", names, cur) { i ->
                 edit { it.put("settings_key", modes[i]) }
-                if (modes[i] != "tv" && !KeyService.running && cfg.haEnabled) {
+                if (modes[i] != "tv" && !KeyService.isOn(this) && cfg.haEnabled) {
                     Adb.run(this, cfg, ColorKeys.enableCommand(this)) { r -> if (r != Adb.Result.OK) toast(Adb.explain(r)) }
                 }
             }
@@ -756,7 +756,7 @@ class SettingsActivity : PanelActivity() {
     }
 
     private fun setColorKeysEverywhere(on: Boolean) {
-        if (on == cfg.colorKeysEverywhere && on == KeyService.running) return
+        if (on == cfg.colorKeysEverywhere && on == KeyService.isOn(this)) return
         if (!cfg.haEnabled) {
             toast("Set up or switch on Home Assistant first: the TV only lets this be switched on over ADB")
             change { }
@@ -772,7 +772,7 @@ class SettingsActivity : PanelActivity() {
             Bg.main.postDelayed({
                 when {
                     r != Adb.Result.OK -> toast(Adb.explain(r))
-                    on && !KeyService.running -> toast("The TV did not start the button service")
+                    on && !KeyService.isOn(this) -> toast("The TV did not start the button service")
                     on -> toast("The colour buttons now work in every app")
                     else -> toast("The colour buttons now work on the home screen only")
                 }
@@ -816,7 +816,7 @@ class SettingsActivity : PanelActivity() {
         note("Who's watching? shows the profiles as big round pictures whenever the TV wakes up or starts; the grown-ups' profile then asks for the PIN, so it is never left open for the kids.")
 
         section("App lock")
-        val guard = KeyService.running
+        val guard = KeyService.isOn(this)
         row("App lock", if (guard) "On" else "Off – switch on") { enableGuard() }
         note(if (guard) "The launcher sees which app comes to the front and closes the ones the kids may not use, also the TV settings and the Play Store."
              else "Without it the kids profile only hides the other apps. It is switched on over ADB by Home Assistant's Android TV integration (the same service as the colour buttons).")
@@ -911,7 +911,7 @@ class SettingsActivity : PanelActivity() {
             Bg.main.postDelayed({
                 toast(when {
                     r != Adb.Result.OK -> Adb.explain(r)
-                    !KeyService.running -> "The TV did not start the app lock"
+                    !KeyService.isOn(this) -> "The TV did not start the app lock"
                     else -> "The app lock is on"
                 })
                 change { }

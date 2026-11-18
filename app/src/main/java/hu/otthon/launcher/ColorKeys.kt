@@ -115,6 +115,7 @@ object SettingsKey {
         if (!isKey(event.keyCode) || !wanted(ctx, cfg)) return false
         if (event.action != KeyEvent.ACTION_DOWN || event.repeatCount != 0) return true
         if (cfg.settingsKey == "auto" || cfg.settingsKey == "quick") {
+            android.util.Log.i("OtthonQuick", "gear ${event.keyCode} in ${ctx.javaClass.simpleName}")
             QuickPanel.toggle(ctx)
             return true
         }
@@ -156,7 +157,7 @@ object ServiceKeeper {
     }
 
     private fun accessibility(ctx: Context, cfg: Config) {
-        if (!(cfg.colorKeysEverywhere || cfg.kids.on || SettingsKey.wanted(ctx, cfg)) || KeyService.running) return
+        if (!(cfg.colorKeysEverywhere || cfg.kids.on || SettingsKey.wanted(ctx, cfg)) || KeyService.isOn(ctx)) return
         if (ctx.checkSelfPermission("android.permission.WRITE_SECURE_SETTINGS") != android.content.pm.PackageManager.PERMISSION_GRANTED) return
         val now = System.currentTimeMillis()
         if (now - lastTry < 60_000L) return
@@ -184,7 +185,23 @@ object ServiceKeeper {
  */
 class KeyService : AccessibilityService() {
     companion object {
-        @Volatile var running = false
+        /** True inside the service's own process while it is bound. */
+        @Volatile var bound = false
+
+        /**
+         * True while the TV has the service bound. It runs in a process of its own (":keys"), so
+         * the launcher asks the TV's accessibility manager instead of reading a flag.
+         */
+        fun isOn(ctx: Context): Boolean {
+            if (bound) return true
+            return try {
+                val am = ctx.getSystemService(Context.ACCESSIBILITY_SERVICE) as android.view.accessibility.AccessibilityManager
+                am.getEnabledAccessibilityServiceList(android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+                    .any { it.resolveInfo?.serviceInfo?.let { si -> si.packageName == ctx.packageName && si.name.endsWith("KeyService") } == true }
+            } catch (e: Exception) {
+                false
+            }
+        }
     }
 
     private var cfg: Config? = null
@@ -245,7 +262,7 @@ class KeyService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        running = true
+        bound = true
         // the window changes too, not only the keys: the kids profile needs to see which app is in front
         serviceInfo = serviceInfo?.apply {
             eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
@@ -256,7 +273,7 @@ class KeyService : AccessibilityService() {
     }
 
     override fun onDestroy() {
-        running = false
+        bound = false
         handler.removeCallbacks(tick)
         try { unregisterReceiver(screenOff) } catch (e: Exception) { }
         super.onDestroy()

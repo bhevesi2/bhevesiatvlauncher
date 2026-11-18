@@ -462,9 +462,9 @@ class HomeActivity : Activity() {
             return super.dispatchKeyEvent(event)
         }
         // the remote's colour buttons; when they work everywhere, KeyService has them already
-        if (!(cfg.colorKeysEverywhere && KeyService.running) && ColorKeys.handle(this, cfg, event)) return true
+        if (!(cfg.colorKeysEverywhere && KeyService.isOn(this)) && ColorKeys.handle(this, cfg, event)) return true
         // the gear button; KeyService has it when it runs
-        if (!KeyService.running && SettingsKey.handle(this, cfg, event)) return true
+        if (!KeyService.isOn(this) && SettingsKey.handle(this, cfg, event)) return true
         val down = event.action == KeyEvent.ACTION_DOWN
         val focus = currentFocus
         if (!expanded && down && event.keyCode == KeyEvent.KEYCODE_DPAD_DOWN && focus != null && isInside(focus, bottom) &&

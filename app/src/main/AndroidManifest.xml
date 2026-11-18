@@ -109,9 +109,12 @@
             </intent-filter>
         </receiver>
 
-        <!-- the remote's colour buttons in every app; switched on over ADB from Settings › Remote -->
+        <!-- the remote's colour buttons in every app; switched on over ADB from Settings › Remote.
+             Its own process: it sees every key press before the apps do, and the home screen's
+             busy drawing thread must never make it answer late (a late key-up repeats the key). -->
         <service
             android:name=".KeyService"
+            android:process=":keys"
             android:exported="true"
             android:label="@string/key_service_label"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">

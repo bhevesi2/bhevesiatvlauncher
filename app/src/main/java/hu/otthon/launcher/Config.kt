@@ -385,7 +385,12 @@ object ConfigStore {
 }
 
 object Prefs {
-    fun of(ctx: Context) = ctx.getSharedPreferences("launcher", Context.MODE_PRIVATE)
+    /**
+     * The button service runs in a process of its own; MULTI_PROCESS makes each process read the
+     * file again when the other one changed it (the profile, the PIN, the sleep timer).
+     */
+    @Suppress("DEPRECATION")
+    fun of(ctx: Context) = ctx.getSharedPreferences("launcher", Context.MODE_MULTI_PROCESS)
 
     /** Temporary time-of-day preview, valid for 10 minutes. */
     fun setPhaseOverride(ctx: Context, p: Phase?) {

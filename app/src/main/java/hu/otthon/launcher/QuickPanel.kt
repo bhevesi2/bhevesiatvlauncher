@@ -50,6 +50,16 @@ object QuickPanel {
 
     fun show(ctx: Context) {
         if (root != null) return
+        try {
+            build(ctx)
+        } catch (e: Exception) {
+            android.util.Log.w("OtthonQuick", "quick settings failed", e)
+            root = null
+            Apps.openSystemSettings(ctx)
+        }
+    }
+
+    private fun build(ctx: Context) {
         val cfg = Config.load(ctx)
         val type = when {
             ctx is AccessibilityService && Build.VERSION.SDK_INT >= 22 -> WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
@@ -74,9 +84,11 @@ object QuickPanel {
         try {
             manager.addView(view, lp)
         } catch (e: Exception) {
+            android.util.Log.w("OtthonQuick", "no window for quick settings (type $type)", e)
             Apps.openSystemSettings(ctx)
             return
         }
+        android.util.Log.i("OtthonQuick", "shown (type $type)")
         root = view
         wm = manager
         shownAt = System.currentTimeMillis()
@@ -99,7 +111,10 @@ object QuickPanel {
     /** Another app came to the front (Home, an app the panel opened): the panel goes. */
     fun onAppChanged(pkg: String?, ownPkg: String) {
         if (root == null || pkg == null || pkg == ownPkg) return
-        if (System.currentTimeMillis() - shownAt < 800) return
+        // the system's own windows (volume bar, toasts, TV overlays) come and go: only an app counts
+        if (pkg == "android" || pkg.contains("systemui") || pkg.startsWith("com.tcl.") || pkg.startsWith("com.mediatek.")) return
+        if (System.currentTimeMillis() - shownAt < 1500) return
+        android.util.Log.i("OtthonQuick", "closed: $pkg came to the front")
         hide()
     }
 
