@@ -795,6 +795,11 @@ class FocusGlide private constructor(private val host: View) {
  * is more than this TV can do smoothly). Only the panel moves, as one pre-rendered layer.
  */
 open class PanelActivity : Activity() {
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        if (KeyLag.swallow(this, event)) return true
+        return super.dispatchKeyEvent(event)
+    }
+
     private var moving: View? = null
     private var fromSide = true
     private var entering = false

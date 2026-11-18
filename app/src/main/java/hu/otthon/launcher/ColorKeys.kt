@@ -161,19 +161,80 @@ object ServiceKeeper {
 
     private fun accessibility(ctx: Context, cfg: Config) {
         if (!(cfg.colorKeysEverywhere || cfg.kids.on || SettingsKey.wanted(ctx, cfg)) || KeyService.isOn(ctx)) return
-        if (ctx.checkSelfPermission("android.permission.WRITE_SECURE_SETTINGS") != android.content.pm.PackageManager.PERMISSION_GRANTED) return
+        // Right after an update the installer switches the service on again itself. Doing it a
+        // second time while the TV is still binding it leaves the TV waiting on a dead connection,
+        // and then every key press arrives half a second late (and repeats): give it time first.
+        if (android.os.Build.VERSION.SDK_INT >= 24 &&
+            android.os.SystemClock.elapsedRealtime() - android.os.Process.getStartElapsedRealtime() < 45_000L) return
         val now = System.currentTimeMillis()
         if (now - lastTry < 60_000L) return
         lastTry = now
-        try {
-            val cr = ctx.contentResolver
-            val me = "${ctx.packageName}/${KeyService::class.java.name}"
-            val others = (android.provider.Settings.Secure.getString(cr, "enabled_accessibility_services") ?: "")
-                .split(':').filter { it.isNotBlank() && !it.contains("KeyService") }
-            android.provider.Settings.Secure.putString(cr, "enabled_accessibility_services", others.joinToString(":"))
-            android.provider.Settings.Secure.putString(cr, "enabled_accessibility_services", (others + me).joinToString(":"))
-            android.provider.Settings.Secure.putString(cr, "accessibility_enabled", "1")
-        } catch (e: Exception) { }
+        rebind(ctx)
+    }
+
+    /**
+     * Switches the button service off and, after a pause, on again: a clean new connection.
+     * Without WRITE_SECURE_SETTINGS it asks Home Assistant's ADB to do the same.
+     */
+    fun rebind(ctx: Context) {
+        val app = ctx.applicationContext
+        val me = "${app.packageName}/${KeyService::class.java.name}"
+        if (app.checkSelfPermission("android.permission.WRITE_SECURE_SETTINGS") != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            Adb.run(app, Config.load(app), "settings delete secure enabled_accessibility_services; sleep 2; " +
+                "settings put secure enabled_accessibility_services $me; settings put secure accessibility_enabled 1") { }
+            return
+        }
+        Thread {
+            try {
+                val cr = app.contentResolver
+                val others = (android.provider.Settings.Secure.getString(cr, "enabled_accessibility_services") ?: "")
+                    .split(':').filter { it.isNotBlank() && !it.contains("KeyService") }
+                android.provider.Settings.Secure.putString(cr, "enabled_accessibility_services", others.joinToString(":"))
+                Thread.sleep(2000)
+                android.provider.Settings.Secure.putString(cr, "enabled_accessibility_services", (others + me).joinToString(":"))
+                android.provider.Settings.Secure.putString(cr, "accessibility_enabled", "1")
+            } catch (e: Exception) { }
+        }.start()
+    }
+}
+
+/**
+ * Watches how late the remote's key presses arrive. Every key passes the button service first;
+ * when the TV keeps a dead connection to it, it waits half a second for an answer that never
+ * comes, and meanwhile repeats the key as if it were held (the cursor jumps several steps).
+ * Here: a press that came that late counts once (its repeats are dropped), and after a few of
+ * them in a row the service is switched off and on again.
+ */
+object KeyLag {
+    private var lateCode = -1
+    private var lateRun = 0
+    private var lastHeal = 0L
+
+    /** True when [e] should be dropped. Call first thing in dispatchKeyEvent. */
+    fun swallow(ctx: Context, e: KeyEvent): Boolean {
+        if (e.action == KeyEvent.ACTION_UP) {
+            if (e.keyCode == lateCode) lateCode = -1
+            return false
+        }
+        if (e.action != KeyEvent.ACTION_DOWN) return false
+        if (e.repeatCount > 0) return e.keyCode == lateCode
+        val lag = android.os.SystemClock.uptimeMillis() - e.eventTime
+        if (lag < 350) {
+            lateCode = -1
+            lateRun = 0
+            return false
+        }
+        lateCode = e.keyCode
+        // the TV's wait for the service is 500 ms: lags just over it are the dead connection
+        if (lag in 450..900) lateRun++ else lateRun = 0
+        val now = System.currentTimeMillis()
+        if (lateRun >= 3 && now - lastHeal > 120_000L) {
+            lastHeal = now
+            lateRun = 0
+            android.util.Log.w("OtthonKeys", "keys arrive ${lag} ms late: switching the button service off and on")
+            ServiceKeeper.rebind(ctx)
+        }
+        return false
     }
 }
 

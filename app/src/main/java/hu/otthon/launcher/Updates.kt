@@ -102,7 +102,7 @@ object Updates {
             // Android leaves the accessibility service unbound after an update even though it is
             // still listed: setting the list again makes it bind (app lock, colour buttons)
             "cur=\$(settings get secure enabled_accessibility_services); case \"\$cur\" in *KeyService*) " +
-            "settings delete secure enabled_accessibility_services; settings put secure enabled_accessibility_services \"\$cur\" ;; esac; " +
+            "settings delete secure enabled_accessibility_services; sleep 2; settings put secure enabled_accessibility_services \"\$cur\" ;; esac; " +
             "am start -n ${ctx.packageName}/.HomeActivity"
         return steps
     }
