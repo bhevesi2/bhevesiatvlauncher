@@ -709,6 +709,13 @@ class SettingsActivity : PanelActivity() {
                         edit { r -> ConfigStore.obj(r, "color_keys").put(key, JSONObject().put("entity", entity).put("label", name)) }
                     }
                 }
+                if (item?.entity != ColorKeys.QUICK) row("Open the quick settings") {
+                    // for remotes without a gear button
+                    edit { r -> ConfigStore.obj(r, "color_keys").put(key, JSONObject().put("entity", ColorKeys.QUICK).put("label", "Quick settings")) }
+                    if (!KeyService.isOn(this) && cfg.haEnabled) {
+                        Adb.run(this, cfg, ColorKeys.enableCommand(this)) { r -> if (r != Adb.Result.OK) toast(Adb.explain(r)) }
+                    }
+                }
                 if (item != null) {
                     row("Name", item.title) {
                         Popup.text(this, "Name", item.label, "Shown when the button is pressed") { v ->

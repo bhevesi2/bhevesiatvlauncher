@@ -27,12 +27,25 @@ object ColorKeys {
     fun key(keyCode: Int): String? = KEYS.firstOrNull { it.third == keyCode }?.first
 
     /**
+     * Not a Home Assistant entity: a colour button with this "entity" opens the quick settings,
+     * for remotes without a gear button (the Sony's).
+     */
+    const val QUICK = "launcher.quick_settings"
+
+    /**
      * Handles a colour button press with [cfg]'s settings. True when the button has an action
      * (both its down and up are then used up), false to leave it to whoever else wants it.
      */
     fun handle(ctx: Context, cfg: Config, event: KeyEvent): Boolean {
         val name = key(event.keyCode) ?: return false
         val item = cfg.colorKeys[name] ?: return false
+        if (item.entity == QUICK) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                // from the button service's own process the panel opens in the main process
+                if (ctx is KeyService) PopupService.quick(ctx) else QuickPanel.toggle(ctx)
+            }
+            return true
+        }
         if (!cfg.haEnabled) return false
         if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) fire(ctx, cfg, item)
         return true

@@ -240,6 +240,9 @@ are kept). Only buttons that have an action are taken over, the rest still reach
 
 ## Gear button and quick settings
 
+Remotes without a gear button (the Sony's): Settings › Remote › a colour button › "Open the quick
+settings" puts the panel on that button, in every app.
+
 Google TV home answers the remote's gear button with its settings panel. With Google TV home
 switched off, the launcher's `KeyService` takes the button and opens its own **quick settings**,
 over whatever is on screen (a film keeps playing): the time, the profile (one press into the
