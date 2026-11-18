@@ -216,6 +216,28 @@ asks Home Assistant's Android TV integration to enable it over ADB (other access
 are kept). Only buttons that have an action are taken over, the rest still reach the app
 (teletext, programme guide). Choosing "On the home screen" removes the service again.
 
+## Gear button and quick settings
+
+Google TV home answers the remote's gear button with its settings panel. With Google TV home
+switched off, the launcher's `KeyService` takes the button and opens its own **quick settings**,
+over whatever is on screen (a film keeps playing): the time, the profile (one press into the
+kids profile), and tiles for Picture and Sound (the TCL's own pages, or Android's Display &
+sound), Inputs (listed in the panel), Network, Screen saver, Sleep timer (off → 15 → 30 → 60 →
+90 → 120 minutes; the TV goes to sleep through Home Assistant's ADB), Turn off, the launcher's
+settings, and All settings at the bottom. The gear again or Back closes it; it also closes after
+half a minute. The TV-settings button on the home screen opens the same panel. Settings › Remote ›
+Gear button opens: Automatic (the panel while Google TV home is off), Quick settings (always),
+Display & sound, All settings, or TV decides.
+
+## Resolution
+
+Many 4K TVs draw their menus at 1920×1080 and stretch them to the panel (the TCL does). Settings ›
+Look › Resolution switches the TV to draw at the panel's 3840×2160, with the density doubled so
+every screen keeps its layout and only gets sharper (`wm size 3840x2160; wm density 640` over
+Home Assistant's ADB). It is the TV's own setting, so every app's menus change with it, and
+animations may be slower. Like a computer's display settings, it goes back by itself after
+20 seconds unless kept. `restore-tv.bat` sets 1080p again.
+
 ## Camera pop-ups
 
 When one of the chosen sensors turns on (by default: Frigate seeing a person on any camera of the
@@ -224,7 +246,9 @@ whatever is playing. While it is up, Back closes it, OK opens the camera full sc
 key just closes it (volume keys still work). A background service checks the sensors every two
 seconds while the TV is on. Settings › Cameras › Pop-ups switches it off, sets how long it stays,
 and edits the sensors. Drawing over other apps is allowed over ADB:
-`appops set hu.otthon.launcher SYSTEM_ALERT_WINDOW allow` (the settings do it through Home Assistant).
+`appops set hu.otthon.launcher SYSTEM_ALERT_WINDOW allow`. The launcher asks Home Assistant's ADB
+for it by itself (at most once an hour) whenever it is missing, and `update.bat` gives it on every
+install from the PC, so a fresh install on a new TV does not stay without pop-ups.
 
 Settings › Cameras › Live video plays the full-screen view and the pop-ups as video from
 Frigate's RTSP restream (`rtsp://{host}:8554/{camera}` by default, editable), with Android's own

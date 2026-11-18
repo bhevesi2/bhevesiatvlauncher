@@ -1114,7 +1114,7 @@ class Backdrop(ctx: Context) : FrameLayout(ctx) {
         landscape.setWinter(null)
         if (Backgrounds.isPhoto(bg)) {
             val app = context.applicationContext
-            Bg.run({ Backgrounds.photo(app, bg, phase) }) { bmp ->
+            Bg.run({ Backgrounds.photo(app, bg, phase, maxOf(1920, app.resources.displayMetrics.widthPixels), maxOf(1080, app.resources.displayMetrics.heightPixels)) }) { bmp ->
                 if (g == gen) {
                     if (bmp != null) showPhoto(bmp, anim) else showLandscape("alpine", phase, anim)
                 }

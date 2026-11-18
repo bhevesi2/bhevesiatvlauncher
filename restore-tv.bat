@@ -67,6 +67,11 @@ for %%P in (
     "%ADB%" -s %TV% shell pm enable %%P 2>nul | findstr /c:"new state" >nul && echo   on: %%P
 )
 
+echo.
+echo == Drawing the menus at 1080p again (as the TV came)
+"%ADB%" -s %TV% shell wm size 1920x1080 >nul 2>nul
+"%ADB%" -s %TV% shell wm density reset >nul 2>nul
+
 if "%KEEP%"=="1" goto done
 
 echo.

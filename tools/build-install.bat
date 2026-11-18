@@ -65,6 +65,10 @@ if errorlevel 1 (
     echo INSTALL FAILED.
     exit /b 1
 )
+rem What the launcher cannot give itself: drawing over other apps (camera pop-ups, notifications),
+rem and writing secure settings (it switches its own button service back on after updates).
+"%ADB%" -s %TV% shell appops set hu.otthon.launcher SYSTEM_ALERT_WINDOW allow >nul 2>nul
+"%ADB%" -s %TV% shell pm grant hu.otthon.launcher android.permission.WRITE_SECURE_SETTINGS >nul 2>nul
 "%ADB%" -s %TV% shell am start -n hu.otthon.launcher/.HomeActivity >nul
 echo.
 echo Done. The launcher is open on the TV.

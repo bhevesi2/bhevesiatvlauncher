@@ -76,8 +76,12 @@ object ColorKeys {
  * switched off nobody answers it, so [KeyService] catches it and opens a settings page instead.
  */
 object SettingsKey {
-    /** "auto": only while Google TV home is switched off; "tv": always leave it to the TV. */
-    val MODES = listOf("auto", "display_sound", "settings", "tv")
+    /**
+     * "auto": the launcher's quick settings while Google TV home is switched off; "quick": always
+     * the quick settings; "display_sound" / "settings": a page of the TV's settings; "tv": always
+     * leave it to the TV.
+     */
+    val MODES = listOf("auto", "quick", "display_sound", "settings", "tv")
 
     private val CODES = setOf(KeyEvent.KEYCODE_SETTINGS, KeyEvent.KEYCODE_NOTIFICATION)
 
@@ -110,6 +114,10 @@ object SettingsKey {
     fun handle(ctx: Context, cfg: Config, event: KeyEvent): Boolean {
         if (!isKey(event.keyCode) || !wanted(ctx, cfg)) return false
         if (event.action != KeyEvent.ACTION_DOWN || event.repeatCount != 0) return true
+        if (cfg.settingsKey == "auto" || cfg.settingsKey == "quick") {
+            QuickPanel.toggle(ctx)
+            return true
+        }
         for (i in intents(cfg)) {
             try {
                 ctx.startActivity(i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
@@ -127,8 +135,27 @@ object SettingsKey {
  */
 object ServiceKeeper {
     private var lastTry = 0L
+    private var lastOverlayTry = 0L
 
     fun ensure(ctx: Context, cfg: Config) {
+        overlay(ctx, cfg)
+        accessibility(ctx, cfg)
+    }
+
+    /**
+     * Camera pop-ups and notifications draw over other apps, which a TV only allows over ADB.
+     * When the permission is missing (a fresh install from a PC), Home Assistant's ADB gives it,
+     * at most once an hour.
+     */
+    private fun overlay(ctx: Context, cfg: Config) {
+        if (!PopupService.needed(cfg) || PopupService.allowed(ctx)) return
+        val now = System.currentTimeMillis()
+        if (now - lastOverlayTry < 3_600_000L) return
+        lastOverlayTry = now
+        Adb.run(ctx, cfg, PopupService.allowCommand(ctx)) { r -> if (r == Adb.Result.OK) PopupService.sync(ctx) }
+    }
+
+    private fun accessibility(ctx: Context, cfg: Config) {
         if (!(cfg.colorKeysEverywhere || cfg.kids.on || SettingsKey.wanted(ctx, cfg)) || KeyService.running) return
         if (ctx.checkSelfPermission("android.permission.WRITE_SECURE_SETTINGS") != android.content.pm.PackageManager.PERMISSION_GRANTED) return
         val now = System.currentTimeMillis()
@@ -192,6 +219,7 @@ class KeyService : AccessibilityService() {
     private val tick = object : Runnable {
         override fun run() {
             handler.postDelayed(this, 30_000L)
+            SleepTimer.check(this@KeyService)
             val c = config() ?: return
             if (!Profile.kids(this@KeyService, c)) return
             val front = KidsGuard.front ?: return
@@ -237,6 +265,7 @@ class KeyService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val pkg = event.packageName?.toString() ?: return
+        QuickPanel.onAppChanged(pkg, packageName)
         if (!KidsGuard.relevant(this, pkg)) return
         KidsGuard.front = pkg
         val c = config() ?: return

@@ -642,8 +642,11 @@ class HomeActivity : Activity() {
             val today = iconButton(R.drawable.ic_today, "Today", false) { open(TodayActivity::class.java) }
             topButtons.addView(today, LinearLayout.LayoutParams(dp(40f), dp(40f)).apply { leftMargin = dp(8f) })
         }
+        // the TV's settings: the quick settings panel, like the gear on Google TV home
         val tvGear = iconButton(R.drawable.ic_tv_gear, "TV settings", false) {
-            if (!Apps.openSystemSettings(this)) toast("Android settings are not available")
+            if (cfg.settingsKey == "tv" || cfg.settingsKey == "settings") {
+                if (!Apps.openSystemSettings(this)) toast("Android settings are not available")
+            } else QuickPanel.show(this)
         }
         topButtons.addView(tvGear, LinearLayout.LayoutParams(dp(40f), dp(40f)).apply { leftMargin = dp(8f) })
         val gear = iconButton(R.drawable.ic_gear, "Launcher settings", false) {

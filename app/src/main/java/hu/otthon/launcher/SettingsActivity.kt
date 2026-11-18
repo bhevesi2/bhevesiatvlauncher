@@ -59,6 +59,12 @@ class SettingsActivity : PanelActivity() {
     /** The kids profile's time helpers are looked up in Home Assistant once, when its page is first shown. */
     private var kidsChecked = false
 
+    override fun onResume() {
+        super.onResume()
+        // back after a resolution change (the screen was laid out again): keep it?
+        Bg.main.postDelayed({ if (!isFinishing) Resolution.askKeep(this) }, 600)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         cfg = Config.load(this)
@@ -432,6 +438,19 @@ class SettingsActivity : PanelActivity() {
             backdrop.show(cfg.background, Backgrounds.phase(this, cfg), true)
         })
         note("A preview lasts 10 minutes, then the picture follows the sun again.")
+        val res = Resolution.info(this)
+        if (res.canUhd) {
+            section("Resolution")
+            add(SegmentRow(this, "Draw the screen in", listOf("1080p", "4K"), if (res.uhd) 1 else 0) { i ->
+                if (!cfg.haEnabled) {
+                    toast("Needs Home Assistant's ADB connection to the TV")
+                    return@SegmentRow
+                }
+                toast(if (i == 1) "Switching to 4K…" else "Switching to 1080p…")
+                Resolution.set(this, cfg, i == 1) { r -> if (r != Adb.Result.OK) toast(Adb.explain(r)) }
+            })
+            note("This TV's panel is ${res.physW}×${res.physH}; its menus are drawn at ${res.curW}×${res.curH}. 4K makes the launcher (and every app's menus) sharper, with the same layout, but the TV has four times the pixels to draw, so animations may be slower. It goes back by itself after 20 seconds unless you keep it. Films are 4K either way.")
+        }
         section("Motion")
         val levels = listOf("full", "reduced", "off")
         add(SegmentRow(this, "Animations", listOf("Full", "Reduced", "Off"), levels.indexOf(cfg.animations).coerceAtLeast(0)) { i ->
@@ -722,14 +741,18 @@ class SettingsActivity : PanelActivity() {
         note("In every app, the launcher watches the colour buttons through an accessibility service, switched on over ADB by Home Assistant's Android TV integration. Only buttons that have an action are taken over; the others keep working as before in the apps, for example for teletext or the programme guide.")
         section("Gear button")
         val modes = SettingsKey.MODES
-        add(SegmentRow(this, "Gear button opens", listOf("Automatic", "Display & sound", "All settings", "TV decides"),
-            modes.indexOf(cfg.settingsKey).coerceAtLeast(0)) { i ->
-            edit { it.put("settings_key", modes[i]) }
-            if (modes[i] != "tv" && !KeyService.running && cfg.haEnabled) {
-                Adb.run(this, cfg, ColorKeys.enableCommand(this)) { r -> if (r != Adb.Result.OK) toast(Adb.explain(r)) }
+        val names = listOf("Automatic", "Quick settings", "Display & sound", "All settings", "TV decides")
+        val cur = modes.indexOf(cfg.settingsKey).coerceAtLeast(0)
+        row("Gear button opens", names[cur]) {
+            Popup.menu(this, "Gear button opens", names, cur) { i ->
+                edit { it.put("settings_key", modes[i]) }
+                if (modes[i] != "tv" && !KeyService.running && cfg.haEnabled) {
+                    Adb.run(this, cfg, ColorKeys.enableCommand(this)) { r -> if (r != Adb.Result.OK) toast(Adb.explain(r)) }
+                }
             }
-        })
-        note("Google TV home answers the gear button with its settings panel. Automatic: while Google TV home is switched off, the button opens Display & sound instead, in every app (through the same accessibility service as the colour buttons).")
+        }
+        row("Try the quick settings") { QuickPanel.show(this) }
+        note("Google TV home answers the gear button with its settings panel. Automatic: while Google TV home is switched off, the button opens the launcher's own quick settings instead, in every app (through the same accessibility service as the colour buttons): Picture, Sound, Inputs, Network, Screen saver, Sleep timer, Turn off, and all settings. Quick settings: always the launcher's panel, even with Google TV home on.")
     }
 
     private fun setColorKeysEverywhere(on: Boolean) {
