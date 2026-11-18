@@ -109,10 +109,10 @@ asks for the first time (Allow). OK opens a programme, Hold OK moves its row up 
 is something below. Settings › Home screen › Recommendations switches them off, chooses the apps
 and Continue watching, and resets the row order.
 
-## Up and down on the home screen
+## Recommendations and the dashboard
 
-Down from the bottom row slides up the recommendations; Up from the top row (the status capsule
-and the buttons beside it) opens Home Assistant's dashboard.
+Down from the bottom row slides up the recommendations; OK on the status capsule in the top
+right corner opens Home Assistant's dashboard.
 
 ## Design: Standard and Live
 
@@ -245,7 +245,8 @@ switched off, the launcher's `KeyService` takes the button and opens its own **q
 over whatever is on screen (a film keeps playing): the time, the profile (one press into the
 kids' picture as a bubble to switch to their profile), made of the settings screen's parts.
 TV, four tiles with what each is set to now: Inputs (listed in the panel), Network (the Wi-Fi's
-name, or Ethernet; the name needs location access, given over ADB), Sleep timer (off → 15 → 30 →
+name, or Ethernet; the name needs location access, also in the background, since the panel
+opens from the button service: given over ADB), Sleep timer (off → 15 → 30 →
 60 → 90 → 120 minutes; the TV goes to sleep through Home Assistant's ADB) and Restart (press OK
 twice). Home: Cameras, All lights of the TV's room (on or off together, "3 of 19 on") and the
 lights chosen in Settings › Remote › Quick settings · lights (without a choice, the room's light

@@ -499,13 +499,6 @@ class HomeActivity : Activity() {
             expand()
             return true
         }
-        // Up from the top row: Home Assistant's dashboard, the mirror of Down to the recommendations
-        if (!expanded && down && event.keyCode == KeyEvent.KEYCODE_DPAD_UP && event.repeatCount == 0 && focus != null &&
-            cfg.haEnabled && (isInside(focus, topButtons) || isInside(focus, chipsRow))
-        ) {
-            open(DashboardActivity::class.java)
-            return true
-        }
         if (expanded && event.keyCode == KeyEvent.KEYCODE_BACK) {
             if (!down) collapse(true)
             return true
@@ -777,10 +770,20 @@ class HomeActivity : Activity() {
             }
         }
         if (chipsRow.childCount > 0) {
-            chipsRow.background = Look.surface(this, dp(Look.R_TILE).toFloat())
             chipsRow.setPadding(dp(15f), 0, dp(15f), 0)
             chipsRow.minimumHeight = dp(40f)
             chipsRow.visibility = View.VISIBLE
+            // OK on the status capsule opens Home Assistant's dashboard
+            chipsRow.isFocusable = cfg.haEnabled
+            chipsRow.isClickable = cfg.haEnabled
+            chipsRow.contentDescription = "Home Assistant dashboard"
+            FocusGlide.shape(chipsRow, dp(Look.R_TILE).toFloat())
+            paintChips(chipsRow.isFocused)
+            chipsRow.setOnFocusChangeListener { v, f ->
+                paintChips(f)
+                if (f) showHint(v, "Home Assistant", false) else hideHint(v)
+            }
+            chipsRow.setOnClickListener { open(DashboardActivity::class.java) }
         } else {
             chipsRow.visibility = View.GONE
         }
@@ -788,6 +791,21 @@ class HomeActivity : Activity() {
 
         val idx = focusFav.coerceIn(0, maxOf(0, favRow.childCount - 1))
         favRow.getChildAt(idx)?.takeIf { it.isFocusable }?.requestFocus()
+    }
+
+    /** The status capsule lit by the cursor: dark text and icons on the light fill. */
+    private fun paintChips(f: Boolean) {
+        val r = dp(Look.R_TILE).toFloat()
+        chipsRow.background = if (f) FocusGlide.fill(chipsRow, r) else Look.surface(this, r)
+        for (i in 0 until chipsRow.childCount) {
+            val c = chipsRow.getChildAt(i)
+            if (c is TextView) {
+                c.setTextColor(if (f) C.DARK else C.TEXT2)
+                c.compoundDrawables.forEach { it?.setTint(if (f) C.DARK else C.TEXT2) }
+            } else if (c !is ViewGroup) {
+                c.setBackgroundColor(if (f) 0x40141413 else Look.DIVIDER)
+            }
+        }
     }
 
     private fun statusIcon(item: HaItem): Int {

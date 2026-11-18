@@ -60,6 +60,7 @@ object ColorKeys {
         return "pm grant ${ctx.packageName} android.permission.WRITE_SECURE_SETTINGS; " +
             "appops set ${ctx.packageName} AUTO_START allow 2>/dev/null; " +
             "pm grant ${ctx.packageName} android.permission.ACCESS_FINE_LOCATION 2>/dev/null; " +
+            "pm grant ${ctx.packageName} android.permission.ACCESS_BACKGROUND_LOCATION 2>/dev/null; " +
             "cur=\$(settings get secure enabled_accessibility_services); " +
             "case \"\$cur\" in *KeyService*) ;; ''|null) settings put secure enabled_accessibility_services $c ;; " +
             "*) settings put secure enabled_accessibility_services \"\$cur:$c\" ;; esac; " +
