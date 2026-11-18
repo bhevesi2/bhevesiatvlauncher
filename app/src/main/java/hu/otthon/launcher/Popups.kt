@@ -78,6 +78,22 @@ class PopupService : Service() {
             } catch (e: Exception) { }
         }
 
+        private const val QUICK = "quick"
+
+        /**
+         * Opens or closes the quick settings in this, the launcher's main process. The button
+         * service runs in a process of its own, which Android treats as background: from there
+         * Home Assistant and the Wi-Fi's name were not reachable. This service is a foreground one.
+         */
+        fun quick(ctx: Context) {
+            val i = Intent(ctx, PopupService::class.java).putExtra(QUICK, true)
+            try {
+                if (Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(i) else ctx.startService(i)
+            } catch (e: Exception) {
+                android.util.Log.w("OtthonQuick", "could not reach the main process", e)
+            }
+        }
+
         /** Shows a sample notification card now, to see how it looks. */
         fun testNote(ctx: Context) {
             val i = Intent(ctx, PopupService::class.java).putExtra(NOTE_TEST, true)
@@ -141,11 +157,13 @@ class PopupService : Service() {
         reload()
         intent?.getStringExtra(TEST)?.let { cam -> main.post { show(cam, "Test", true) } }
         intent?.getStringExtra(CAMERA)?.let { cam -> main.post { show(cam, intent.getStringExtra(CAMERA_TITLE) ?: "", true) } }
+        val quickAsked = intent?.getBooleanExtra(QUICK, false) == true
+        if (quickAsked) main.post { QuickPanel.toggle(this) }
         val noteTest = intent?.getBooleanExtra(NOTE_TEST, false) == true
         if (noteTest) main.post { showNote(Note("bell", "info", "Test notification", "This is how Home Assistant's messages look on this TV.")) }
         val c = cfg
         if (c == null || !needed(c)) {
-            if (intent?.getStringExtra(TEST) == null && intent?.getStringExtra(CAMERA) == null && !noteTest) stopSelf()
+            if (intent?.getStringExtra(TEST) == null && intent?.getStringExtra(CAMERA) == null && !noteTest && !quickAsked) stopSelf()
         }
         return START_STICKY
     }

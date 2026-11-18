@@ -300,7 +300,7 @@ object QuickPanel {
             val client = ha ?: return
             val adb = cfg.adbEntity ?: ""
             val chosen = org.json.JSONArray(cfg.quickLights.map { it.entity }).toString()
-            Bg.run({
+            Bg.run({ try {
                 val t = client.template(
                     "{% set a = area_id('$adb') %}{% set ls = (area_entities(a) | select('match', 'light\\.') | list) if a else [] %}" +
                         "{% set chosen = $chosen %}{% if chosen | length == 0 %}{% set g = namespace(c=[]) %}" +
@@ -309,8 +309,17 @@ object QuickPanel {
                         "{% for l in chosen %}{% set ns.o = ns.o + [[l, state_attr(l, 'friendly_name') or l, states(l), ((state_attr(l, 'brightness') or 0) / 2.55) | round(0) | int]] %}{% endfor %}" +
                         "{{ {'area': a or '', 'name': area_name(a) if a else '', 'on': ls | select('is_state', 'on') | list | length, 'total': ls | length, 'lights': ns.o} | tojson }}"
                 )
-                org.json.JSONObject(t)
-            }) { o ->
+                try {
+                    org.json.JSONObject(t)
+                } catch (e: Exception) {
+                    android.util.Log.w("OtthonQuick", "lights: Home Assistant answered $t", e)
+                    null
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("OtthonQuick", "lights: Home Assistant not reachable", e)
+                null
+            } }) { o ->
+                if (o == null) android.util.Log.w("OtthonQuick", "lights: no answer from Home Assistant")
                 if (!isAttachedToWindow) return@run
                 box.removeAllViews()
                 val tiles = ArrayList<Tile>()
@@ -394,6 +403,7 @@ object QuickPanel {
                 caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> {
                     val wm = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
                     val ssid = wm.connectionInfo?.ssid?.trim('"')
+                    android.util.Log.i("OtthonQuick", "Wi-Fi name as Android tells it: $ssid")
                     if (ssid.isNullOrBlank() || ssid == "<unknown ssid>") "Wi-Fi" else ssid
                 }
                 else -> "Connected"

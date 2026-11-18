@@ -121,7 +121,8 @@ object SettingsKey {
         if (event.action != KeyEvent.ACTION_DOWN || event.repeatCount != 0) return true
         if (cfg.settingsKey == "auto" || cfg.settingsKey == "quick") {
             android.util.Log.i("OtthonQuick", "gear ${event.keyCode} in ${ctx.javaClass.simpleName}")
-            QuickPanel.toggle(ctx)
+            // from the button service's own process: the panel opens in the main process
+            if (ctx is KeyService) PopupService.quick(ctx) else QuickPanel.toggle(ctx)
             return true
         }
         for (i in intents(cfg)) {
