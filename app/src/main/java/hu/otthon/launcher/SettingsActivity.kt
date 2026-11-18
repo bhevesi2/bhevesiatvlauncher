@@ -77,7 +77,7 @@ class SettingsActivity : PanelActivity() {
 
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            background = rounded(C.PANEL, dp(20f).toFloat(), 1, C.BORDER)
+            background = rounded(C.PANEL, dp(Look.R_PANEL).toFloat(), 1, C.BORDER)
             clipToOutline = true
             outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
         }
@@ -413,6 +413,12 @@ class SettingsActivity : PanelActivity() {
     // ---------- pages ----------
 
     private fun backgroundPage() {
+        section("Design")
+        add(SegmentRow(this, "Home screen", listOf("Standard", "Live"), if (cfg.design == "live") 1 else 0) { i ->
+            ConfigStore.edit(this) { it.put("design", if (i == 1) "live" else "standard") }
+            cfg = Config.load(this)
+        })
+        note("Live: taller favourite tiles that show what each app recommends right now, with the app's badge in the corner. The tile under the cursor moves on to the next recommendation every few seconds. Standard: the apps' own banners.")
         note("Each picture set has four pictures. The launcher switches between them at dawn, during the day, at dusk and at night, following the real sunrise and sunset. The picture behind this panel is a live preview.")
         section("Background")
         val options = Backgrounds.options(this)

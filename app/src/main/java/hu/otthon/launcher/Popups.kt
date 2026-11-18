@@ -241,7 +241,7 @@ class PopupService : Service() {
             val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
             val d = resources.displayMetrics.density
             val box = Box().apply {
-                background = rounded(0xFF101114.toInt(), 12f * d, (2 * d).toInt(), 0x66FFFFFF)
+                background = rounded(0xFF101114.toInt(), Look.R_TILE * d, (2 * d).toInt(), 0x66FFFFFF)
                 clipToOutline = true
                 outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
                 isFocusable = true
@@ -395,7 +395,7 @@ class PopupService : Service() {
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = rounded(0xF2101114.toInt(), 12f * d, (2 * d).toInt(), (accent and 0x00FFFFFF) or 0x88000000.toInt())
+            background = rounded(C.PANEL, Look.R_TILE * d, (2 * d).toInt(), (accent and 0x00FFFFFF) or 0x88000000.toInt())
             setPadding((12 * d).toInt(), (10 * d).toInt(), (14 * d).toInt(), (10 * d).toInt())
         }
         val iconRes = resources.getIdentifier("ic_" + n.icon.lowercase().replace(Regex("[^a-z0-9_]"), ""), "drawable", packageName)

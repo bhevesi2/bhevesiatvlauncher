@@ -76,6 +76,8 @@ data class Config(
     val colorKeys: Map<String, HaItem>,
     /** True: the colour buttons work in every app (KeyService), not only on the home screen. */
     val colorKeysEverywhere: Boolean,
+    /** "standard": the app banners as tiles; "live": taller tiles showing the apps' recommendations. */
+    val design: String,
     /** What the remote's gear button opens: "auto", "display_sound", "settings" or "tv" (see [SettingsKey]). */
     val settingsKey: String,
     /** The kids profile: its apps, PIN and time limits. */
@@ -153,6 +155,7 @@ data class Config(
                 christmas = json.optBoolean("christmas", false),
                 colorKeys = colorKeys(json.optJSONObject("color_keys")),
                 colorKeysEverywhere = json.optBoolean("color_keys_everywhere", false),
+                design = json.optString("design", "standard").let { if (it == "live") "live" else "standard" },
                 settingsKey = json.optString("settings_key", "auto").let { if (it in SettingsKey.MODES) it else "auto" },
                 kids = Kids.from(json.optJSONObject("kids"))
             )

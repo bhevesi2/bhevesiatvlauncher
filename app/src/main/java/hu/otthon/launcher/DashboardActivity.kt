@@ -133,7 +133,7 @@ class DashboardActivity : PanelActivity() {
         weatherBox = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14f), dp(12f), dp(14f), dp(12f))
-            background = rounded(0x14FFFFFF, dp(10f).toFloat())
+            background = rounded(0x14FFFFFF, dp(Look.R_SMALL).toFloat())
             visibility = View.GONE
         }
         val nowRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }

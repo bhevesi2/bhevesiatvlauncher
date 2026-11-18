@@ -70,6 +70,13 @@ object Look {
     const val DIVIDER = 0x38FFFFFF
     /** How much a focused control grows. */
     const val GROW = 1.08f
+    /** How much a focused picture (app tile, cover, recommendation) grows, with its glow. */
+    const val IMAGE_GROW = 1.06f
+
+    /** Corner radii, in dp: small parts, tiles and pictures, panels. Buttons are fully round. */
+    const val R_SMALL = 8f
+    const val R_TILE = 14f
+    const val R_PANEL = 20f
 
     fun surface(ctx: Context, radius: Float): GradientDrawable = rounded(SURFACE, radius, ctx.dp(1f), HAIRLINE)
 
@@ -155,9 +162,9 @@ fun weatherIcon(condition: String): Int = when (condition) {
 
 /** App tile with banner (or icon + name) and focus zoom. */
 class AppTile(ctx: Context, val app: AppEntry) : FrameLayout(ctx) {
-    private val ring = rounded(0, ctx.dp(8f).toFloat(), ctx.dp(2f), C.TEXT)
-    private val glass = rounded(C.GLASS, ctx.dp(8f).toFloat(), 1, C.BORDER)
-    private val solid = rounded(0xFF17181D.toInt(), ctx.dp(8f).toFloat())
+    private val radius = ctx.dp(Look.R_TILE).toFloat()
+    private val glass = rounded(C.GLASS, radius, 1, C.BORDER)
+    private val solid = rounded(0xFF17181D.toInt(), radius)
     var onFocused: (() -> Unit)? = null
 
     init {
@@ -166,7 +173,7 @@ class AppTile(ctx: Context, val app: AppEntry) : FrameLayout(ctx) {
         clipToOutline = true
         outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
         background = glass
-        FocusGlide.shape(this, ctx.dp(8f).toFloat(), 0f)
+        FocusGlide.shape(this, radius, 0f)
         FocusGlide.glow(this, AppColors.of(app))
         val banner = app.banner
         if (banner != null) {
@@ -189,12 +196,9 @@ class AppTile(ctx: Context, val app: AppEntry) : FrameLayout(ctx) {
         }
         contentDescription = app.label
         setOnFocusChangeListener { v, f ->
-            // Under the gliding cursor the tile only needs to be opaque: the cursor is its frame.
-            val glide = f && FocusGlide.covers(this)
-            foreground = if (f && !glide) ring else null
-            background = if (glide) solid else glass
-            v.animate().scaleX(if (f) 1.1f else 1f).scaleY(if (f) 1.1f else 1f)
-                .translationZ(if (f && !glide) ctx.dp(6f).toFloat() else 0f).setDuration(160).start()
+            // the glow around it is the frame: no ring, no lift (shadows are costly on a TV)
+            background = if (f) solid else glass
+            Look.grow(v, f, Look.IMAGE_GROW)
             Neighbors.push(v, f)
             if (f) onFocused?.invoke()
         }

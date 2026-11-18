@@ -518,7 +518,7 @@ class MaActivity : PanelActivity() {
     private fun card(item: Item, size: Int): LinearLayout {
         val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; clipChildren = false }
         val round = item.type == "artist"
-        val radius = if (round) size / 2f else dp(10f).toFloat()
+        val radius = if (round) size / 2f else dp(Look.R_TILE).toFloat()
         val cover = coverView(item, size, round, radius).apply {
             isFocusable = true
             isClickable = true
@@ -671,7 +671,7 @@ class MaActivity : PanelActivity() {
         // left: the cover, the names and the buttons
         val left = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; clipChildren = false }
         val coverSize = dp(250f)
-        val cover = coverView(item, coverSize, false, dp(14f).toFloat()).apply { elevation = dp(12f).toFloat() }
+        val cover = coverView(item, coverSize, false, dp(Look.R_TILE).toFloat()).apply { elevation = dp(12f).toFloat() }
         left.addView(cover, LinearLayout.LayoutParams(coverSize, coverSize))
         left.addView(label(clean(item.name), 19f, C.TEXT, bold = true).apply {
             maxLines = 2
@@ -748,11 +748,11 @@ class MaActivity : PanelActivity() {
         val artist = label(song.artist, 11f, C.TEXT3).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
         if (showArtist) texts.addView(artist, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(3f) })
         row.addView(texts, LinearLayout.LayoutParams(0, -2, 1f))
-        FocusGlide.shape(row, dp(10f).toFloat())
-        val normal = rounded(0x0DFFFFFF, dp(10f).toFloat())
+        FocusGlide.shape(row, dp(Look.R_SMALL).toFloat())
+        val normal = rounded(0x0DFFFFFF, dp(Look.R_SMALL).toFloat())
         row.background = normal
         row.setOnFocusChangeListener { _, f ->
-            row.background = if (f) FocusGlide.fill(row, dp(10f).toFloat()) else normal
+            row.background = if (f) FocusGlide.fill(row, dp(Look.R_SMALL).toFloat()) else normal
             title.setTextColor(if (f) C.DARK else C.TEXT)
             artist.setTextColor(if (f) C.DARK2 else C.TEXT3)
             num.setTextColor(if (f) C.DARK2 else C.TEXT3)
@@ -893,7 +893,7 @@ class MaActivity : PanelActivity() {
             scaleType = ImageView.ScaleType.CENTER_CROP
             clipToOutline = true
             outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
-            background = rounded(0xFF22242E.toInt(), dp(18f).toFloat())
+            background = rounded(0xFF22242E.toInt(), dp(Look.R_PANEL).toFloat())
             elevation = dp(24f).toFloat()
         }
         mid.addView(npCover, LinearLayout.LayoutParams(coverSize, coverSize).apply { leftMargin = dp(12f) })

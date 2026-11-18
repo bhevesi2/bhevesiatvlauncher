@@ -112,7 +112,7 @@ class MusicActivity : PanelActivity() {
         FocusGlide.install(left)
         bigCover = ImageView(this).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
-            background = rounded(0x33FFFFFF, dp(10f).toFloat())
+            background = rounded(0x33FFFFFF, dp(Look.R_SMALL).toFloat())
             clipToOutline = true
             outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
             setImageResource(R.drawable.ic_disc)
@@ -259,7 +259,7 @@ class MusicActivity : PanelActivity() {
             col.addView(line, LayoutParams(-1, -2).apply { topMargin = dp(2f) })
             addView(col, LayoutParams(0, -2, 1f))
             addView(badge, LayoutParams(-2, -2))
-            FocusGlide.shape(this, dp(9f).toFloat())
+            FocusGlide.shape(this, dp(Look.R_SMALL).toFloat())
             setOnFocusChangeListener { _, f ->
                 paint(f)
                 if (f && shown != player.id) {

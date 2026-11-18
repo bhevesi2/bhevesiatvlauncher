@@ -154,7 +154,7 @@ object QuickPanel {
             isFocusable = false
             clipChildren = false
             // a floating glass card with room around it, like the settings screen's panel
-            content.background = rounded(0xF0101116.toInt(), ctx.dp(20f).toFloat(), 1, C.BORDER)
+            content.background = rounded(C.PANEL, ctx.dp(Look.R_PANEL).toFloat(), 1, C.BORDER)
             content.setPadding(ctx.dp(22f), ctx.dp(22f), ctx.dp(22f), ctx.dp(22f))
             addView(content, LayoutParams(-1, -2, Gravity.END or Gravity.CENTER_VERTICAL).apply {
                 topMargin = ctx.dp(26f)
@@ -222,7 +222,7 @@ object QuickPanel {
             texts.addView(sub, LinearLayout.LayoutParams(-2, -2).apply { topMargin = ctx.dp(2f) })
             row.addView(texts, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = ctx.dp(12f) })
             row.addView(ImageView(ctx).apply { setImageDrawable(KidsLook.kidAvatar(k)) }, LinearLayout.LayoutParams(ctx.dp(26f), ctx.dp(26f)))
-            val r = ctx.dp(16f).toFloat()
+            val r = ctx.dp(Look.R_TILE).toFloat()
             val normal = Look.surface(ctx, r)
             row.background = normal
             FocusGlide.shape(row, r)
@@ -348,7 +348,7 @@ object QuickPanel {
             private val title = ctx.label(name, 12f, C.TEXT, bold = true).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
             private val sub = ctx.label(value ?: "", 10f, C.TEXT3).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
             private val texts = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-            private val r = ctx.dp(16f).toFloat()
+            private val r = ctx.dp(Look.R_TILE).toFloat()
             private val normal = Look.surface(ctx, r)
 
             init {

@@ -109,6 +109,21 @@ asks for the first time (Allow). OK opens a programme, Hold OK moves its row up 
 is something below. Settings › Home screen › Recommendations switches them off, chooses the apps
 and Continue watching, and resets the row order.
 
+## Design: Standard and Live
+
+Settings › Background › Design › Home screen chooses between two looks of the home screen.
+**Standard** keeps the apps' own banners as favourite tiles. **Live** makes the tiles taller
+(about 4:3) and shows on each what the app recommends right now (from Android TV's
+recommendation channels and Continue watching), with the app's banner as a small badge in the
+bottom left corner. The tile under the cursor shows the title of the picture and moves on to
+the app's next recommendation every 3.5 seconds with a soft cross-fade, like a Windows live
+tile; the other tiles stand still, so only one thing moves at a time and the TV is not loaded.
+An app that publishes nothing shows its banner large and darkened.
+
+Both share one set of tokens in `Look`: corner radii of 8 (small parts, list rows), 14 (tiles,
+covers, cards, pop-ups) and 20 dp (panels), round buttons; pictures grow 1.06× with a glow when
+focused, controls get the gliding light fill; no rings and no lifted shadows.
+
 ## Look
 
 The home screen's controls share one look, in the manner of Google TV: round icon buttons (Today,

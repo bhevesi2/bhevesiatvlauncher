@@ -414,6 +414,17 @@ class HomeActivity : Activity() {
         backdrop.setLayerType(View.LAYER_TYPE_NONE, null)
     }
 
+    private val liveTiles = ArrayList<LiveTile>()
+    private var lastRows: List<Reco.Row>? = null
+
+    /** Gives each live tile the pictures its app recommends now. */
+    private fun feedLive(rows: List<Reco.Row>) {
+        lastRows = rows
+        for (t in liveTiles) {
+            t.setPrograms(rows.flatMap { r -> r.programs.filter { it.pkg == t.app.pkg || (r.pkg == t.app.pkg && it.pkg.isBlank()) } })
+        }
+    }
+
     /** Reads the apps' rows in the background; the first rows are the favorites' apps. */
     private fun loadReco() {
         if (kidsOn) {
@@ -423,6 +434,16 @@ class HomeActivity : Activity() {
         if (!cfg.recommendations) {
             recoBox.visibility = View.GONE
             showMoreHint()
+            // the live tiles still want their pictures, without the rows below
+            if (liveTiles.isNotEmpty() && Reco.allowed(this) && !recoLoading) {
+                recoLoading = true
+                val app = applicationContext
+                val order = FavStore.get(this, cfg)
+                Bg.run({ Reco.load(app, order, cfg.recoHidden, true, emptyList()) }) { rows ->
+                    recoLoading = false
+                    if (!rows.isNullOrEmpty()) feedLive(rows)
+                }
+            }
             return
         }
         recoBox.visibility = View.VISIBLE
@@ -440,6 +461,7 @@ class HomeActivity : Activity() {
         val custom = cfg.recoOrder
         Bg.run({ Reco.load(app, order, hidden, watchNext, custom) }) { rows ->
             recoLoading = false
+            if (!rows.isNullOrEmpty()) feedLive(rows)
             if (rows.isNullOrEmpty()) reco.showEmpty()
             else reco.show(rows) { pkg -> Apps.one(this, pkg)?.let { AppColors.of(it) } ?: 0xFFE9E7E2.toInt() }
             showMoreHint()
@@ -489,14 +511,14 @@ class HomeActivity : Activity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(9f), dp(9f), dp(11f), dp(9f))
-            background = rounded(C.GLASS, dp(9f).toFloat(), 1, C.BORDER)
+            background = Look.surface(this@HomeActivity, dp(Look.R_TILE).toFloat())
             visibility = View.GONE
             // OK plays or pauses; holding OK opens the Music panel with every zone
             isFocusable = true
             isClickable = true
             isLongClickable = true
             contentDescription = "Play / pause. Hold for music zones"
-            FocusGlide.shape(this, dp(9f).toFloat())
+            FocusGlide.shape(this, dp(Look.R_TILE).toFloat())
             setOnFocusChangeListener { _, f -> paintNowPlaying(f) }
             setOnClickListener { togglePlay() }
             setOnLongClickListener {
@@ -538,7 +560,7 @@ class HomeActivity : Activity() {
     }
 
     private fun paintNowPlaying(f: Boolean) {
-        npCard.background = if (f) FocusGlide.fill(npCard, dp(9f).toFloat()) else rounded(C.GLASS, dp(9f).toFloat(), 1, C.BORDER)
+        npCard.background = if (f) FocusGlide.fill(npCard, dp(Look.R_TILE).toFloat()) else Look.surface(this, dp(Look.R_TILE).toFloat())
         npLabel.setTextColor(if (f) C.DARK2 else C.TEXT3)
         npTitle.setTextColor(if (f) C.DARK else C.TEXT)
         npArtist.setTextColor(if (f) C.DARK2 else C.TEXT2)
@@ -617,16 +639,21 @@ class HomeActivity : Activity() {
     private fun rebuildDynamic(focusFav: Int = 0) {
         // favourites: fixed-size tiles in a scrolling row
         favRow.removeAllViews()
+        liveTiles.clear()
+        val live = cfg.design == "live" && !kidsOn
         val tileW = (resources.displayMetrics.widthPixels - 2 * dp(48f) - 5 * dp(12f)) / 6
+        // Live: taller tiles (about 4:3), so a recommendation's picture has room
+        favRow.layoutParams = favRow.layoutParams.apply { height = if (live) tileW * 3 / 4 else dp(76f) }
         val entries = FavStore.get(this, cfg).mapNotNull { Apps.one(this, it) }
         entries.forEachIndexed { i, app ->
-            val tile = AppTile(this, app)
+            val tile: View = if (live) LiveTile(this, app).also { liveTiles.add(it) } else AppTile(this, app)
             tile.setOnClickListener { if (!Apps.launch(this, app.pkg)) toast("Can't open ${app.label}") }
             tile.setOnLongClickListener { favMenu(app); true }
             val lp = LinearLayout.LayoutParams(tileW, ViewGroup.LayoutParams.MATCH_PARENT)
             if (i > 0) lp.leftMargin = dp(12f)
             favRow.addView(tile, lp)
         }
+        lastRows?.let { feedLive(it) }
         if (entries.isEmpty()) {
             favRow.addView(pill("Add favorites", R.drawable.ic_plus) {
                 open(AllAppsActivity::class.java)
@@ -876,6 +903,7 @@ class HomeActivity : Activity() {
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_MENU && !kidsOn) {
             (currentFocus as? AppTile)?.let { favMenu(it.app); return true }
+            (currentFocus as? LiveTile)?.let { favMenu(it.app); return true }
         }
         return super.onKeyDown(keyCode, event)
     }

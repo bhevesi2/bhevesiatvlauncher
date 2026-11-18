@@ -286,7 +286,7 @@ object Reco {
 /** One recommendation: its picture, a progress line for things already started, glowing when focused. */
 class RecoCard(ctx: Context, val program: Reco.Program, val row: Reco.Row, glow: Int) : FrameLayout(ctx) {
     val image = ImageView(ctx).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
-    private val glass = rounded(0x33FFFFFF, ctx.dp(8f).toFloat())
+    private val glass = rounded(0x33FFFFFF, ctx.dp(Look.R_TILE).toFloat())
     private val progress = program.progress
     private val bar = Paint(Paint.ANTI_ALIAS_FLAG)
 
@@ -307,10 +307,10 @@ class RecoCard(ctx: Context, val program: Reco.Program, val row: Reco.Row, glow:
         }
         addView(name, LayoutParams(-1, -1))
         contentDescription = program.title
-        FocusGlide.shape(this, ctx.dp(8f).toFloat(), 0f)
+        FocusGlide.shape(this, ctx.dp(Look.R_TILE).toFloat(), 0f)
         FocusGlide.glow(this, glow)
         setOnFocusChangeListener { v, f ->
-            v.animate().scaleX(if (f) 1.1f else 1f).scaleY(if (f) 1.1f else 1f).setDuration(240).setInterpolator(Motion.EASE).start()
+            Look.grow(v, f, Look.IMAGE_GROW)
             Neighbors.push(v, f)
         }
     }
