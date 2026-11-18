@@ -469,7 +469,13 @@ class RecoPanel(private val act: android.app.Activity) : LinearLayout(act) {
         for (i in 0 until childCount) {
             val c = getChildAt(i)
             val a = if (block == null || c === block) 1f else 0.5f
-            if (c.alpha != a) c.animate().alpha(a).setDuration(260).setInterpolator(Motion.EASE).start()
+            if (c.alpha == a) continue
+            // a half-transparent row of pictures would be painted off-screen in every frame;
+            // in a layer it is painted once and only faded
+            if (a < 1f) c.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+            c.animate().alpha(a).setDuration(260).setInterpolator(Motion.EASE).withEndAction {
+                if (c.alpha >= 1f) c.setLayerType(View.LAYER_TYPE_NONE, null)
+            }.start()
         }
     }
 

@@ -36,8 +36,15 @@ data class Palette(
     }
 }
 
-/** Vector landscape drawn in a 1920x1080 design space, center-cropped to the view. */
+/**
+ * Vector landscape drawn in a 1920x1080 design space, center-cropped to the view. It is always
+ * drawn into a layer of its own: large anti-aliased shapes are costly for a TV's graphics chip,
+ * and without the layer every frame of a cursor move would paint them all again.
+ */
 class LandscapeView(context: Context) : View(context) {
+    init {
+        setLayerType(LAYER_TYPE_HARDWARE, null)
+    }
 
     var style: String = "alpesi"
         set(value) { field = value; invalidate() }
@@ -48,6 +55,7 @@ class LandscapeView(context: Context) : View(context) {
 
     /** The Christmas landscape shown instead of the lake or the hills, or null. */
     private var winter: Winter.Scene? = null
+    val winterScene: Winter.Scene? get() = winter
     private var wpal: Winter.Pal? = null
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
 
@@ -111,7 +119,6 @@ class LandscapeView(context: Context) : View(context) {
         if (scene === winter) return
         winter = scene
         wpal = if (scene != null) Winter.palette(context, phase) else null
-        setLayerType(if (scene != null) LAYER_TYPE_HARDWARE else LAYER_TYPE_NONE, null)
         invalidate()
     }
 

@@ -1057,7 +1057,8 @@ class Backdrop(ctx: Context) : FrameLayout(ctx) {
     private var gen = 0
 
     init {
-        setBackgroundColor(Color.BLACK)
+        // no black underneath: the landscape or the photo always covers the whole screen, and
+        // every full-screen layer is painted again in every frame of a cursor move
         addView(landscape, LayoutParams(-1, -1))
         addView(photoA, LayoutParams(-1, -1))
         addView(photoB, LayoutParams(-1, -1))
@@ -1127,9 +1128,18 @@ class Backdrop(ctx: Context) : FrameLayout(ctx) {
     private fun showLandscape(style: String, p: Phase, animate: Boolean) {
         landscape.style = if (style == "hills") "domb" else "alpesi"
         landscape.setPhase(p, animate)
+        landscape.visibility = View.VISIBLE
         val ms = if (animate) 2500L else 0L
-        photoA.animate().alpha(0f).setDuration(ms).start()
-        photoB.animate().alpha(0f).setDuration(ms).start()
+        for (ph in listOf(photoA, photoB)) {
+            if (ph.visibility != View.VISIBLE) continue
+            ph.animate().alpha(0f).setDuration(ms).withEndAction {
+                // out of sight, out of the frame: a hidden photo is not painted at all
+                if (front == null) {
+                    ph.visibility = View.GONE
+                    ph.setImageDrawable(null)
+                }
+            }.start()
+        }
         front = null
     }
 
@@ -1141,10 +1151,16 @@ class Backdrop(ctx: Context) : FrameLayout(ctx) {
         next.bringToFront()
         dimView.bringToFront()
         next.alpha = 0f
+        next.visibility = View.VISIBLE
         next.animate().alpha(1f).setDuration(if (animate) 2500L else 0L).withEndAction {
-            if (prev != null && front === next) {
-                prev.alpha = 0f
-                prev.setImageDrawable(null)
+            if (front === next) {
+                // the photo covers everything: what is under it need not be painted any more
+                if (prev != null) {
+                    prev.alpha = 0f
+                    prev.setImageDrawable(null)
+                    prev.visibility = View.GONE
+                }
+                if (landscape.winterScene == null) landscape.visibility = View.INVISIBLE
             }
         }.start()
         front = next

@@ -231,12 +231,11 @@ Display & sound, All settings, or TV decides.
 
 ## Resolution
 
-Many 4K TVs draw their menus at 1920×1080 and stretch them to the panel (the TCL does). Settings ›
-Look › Resolution switches the TV to draw at the panel's 3840×2160, with the density doubled so
-every screen keeps its layout and only gets sharper (`wm size 3840x2160; wm density 640` over
-Home Assistant's ADB). It is the TV's own setting, so every app's menus change with it, and
-animations may be slower. Like a computer's display settings, it goes back by itself after
-20 seconds unless kept. `restore-tv.bat` sets 1080p again.
+The menus of these TVs are drawn at 1920×1080 and stretched to the 4K panel; only films and
+pictures in a player are 4K. The TCL's graphics plane is limited to 1920×1080
+(`ro.surface_flinger.max_graphics_width`), so `wm size 3840x2160` would only enlarge everything,
+not sharpen it: the launcher has no 4K switch. `restore-tv.bat` sets the TV's own 1080p and
+density again if they were ever changed.
 
 ## Camera pop-ups
 

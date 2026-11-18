@@ -207,6 +207,8 @@ class HomeActivity : Activity() {
         root.addView(picker, FrameLayout.LayoutParams(-1, -1))
 
         setContentView(root)
+        // the background always covers the window: no need to paint the window's black under it
+        window.setBackgroundDrawable(null)
     }
 
     /**

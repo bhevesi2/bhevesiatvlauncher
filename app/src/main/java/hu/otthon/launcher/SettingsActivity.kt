@@ -59,12 +59,6 @@ class SettingsActivity : PanelActivity() {
     /** The kids profile's time helpers are looked up in Home Assistant once, when its page is first shown. */
     private var kidsChecked = false
 
-    override fun onResume() {
-        super.onResume()
-        // back after a resolution change (the screen was laid out again): keep it?
-        Bg.main.postDelayed({ if (!isFinishing) Resolution.askKeep(this) }, 600)
-    }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         cfg = Config.load(this)
@@ -438,19 +432,6 @@ class SettingsActivity : PanelActivity() {
             backdrop.show(cfg.background, Backgrounds.phase(this, cfg), true)
         })
         note("A preview lasts 10 minutes, then the picture follows the sun again.")
-        val res = Resolution.info(this)
-        if (res.canUhd) {
-            section("Resolution")
-            add(SegmentRow(this, "Draw the screen in", listOf("1080p", "4K"), if (res.uhd) 1 else 0) { i ->
-                if (!cfg.haEnabled) {
-                    toast("Needs Home Assistant's ADB connection to the TV")
-                    return@SegmentRow
-                }
-                toast(if (i == 1) "Switching to 4K…" else "Switching to 1080p…")
-                Resolution.set(this, cfg, i == 1) { r -> if (r != Adb.Result.OK) toast(Adb.explain(r)) }
-            })
-            note("This TV's panel is ${res.physW}×${res.physH}; its menus are drawn at ${res.curW}×${res.curH}. 4K makes the launcher (and every app's menus) sharper, with the same layout, but the TV has four times the pixels to draw, so animations may be slower. It goes back by itself after 20 seconds unless you keep it. Films are 4K either way.")
-        }
         section("Motion")
         val levels = listOf("full", "reduced", "off")
         add(SegmentRow(this, "Animations", listOf("Full", "Reduced", "Off"), levels.indexOf(cfg.animations).coerceAtLeast(0)) { i ->

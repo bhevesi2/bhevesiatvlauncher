@@ -74,7 +74,7 @@ object QuickPanel {
         val manager = ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val view = Panel(ctx, cfg)
         val lp = WindowManager.LayoutParams(
-            ctx.dp(360f), WindowManager.LayoutParams.MATCH_PARENT, type,
+            ctx.dp(380f + 30f), WindowManager.LayoutParams.MATCH_PARENT, type,
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_DIM_BEHIND,
             PixelFormat.TRANSLUCENT
         ).apply {
@@ -151,36 +151,36 @@ object QuickPanel {
         private var grid: View? = null
 
         init {
-            background = GradientDrawable().apply {
-                setColor(0xF2121318.toInt())
-                val r = ctx.dp(26f).toFloat()
-                cornerRadii = floatArrayOf(r, r, 0f, 0f, 0f, 0f, r, r)
-                setStroke(1, Look.HAIRLINE)
-            }
             isFocusable = false
             clipChildren = false
-            content.setPadding(ctx.dp(26f), ctx.dp(28f), ctx.dp(26f), ctx.dp(22f))
-            addView(content, LayoutParams(-1, -1))
+            // a floating glass card with room around it, like the settings screen's panel
+            content.background = rounded(0xF0101116.toInt(), ctx.dp(20f).toFloat(), 1, C.BORDER)
+            content.setPadding(ctx.dp(22f), ctx.dp(22f), ctx.dp(22f), ctx.dp(22f))
+            addView(content, LayoutParams(-1, -2, Gravity.END or Gravity.CENTER_VERTICAL).apply {
+                topMargin = ctx.dp(26f)
+                bottomMargin = ctx.dp(26f)
+                rightMargin = ctx.dp(30f)
+            })
             FocusGlide.install(content)
 
             // the time and the date, like the top of Google TV's panel
             val now = Date()
-            content.addView(ctx.label(SimpleDateFormat("HH:mm", Locale.getDefault()).format(now), 34f, C.TEXT, light = true))
+            content.addView(ctx.label(SimpleDateFormat("HH:mm", Locale.getDefault()).format(now), 30f, C.TEXT, light = true))
             content.addView(ctx.label(SimpleDateFormat("EEEE, d MMMM", Locale.ENGLISH).format(now), 12f, C.TEXT3),
                 LinearLayout.LayoutParams(-2, -2).apply { topMargin = ctx.dp(4f) })
 
             if (cfg.kids.on) content.addView(profileRow(), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(18f) })
 
-            content.addView(pages, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = ctx.dp(18f) })
+            content.addView(pages, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(18f) })
             showGrid()
         }
 
         fun enter() {
             val d = resources.displayMetrics.density
             if (Motion.level != Motion.OFF) {
-                translationX = 60 * d
-                alpha = 0f
-                animate().translationX(0f).alpha(1f).setDuration(240).setInterpolator(DecelerateInterpolator(2f)).start()
+                content.translationX = 60 * d
+                content.alpha = 0f
+                content.animate().translationX(0f).alpha(1f).setDuration(240).setInterpolator(DecelerateInterpolator(2f)).start()
             }
             post { firstTile()?.requestFocus() }
         }
@@ -264,23 +264,22 @@ object QuickPanel {
                     hide()
                     Adb.run(ctx, cfg, "input keyevent KEYCODE_SLEEP") { }
                 },
-                Tile(R.drawable.ic_gear, "Launcher", "Settings") {
+                Tile(R.drawable.ic_gear, "Launcher", null) {
                     open(ctx, Intent(ctx, SettingsActivity::class.java))
+                },
+                Tile(R.drawable.ic_tv_gear, "All settings", null) {
+                    open(ctx, Intent(android.provider.Settings.ACTION_SETTINGS))
                 }
             )
             var line: LinearLayout? = null
+            // three to a line, like Google TV's panel
             tiles.forEachIndexed { i, t ->
-                if (i % 2 == 0) {
+                if (i % 3 == 0) {
                     line = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; clipChildren = false }
                     g.addView(line, LinearLayout.LayoutParams(-1, -2).apply { if (i > 0) topMargin = ctx.dp(10f) })
                 }
-                line!!.addView(t.view, LinearLayout.LayoutParams(0, ctx.dp(78f), 1f).apply { if (i % 2 == 1) leftMargin = ctx.dp(10f) })
+                line!!.addView(t.view, LinearLayout.LayoutParams(0, ctx.dp(80f), 1f).apply { if (i % 3 > 0) leftMargin = ctx.dp(10f) })
             }
-            val all = Tile(R.drawable.ic_tv_gear, "All settings", null) {
-                open(ctx, Intent(android.provider.Settings.ACTION_SETTINGS))
-            }
-            g.addView(all.view, LinearLayout.LayoutParams(-1, ctx.dp(54f)).apply { topMargin = ctx.dp(10f) })
-            all.wide()
             grid = g
             pages.addView(g, LayoutParams(-1, -2))
             post { firstTile()?.requestFocus() }
@@ -326,10 +325,10 @@ object QuickPanel {
                 orientation = LinearLayout.VERTICAL
                 isFocusable = true
                 isClickable = true
-                setPadding(ctx.dp(14f), ctx.dp(12f), ctx.dp(12f), ctx.dp(10f))
+                setPadding(ctx.dp(12f), ctx.dp(12f), ctx.dp(10f), ctx.dp(10f))
             }
             private val img = ImageView(ctx).apply { setImageResource(icon); setColorFilter(C.TEXT) }
-            private val title = ctx.label(name, 13f, C.TEXT, bold = true).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
+            private val title = ctx.label(name, 12f, C.TEXT, bold = true).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
             private val sub = ctx.label(value ?: "", 10f, C.TEXT3).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
             private val texts = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
             private val r = ctx.dp(16f).toFloat()
@@ -356,15 +355,6 @@ object QuickPanel {
             fun value(v: String) {
                 sub.text = v
                 sub.visibility = if (v.isBlank()) View.GONE else View.VISIBLE
-            }
-
-            /** The long tile at the bottom: icon and name on one line. */
-            fun wide() {
-                view.orientation = LinearLayout.HORIZONTAL
-                view.gravity = Gravity.CENTER_VERTICAL
-                view.removeAllViews()
-                view.addView(img, LinearLayout.LayoutParams(ctx.dp(20f), ctx.dp(20f)))
-                view.addView(texts, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = ctx.dp(12f) })
             }
         }
     }
