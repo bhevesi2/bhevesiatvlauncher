@@ -408,7 +408,10 @@ object QuickPanel {
                 }
                 else -> "Connected"
             }
-        } catch (e: Exception) { "" }
+        } catch (e: Exception) {
+            android.util.Log.w("OtthonQuick", "network state not readable", e)
+            ""
+        }
 
         /** Inputs, in the panel: the TV, then the HDMI inputs with what is plugged in. */
         private fun showInputs() {

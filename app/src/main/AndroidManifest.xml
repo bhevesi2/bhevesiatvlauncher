@@ -5,6 +5,7 @@
     <!-- Granted once over ADB (pm grant): lets the launcher switch its own accessibility service
          (app lock, colour buttons) back on after an update, when Android leaves it unbound. -->
     <!-- the quick settings show the Wi-Fi's name: Android only tells it with location access (given over ADB) -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
