@@ -73,12 +73,22 @@ object Look {
     /** How much a focused picture (app tile, cover, recommendation) grows, with its glow. */
     const val IMAGE_GROW = 1.06f
 
-    /** Corner radii, in dp: small parts, tiles and pictures, panels. Buttons are fully round. */
-    const val R_SMALL = 8f
-    const val R_TILE = 14f
-    const val R_PANEL = 20f
+    /**
+     * Corner radii, in dp: list rows and small parts; controls, tiles and pictures; panels.
+     * Small and the same everywhere, so nothing looks soft or bubbly next to anything else.
+     */
+    const val R_SMALL = 6f
+    const val R_TILE = 8f
+    const val R_PANEL = 12f
 
-    fun surface(ctx: Context, radius: Float): GradientDrawable = rounded(SURFACE, radius, ctx.dp(1f), HAIRLINE)
+    /** Controls on the background: dark glass, no frame (a frame on everything looks busy). */
+    fun surface(ctx: Context, radius: Float): GradientDrawable = rounded(SURFACE_SOLID, radius)
+
+    /** A little denser than the old framed glass, since it has no edge any more. */
+    const val SURFACE_SOLID = 0x8C0B0D12.toInt()
+
+    /** Every floating panel: settings, quick settings, pop-ups, pickers. */
+    fun panel(ctx: Context): GradientDrawable = rounded(C.PANEL, ctx.dp(R_PANEL).toFloat())
 
     /** The small grow and settle of a control taking or leaving focus. */
     fun grow(v: View, focused: Boolean, by: Float = GROW) {
@@ -135,9 +145,9 @@ fun Context.pill(text: String, iconRes: Int?, onClick: () -> Unit): TextView {
             setCompoundDrawables(icon, null, null, null)
             compoundDrawablePadding = dp(6f)
         }
-        FocusGlide.shape(this, -1f)
+        FocusGlide.shape(this, dp(Look.R_TILE).toFloat())
         fun paint(focused: Boolean) {
-            background = if (focused) FocusGlide.fill(this, dp(18f).toFloat()) else Look.surface(ctx, dp(18f).toFloat())
+            background = if (focused) FocusGlide.fill(this, dp(Look.R_TILE).toFloat()) else Look.surface(ctx, dp(Look.R_TILE).toFloat())
             setTextColor(if (focused) C.DARK else C.TEXT)
             icon?.setTint(if (focused) C.DARK else C.TEXT)
         }
@@ -163,7 +173,7 @@ fun weatherIcon(condition: String): Int = when (condition) {
 /** App tile with banner (or icon + name) and focus zoom. */
 class AppTile(ctx: Context, val app: AppEntry) : FrameLayout(ctx) {
     private val radius = ctx.dp(Look.R_TILE).toFloat()
-    private val glass = rounded(C.GLASS, radius, 1, C.BORDER)
+    private val glass = rounded(C.GLASS, radius)
     private val solid = rounded(0xFF17181D.toInt(), radius)
     var onFocused: (() -> Unit)? = null
 
@@ -955,13 +965,13 @@ class RowView(ctx: Context, title: String, value: String? = null, selected: Bool
         valueView.ellipsize = android.text.TextUtils.TruncateAt.MIDDLE
         valueView.gravity = Gravity.END
         addView(valueView, LayoutParams(-2, -2).apply { leftMargin = ctx.dp(12f) })
-        FocusGlide.shape(this, ctx.dp(8f).toFloat())
+        FocusGlide.shape(this, ctx.dp(Look.R_SMALL).toFloat())
         paint(false)
         setOnFocusChangeListener { _, f -> paint(f) }
     }
 
     private fun paint(f: Boolean) {
-        val r = context.dp(8f).toFloat()
+        val r = context.dp(Look.R_SMALL).toFloat()
         background = if (f) FocusGlide.fill(this, r) else rounded(C.ROW, r)
         titleView.setTextColor(if (f) C.DARK else if (passive) C.TEXT3 else C.TEXT)
         valueView.setTextColor(if (f) C.DARK2 else tone ?: C.TEXT3)
@@ -979,7 +989,7 @@ object Popup {
         root.setBackgroundColor(0xB3000000.toInt())
         val panel = LinearLayout(act).apply {
             orientation = LinearLayout.VERTICAL
-            background = rounded(0xF516171C.toInt(), act.dp(16f).toFloat(), 1, C.BORDER)
+            background = Look.panel(act)
             setPadding(act.dp(16f), act.dp(16f), act.dp(16f), act.dp(14f))
         }
         panel.addView(act.label(title, 15f, C.TEXT, bold = true).apply {
@@ -1035,7 +1045,7 @@ object Popup {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
             imeOptions = EditorInfo.IME_ACTION_DONE
             setSingleLine(true)
-            background = rounded(0x1FFFFFFF, act.dp(8f).toFloat(), 1, C.BORDER)
+            background = rounded(0x1FFFFFFF, act.dp(Look.R_SMALL).toFloat(), 1, C.BORDER)
             setPadding(act.dp(12f), act.dp(10f), act.dp(12f), act.dp(10f))
         }
         panel.addView(edit, LinearLayout.LayoutParams(-1, -2))
@@ -1203,7 +1213,7 @@ class PanelFrame(private val act: Activity, title: String, hint: String? = null)
         })
 
         panel.orientation = LinearLayout.VERTICAL
-        panel.background = rounded(C.PANEL, act.dp(20f).toFloat(), 1, C.BORDER)
+        panel.background = Look.panel(act)
         panel.clipToOutline = true
         panel.outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
         FocusGlide.install(panel)

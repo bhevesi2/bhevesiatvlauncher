@@ -90,7 +90,7 @@ class PickEntityActivity : PanelActivity() {
 
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = rounded(C.PANEL, dp(18f).toFloat(), 1, C.BORDER)
+            background = Look.panel(this@PickEntityActivity)
             setPadding(dp(20f), dp(18f), dp(20f), dp(14f))
         }
         panel.addView(label(intent.getStringExtra("title") ?: "Choose an entity", 17f, C.TEXT, bold = true))

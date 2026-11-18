@@ -266,14 +266,14 @@ class MaActivity : PanelActivity() {
             addView(cover, LayoutParams(dp(26f), dp(26f)))
             addView(bars, LayoutParams(dp(12f), dp(12f)).apply { leftMargin = dp(9f) })
             addView(text, LayoutParams(-2, -2).apply { leftMargin = dp(7f) })
-            FocusGlide.shape(this, -1f)
+            FocusGlide.shape(this, dp(Look.R_TILE).toFloat())
             paint(false)
             setOnFocusChangeListener { _, f -> paint(f) }
             setOnClickListener { openNow() }
         }
 
         private fun paint(f: Boolean) {
-            background = if (f) FocusGlide.fill(this, dp(18f).toFloat()) else Look.surface(context, dp(18f).toFloat())
+            background = if (f) FocusGlide.fill(this, dp(Look.R_TILE).toFloat()) else Look.surface(context, dp(Look.R_TILE).toFloat())
             text.setTextColor(if (f) C.DARK else C.TEXT)
             bars.color = if (f) C.DARK else C.ON
         }
@@ -349,7 +349,7 @@ class MaActivity : PanelActivity() {
     private fun paintTabs() {
         tabs.forEachIndexed { i, t ->
             // the open tab keeps a light edge, so it can be told apart without the cursor on it
-            if (!t.isFocused) t.background = if (i == tab) rounded(Look.SURFACE, dp(18f).toFloat(), dp(2f), 0xCCFFFFFF.toInt()) else Look.surface(this, dp(18f).toFloat())
+            if (!t.isFocused) t.background = if (i == tab) rounded(Look.SURFACE_SOLID, dp(Look.R_TILE).toFloat(), dp(2f), 0xCCFFFFFF.toInt()) else Look.surface(this, dp(Look.R_TILE).toFloat())
         }
     }
 
@@ -1054,16 +1054,12 @@ class MaActivity : PanelActivity() {
         isFocusable = true
         isClickable = true
         contentDescription = name
-        val normal = GradientDrawable().apply {
-            shape = GradientDrawable.OVAL
-            setColor(Look.SURFACE)
-            setStroke(dp(1f), Look.HAIRLINE)
-        }
+        val normal = Look.surface(this@MaActivity, dp(Look.R_TILE).toFloat())
         background = normal
         setColorFilter(C.TEXT)
-        FocusGlide.shape(this, -1f)
+        FocusGlide.shape(this, dp(Look.R_TILE).toFloat())
         setOnFocusChangeListener { v, f ->
-            background = if (f) FocusGlide.fill(this, 999f) else normal
+            background = if (f) FocusGlide.fill(this, dp(Look.R_TILE).toFloat()) else normal
             setColorFilter(if (f) C.DARK else C.TEXT)
             Look.grow(v, f)
         }

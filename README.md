@@ -120,9 +120,11 @@ the app's next recommendation every 3.5 seconds with a soft cross-fade, like a W
 tile; the other tiles stand still, so only one thing moves at a time and the TV is not loaded.
 An app that publishes nothing shows its banner large and darkened.
 
-Both share one set of tokens in `Look`: corner radii of 8 (small parts, list rows), 14 (tiles,
-covers, cards, pop-ups) and 20 dp (panels), round buttons; pictures grow 1.06× with a glow when
-focused, controls get the gliding light fill; no rings and no lifted shadows.
+Both share one set of tokens in `Look`: small corner radii, the same everywhere — 6 dp (list
+rows), 8 dp (buttons, pills, the status capsule, tiles, covers, cards) and 12 dp (every panel:
+settings, quick settings, pop-ups, pickers, `Look.panel`); controls sit on frameless dark glass
+(`Look.surface`); pictures grow 1.06× with a glow when focused, controls get the gliding light
+fill; no rings, no frames and no lifted shadows.
 
 ## Look
 
@@ -236,11 +238,12 @@ are kept). Only buttons that have an action are taken over, the rest still reach
 Google TV home answers the remote's gear button with its settings panel. With Google TV home
 switched off, the launcher's `KeyService` takes the button and opens its own **quick settings**,
 over whatever is on screen (a film keeps playing): the time, the profile (one press into the
-kids profile), and nine tiles: Picture and Sound (over a film the TCL's own menus, which close at
-once on the home screen; there Android's Display & sound page), Inputs (listed in the panel),
-Network, Cameras, Sleep timer (off → 15 → 30 → 60 → 90 → 120 minutes; the TV goes to sleep through
-Home Assistant's ADB), Restart (press twice), the launcher's settings, and All settings. The TCL
-does not let an app start the screen saver, so there is no tile for it. The gear again or Back
+kids profile), and rows made of the same parts as the settings screen: Inputs (listed in the
+panel), Network, Sleep timer (off → 15 → 30 → 60 → 90 → 120 minutes; the TV goes to sleep
+through Home Assistant's ADB), Restart (press OK twice), Cameras, Launcher settings and All TV
+settings. There is no Picture or Sound: the TCL's own menus only open over a film, and from the
+home screen only Android's generic page would come. The TCL does not let an app start the
+screen saver either. The gear again or Back
 closes it; it also closes after half a minute. The home screen has no TV-settings or profile
 button any more: both are here. Settings › Remote ›
 Gear button opens: Automatic (the panel while Google TV home is off), Quick settings (always),

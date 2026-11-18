@@ -77,7 +77,7 @@ class SettingsActivity : PanelActivity() {
 
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            background = rounded(C.PANEL, dp(Look.R_PANEL).toFloat(), 1, C.BORDER)
+            background = Look.panel(this@SettingsActivity)
             clipToOutline = true
             outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
         }
@@ -94,7 +94,7 @@ class SettingsActivity : PanelActivity() {
                 isFocusable = true
                 isClickable = true
                 setPadding(dp(10f), dp(8f), dp(10f), dp(8f))
-                FocusGlide.shape(this, dp(8f).toFloat())
+                FocusGlide.shape(this, dp(Look.R_SMALL).toFloat())
                 setOnFocusChangeListener { _, f ->
                     if (f && i != navIndex && !rendering) showRoot(i, false)
                     paintNav()
@@ -252,8 +252,8 @@ class SettingsActivity : PanelActivity() {
         navViews.forEachIndexed { i, v ->
             val f = v.isFocused
             v.background = when {
-                f -> FocusGlide.fill(v, dp(8f).toFloat())
-                i == navIndex -> rounded(0x1FFFFFFF, dp(8f).toFloat())
+                f -> FocusGlide.fill(v, dp(Look.R_SMALL).toFloat())
+                i == navIndex -> rounded(0x1FFFFFFF, dp(Look.R_SMALL).toFloat())
                 else -> null
             }
             v.setTextColor(if (f) C.DARK else if (i == navIndex) C.TEXT else C.TEXT2)

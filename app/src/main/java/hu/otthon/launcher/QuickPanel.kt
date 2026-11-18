@@ -74,7 +74,7 @@ object QuickPanel {
         val manager = ctx.getSystemService(Context.WINDOW_SERVICE) as WindowManager
         val view = Panel(ctx, cfg)
         val lp = WindowManager.LayoutParams(
-            ctx.dp(380f + 30f), WindowManager.LayoutParams.MATCH_PARENT, type,
+            ctx.dp(340f + 30f), WindowManager.LayoutParams.MATCH_PARENT, type,
             WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or WindowManager.LayoutParams.FLAG_DIM_BEHIND,
             PixelFormat.TRANSLUCENT
         ).apply {
@@ -141,21 +141,21 @@ object QuickPanel {
 
     // ---------- the panel ----------
 
+    /**
+     * The panel: made of the same parts as the settings screen (its panel, its title, its rows,
+     * its section headings and its cursor), so the two look like one thing.
+     */
     private class Panel(private val ctx: Context, private val cfg: Config) : FrameLayout(ctx) {
-        private val content = LinearLayout(ctx).apply {
-            orientation = LinearLayout.VERTICAL
-            clipChildren = false
-            clipToPadding = false
-        }
-        private val pages = FrameLayout(ctx).apply { clipChildren = false }
-        private var grid: View? = null
+        private val content = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        private val list = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+        private var restartAsked = 0L
 
         init {
             isFocusable = false
-            clipChildren = false
-            // a floating glass card with room around it, like the settings screen's panel
-            content.background = rounded(C.PANEL, ctx.dp(Look.R_PANEL).toFloat(), 1, C.BORDER)
-            content.setPadding(ctx.dp(22f), ctx.dp(22f), ctx.dp(22f), ctx.dp(22f))
+            content.background = Look.panel(ctx)
+            content.clipToOutline = true
+            content.outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
+            content.setPadding(ctx.dp(22f), ctx.dp(20f), ctx.dp(22f), ctx.dp(20f))
             addView(content, LayoutParams(-1, -2, Gravity.END or Gravity.CENTER_VERTICAL).apply {
                 topMargin = ctx.dp(26f)
                 bottomMargin = ctx.dp(26f)
@@ -163,37 +163,35 @@ object QuickPanel {
             })
             FocusGlide.install(content)
 
-            // the time and the date, like the top of Google TV's panel
-            val now = Date()
-            content.addView(ctx.label(SimpleDateFormat("HH:mm", Locale.getDefault()).format(now), 30f, C.TEXT, light = true))
-            content.addView(ctx.label(SimpleDateFormat("EEEE, d MMMM", Locale.ENGLISH).format(now), 12f, C.TEXT3),
-                LinearLayout.LayoutParams(-2, -2).apply { topMargin = ctx.dp(4f) })
-
-            if (cfg.kids.on) content.addView(profileRow(), LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(18f) })
-
-            content.addView(pages, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(18f) })
-            showGrid()
+            // the title like the settings screen's, the time beside it
+            val head = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.BOTTOM }
+            head.addView(ctx.label("Quick settings", 17f, C.TEXT, bold = true), LinearLayout.LayoutParams(0, -2, 1f))
+            head.addView(ctx.label(SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()), 17f, C.TEXT3, light = true))
+            content.addView(head, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ctx.dp(6f) })
+            content.addView(list, LinearLayout.LayoutParams(-1, -2))
+            showMain()
         }
 
         fun enter() {
             val d = resources.displayMetrics.density
             if (Motion.level != Motion.OFF) {
-                content.translationX = 60 * d
+                content.translationX = 40 * d
                 content.alpha = 0f
-                content.animate().translationX(0f).alpha(1f).setDuration(240).setInterpolator(DecelerateInterpolator(2f)).start()
+                content.animate().translationX(0f).alpha(1f).setDuration(220).setInterpolator(DecelerateInterpolator(2f)).start()
             }
-            post { firstTile()?.requestFocus() }
+            post { firstRow()?.requestFocus() }
         }
 
-        private fun firstTile(): View? = (grid as? LinearLayout)?.let { g ->
-            ((g.getChildAt(0) as? LinearLayout)?.getChildAt(0))
+        private fun firstRow(): View? {
+            for (i in 0 until list.childCount) list.getChildAt(i).takeIf { it.isFocusable }?.let { return it }
+            return null
         }
 
         override fun dispatchKeyEvent(event: KeyEvent): Boolean {
             poke()
             if (event.keyCode == KeyEvent.KEYCODE_BACK) {
                 if (event.action == KeyEvent.ACTION_UP) {
-                    if (grid?.visibility != View.VISIBLE) showGrid() else hide()
+                    if (inSub) showMain() else hide()
                 }
                 return true
             }
@@ -204,103 +202,58 @@ object QuickPanel {
             return super.dispatchKeyEvent(event)
         }
 
-        /** The grown-ups' profile, and one press into the kids profile. */
-        private fun profileRow(): View {
-            val k = cfg.kids
-            val row = LinearLayout(ctx).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                isFocusable = true
-                isClickable = true
-                setPadding(ctx.dp(10f), ctx.dp(9f), ctx.dp(14f), ctx.dp(9f))
-            }
-            row.addView(ImageView(ctx).apply { setImageDrawable(KidsLook.grownAvatar(k)) }, LinearLayout.LayoutParams(ctx.dp(34f), ctx.dp(34f)))
-            val texts = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-            val name = ctx.label(k.mainName.ifBlank { "Grown-ups" }, 14f, C.TEXT, bold = true)
-            val sub = ctx.label("Switch to ${k.name}'s profile", 11f, C.TEXT3)
-            texts.addView(name)
-            texts.addView(sub, LinearLayout.LayoutParams(-2, -2).apply { topMargin = ctx.dp(2f) })
-            row.addView(texts, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = ctx.dp(12f) })
-            row.addView(ImageView(ctx).apply { setImageDrawable(KidsLook.kidAvatar(k)) }, LinearLayout.LayoutParams(ctx.dp(26f), ctx.dp(26f)))
-            val r = ctx.dp(Look.R_TILE).toFloat()
-            val normal = Look.surface(ctx, r)
-            row.background = normal
-            FocusGlide.shape(row, r)
-            row.setOnFocusChangeListener { _, f ->
-                row.background = if (f) FocusGlide.fill(row, r) else normal
-                name.setTextColor(if (f) C.DARK else C.TEXT)
-                sub.setTextColor(if (f) C.DARK2 else C.TEXT3)
-            }
-            row.setOnClickListener {
-                Profile.set(ctx, true)
-                open(ctx, Intent(ctx, HomeActivity::class.java))
-            }
-            return row
+        private var inSub = false
+
+        private fun section(title: String) {
+            list.addView(ctx.label(title, 11f, C.TEXT2, bold = true), LinearLayout.LayoutParams(-2, -2).apply {
+                topMargin = ctx.dp(14f)
+                bottomMargin = ctx.dp(2f)
+                leftMargin = ctx.dp(2f)
+            })
         }
 
-        private fun showGrid() {
-            pages.removeAllViews()
-            val g = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; clipChildren = false }
-            val tiles = listOf(
-                // The TCL's own picture and sound menus only open over something playing (on the
-                // home screen they close at once); there, Android's Display & sound page opens.
-                Tile(R.drawable.ic_picture, "Picture", null) {
-                    if (overApp()) open(ctx, cls("com.android.tv.settings", "com.tcl.settings.PictureActivity"), displaySound())
-                    else open(ctx, displaySound(), Intent(android.provider.Settings.ACTION_DISPLAY_SETTINGS))
-                },
-                Tile(R.drawable.ic_speaker, "Sound", null) {
-                    if (overApp()) open(ctx, cls("com.android.tv.settings", "com.tcl.settings.SoundActivity"), displaySound())
-                    else open(ctx, displaySound(), Intent(android.provider.Settings.ACTION_SOUND_SETTINGS))
-                },
-                Tile(R.drawable.ic_input, "Inputs", null) { showInputs() },
-                Tile(R.drawable.ic_wifi, "Network", network()) {
-                    open(ctx, Intent(android.provider.Settings.ACTION_WIFI_SETTINGS), Intent(android.provider.Settings.ACTION_WIRELESS_SETTINGS))
-                },
-                Tile(R.drawable.ic_camera, "Cameras", null) {
-                    open(ctx, Intent(ctx, CamerasActivity::class.java))
-                },
-                Tile(R.drawable.ic_clock, "Sleep timer", SleepTimer.describe(ctx)) { t -> t.value(SleepTimer.next(ctx)) },
-                // a restart is not undone easily: the first press asks, a second one within 4 s restarts
-                Tile(R.drawable.ic_power, "Restart", null) { t ->
-                    val now = System.currentTimeMillis()
-                    if (now - restartAsked < 4000) {
-                        t.value("Restarting…")
-                        Adb.run(ctx, cfg, "reboot") { r -> if (r != Adb.Result.OK) t.value("Couldn't restart") }
-                    } else {
-                        restartAsked = now
-                        t.value("Press again to restart")
-                    }
-                },
-                Tile(R.drawable.ic_gear, "Launcher", null) {
-                    open(ctx, Intent(ctx, SettingsActivity::class.java))
-                },
-                Tile(R.drawable.ic_tv_gear, "All settings", null) {
-                    open(ctx, Intent(android.provider.Settings.ACTION_SETTINGS))
+        private fun row(title: String, value: String? = null, onClick: (RowView) -> Unit): RowView {
+            val r = RowView(ctx, title, value)
+            r.setOnClickListener { onClick(r) }
+            list.addView(r, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(4f) })
+            return r
+        }
+
+        private fun showMain() {
+            inSub = false
+            list.removeAllViews()
+            if (cfg.kids.on) {
+                row("Switch to ${cfg.kids.name}'s profile") {
+                    Profile.set(ctx, true)
+                    open(ctx, Intent(ctx, HomeActivity::class.java))
                 }
-            )
-            var line: LinearLayout? = null
-            // three to a line, like Google TV's panel
-            tiles.forEachIndexed { i, t ->
-                if (i % 3 == 0) {
-                    line = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; clipChildren = false }
-                    g.addView(line, LinearLayout.LayoutParams(-1, -2).apply { if (i > 0) topMargin = ctx.dp(10f) })
-                }
-                line!!.addView(t.view, LinearLayout.LayoutParams(0, ctx.dp(80f), 1f).apply { if (i % 3 > 0) leftMargin = ctx.dp(10f) })
             }
-            grid = g
-            pages.addView(g, LayoutParams(-1, -2))
-            post { firstTile()?.requestFocus() }
+            section("TV")
+            row("Inputs", "›") { showInputs() }
+            row("Network", network()) {
+                open(ctx, Intent(android.provider.Settings.ACTION_WIFI_SETTINGS), Intent(android.provider.Settings.ACTION_WIRELESS_SETTINGS))
+            }
+            row("Sleep timer", SleepTimer.describe(ctx)) { r -> r.valueView.text = SleepTimer.next(ctx) }
+            // a restart is not undone easily: the first press asks, a second one within 4 s restarts
+            row("Restart", "") { r ->
+                val now = System.currentTimeMillis()
+                if (now - restartAsked < 4000) {
+                    r.valueView.text = "Restarting…"
+                    Adb.run(ctx, cfg, "reboot") { res -> if (res != Adb.Result.OK) r.valueView.text = "Couldn't restart" }
+                } else {
+                    restartAsked = now
+                    r.valueView.text = "Press OK again"
+                }
+            }
+            if (cfg.haEnabled && cfg.cameras.isNotEmpty()) {
+                section("Home")
+                row("Cameras") { open(ctx, Intent(ctx, CamerasActivity::class.java)) }
+            }
+            section("Settings")
+            row("Launcher settings") { open(ctx, Intent(ctx, SettingsActivity::class.java)) }
+            row("All TV settings") { open(ctx, Intent(android.provider.Settings.ACTION_SETTINGS)) }
+            post { firstRow()?.requestFocus() }
         }
-
-        private var restartAsked = 0L
-
-        /** True when an app is in front (a film, a channel), not the launcher's own screens. */
-        private fun overApp(): Boolean {
-            val f = KidsGuard.front ?: return false
-            return f != ctx.packageName && !f.contains("launcher") && f != "com.android.systemui"
-        }
-
-        private fun displaySound() = cls("com.android.tv.settings", "com.android.tv.settings.device.displaysound.DisplaySoundActivity")
 
         private fun network(): String = try {
             val cm = ctx.getSystemService(ConnectivityManager::class.java)
@@ -315,64 +268,20 @@ object QuickPanel {
 
         /** Inputs, in the panel: the TV, then the HDMI inputs with what is plugged in. */
         private fun showInputs() {
-            grid?.visibility = View.GONE
-            val list = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; clipChildren = false }
-            list.addView(ctx.label("Inputs", 13f, C.TEXT3, bold = true).apply { letterSpacing = 0.06f },
-                LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = ctx.dp(8f) })
-            val rows = ArrayList<Pair<String, () -> Unit>>()
-            if (Inputs.hasTv(ctx)) rows.add("TV" to { if (Inputs.openTv(ctx)) hide() })
+            inSub = true
+            list.removeAllViews()
+            section("Inputs")
+            var any = false
+            if (Inputs.hasTv(ctx)) {
+                any = true
+                row("TV") { if (Inputs.openTv(ctx)) hide() }
+            }
             for (inp in Inputs.visible(ctx, cfg)) {
-                rows.add((if (inp.device != null) "${inp.name} · ${inp.device}" else inp.name) to { if (Inputs.open(ctx, inp.id)) hide() })
+                any = true
+                row(inp.name, inp.device) { if (Inputs.open(ctx, inp.id)) hide() }
             }
-            if (rows.isEmpty()) list.addView(ctx.label("This TV reports no inputs.", 12f, C.TEXT3))
-            var first: View? = null
-            rows.forEachIndexed { i, (name, go) ->
-                val r = RowView(ctx, name)
-                r.setOnClickListener { go() }
-                list.addView(r, LinearLayout.LayoutParams(-1, -2).apply { if (i > 0) topMargin = ctx.dp(4f) })
-                if (first == null) first = r
-            }
-            pages.addView(list, LayoutParams(-1, -2))
-            post { first?.requestFocus() }
-        }
-
-        /** A square-ish tile: icon, name and a small value under it. */
-        private inner class Tile(icon: Int, name: String, value: String?, onClick: (Tile) -> Unit) {
-            val view = LinearLayout(ctx).apply {
-                orientation = LinearLayout.VERTICAL
-                isFocusable = true
-                isClickable = true
-                setPadding(ctx.dp(12f), ctx.dp(12f), ctx.dp(10f), ctx.dp(10f))
-            }
-            private val img = ImageView(ctx).apply { setImageResource(icon); setColorFilter(C.TEXT) }
-            private val title = ctx.label(name, 12f, C.TEXT, bold = true).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
-            private val sub = ctx.label(value ?: "", 10f, C.TEXT3).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
-            private val texts = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-            private val r = ctx.dp(Look.R_TILE).toFloat()
-            private val normal = Look.surface(ctx, r)
-
-            init {
-                view.addView(img, LinearLayout.LayoutParams(ctx.dp(20f), ctx.dp(20f)))
-                view.addView(View(ctx), LinearLayout.LayoutParams(1, 0, 1f))
-                texts.addView(title)
-                texts.addView(sub, LinearLayout.LayoutParams(-2, -2).apply { topMargin = ctx.dp(2f) })
-                sub.visibility = if (value.isNullOrBlank()) View.GONE else View.VISIBLE
-                view.addView(texts)
-                view.background = normal
-                FocusGlide.shape(view, r)
-                view.setOnFocusChangeListener { _, f ->
-                    view.background = if (f) FocusGlide.fill(view, r) else normal
-                    img.setColorFilter(if (f) C.DARK else C.TEXT)
-                    title.setTextColor(if (f) C.DARK else C.TEXT)
-                    sub.setTextColor(if (f) C.DARK2 else C.TEXT3)
-                }
-                view.setOnClickListener { onClick(this) }
-            }
-
-            fun value(v: String) {
-                sub.text = v
-                sub.visibility = if (v.isBlank()) View.GONE else View.VISIBLE
-            }
+            if (!any) list.addView(ctx.label("This TV reports no inputs.", 11f, C.TEXT3).apply { setPadding(ctx.dp(2f), ctx.dp(6f), 0, 0) })
+            post { firstRow()?.requestFocus() }
         }
     }
 }

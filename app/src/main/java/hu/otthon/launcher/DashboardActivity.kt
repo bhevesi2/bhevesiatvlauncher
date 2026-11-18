@@ -79,7 +79,7 @@ class DashboardActivity : PanelActivity() {
 
         panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = rounded(C.PANEL, dp(20f).toFloat(), 1, C.BORDER)
+            background = Look.panel(this@DashboardActivity)
             clipToOutline = true
             outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
         }
@@ -156,7 +156,7 @@ class DashboardActivity : PanelActivity() {
         overlay.visibility = View.GONE
         val panel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            background = rounded(0xF516171C.toInt(), dp(16f).toFloat(), 1, C.BORDER)
+            background = Look.panel(this@DashboardActivity)
             setPadding(dp(22f), dp(18f), dp(22f), dp(14f))
         }
         val head = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.BOTTOM }

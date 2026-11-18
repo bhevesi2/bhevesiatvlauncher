@@ -163,9 +163,9 @@ class MusicActivity : PanelActivity() {
         isFocusable = true
         isClickable = true
         contentDescription = name
-        FocusGlide.shape(this, -1f)
+        FocusGlide.shape(this, dp(Look.R_TILE).toFloat())
         fun paint(f: Boolean) {
-            background = if (f) FocusGlide.fill(this, dp(sizeDp / 2).toFloat()) else rounded(0x33FFFFFF, dp(sizeDp / 2).toFloat())
+            background = if (f) FocusGlide.fill(this, dp(Look.R_TILE).toFloat()) else rounded(0x33FFFFFF, dp(Look.R_TILE).toFloat())
             setColorFilter(if (f) C.DARK else C.TEXT)
         }
         paint(false)

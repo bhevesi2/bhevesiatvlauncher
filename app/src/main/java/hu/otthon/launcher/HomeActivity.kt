@@ -577,12 +577,12 @@ class HomeActivity : Activity() {
         v.isFocusable = true
         v.isClickable = true
         v.contentDescription = name
-        val normal = Look.surface(this, dp(20f).toFloat())
+        val normal = Look.surface(this, dp(Look.R_TILE).toFloat())
         v.background = normal
         v.setColorFilter(C.TEXT)
-        FocusGlide.shape(v, -1f)
+        FocusGlide.shape(v, dp(Look.R_TILE).toFloat())
         v.setOnFocusChangeListener { _, f ->
-            v.background = if (f) FocusGlide.fill(v, dp(20f).toFloat()) else normal
+            v.background = if (f) FocusGlide.fill(v, dp(Look.R_TILE).toFloat()) else normal
             v.setColorFilter(if (f) C.DARK else C.TEXT)
             Look.grow(v, f)
             if (f) showHint(v, name, above) else hideHint(v)
@@ -769,7 +769,7 @@ class HomeActivity : Activity() {
             }
         }
         if (chipsRow.childCount > 0) {
-            chipsRow.background = Look.surface(this, dp(20f).toFloat())
+            chipsRow.background = Look.surface(this, dp(Look.R_TILE).toFloat())
             chipsRow.setPadding(dp(15f), 0, dp(15f), 0)
             chipsRow.minimumHeight = dp(40f)
             chipsRow.visibility = View.VISIBLE

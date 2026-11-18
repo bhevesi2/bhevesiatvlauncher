@@ -114,7 +114,7 @@ class CamerasActivity : PanelActivity() {
 
         fullLabel = label("", 14f, C.TEXT, bold = true)
         fullLabel.setPadding(dp(12f), dp(7f), dp(14f), dp(7f))
-        fullLabel.background = rounded(C.GLASS, dp(18f).toFloat(), 1, C.BORDER)
+        fullLabel.background = Look.surface(this, dp(Look.R_TILE).toFloat())
         full.addView(fullLabel, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply {
             leftMargin = dp(28f)
             topMargin = dp(22f)
