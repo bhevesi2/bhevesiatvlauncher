@@ -499,6 +499,13 @@ class HomeActivity : Activity() {
             expand()
             return true
         }
+        // Up from the top row: Home Assistant's dashboard, the mirror of Down to the recommendations
+        if (!expanded && down && event.keyCode == KeyEvent.KEYCODE_DPAD_UP && event.repeatCount == 0 && focus != null &&
+            cfg.haEnabled && (isInside(focus, topButtons) || isInside(focus, chipsRow))
+        ) {
+            open(DashboardActivity::class.java)
+            return true
+        }
         if (expanded && event.keyCode == KeyEvent.KEYCODE_BACK) {
             if (!down) collapse(true)
             return true
@@ -672,8 +679,9 @@ class HomeActivity : Activity() {
             val today = iconButton(R.drawable.ic_today, "Today", false) { open(TodayActivity::class.java) }
             topButtons.addView(today, LinearLayout.LayoutParams(dp(40f), dp(40f)).apply { leftMargin = dp(8f) })
         }
-        val gear = iconButton(R.drawable.ic_gear, "Launcher settings", false) {
-            open(SettingsActivity::class.java)
+        // the quick settings (the launcher's settings are one row inside them)
+        val gear = iconButton(R.drawable.ic_gear, "Quick settings", false) {
+            QuickPanel.show(this)
         }
         gearButton = gear
         markUpdate()

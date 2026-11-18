@@ -739,7 +739,12 @@ class SettingsActivity : PanelActivity() {
             }
         }
         row("Try the quick settings") { QuickPanel.show(this) }
-        note("Google TV home answers the gear button with its settings panel. Automatic: while Google TV home is switched off, the button opens the launcher's own quick settings instead, in every app (through the same accessibility service as the colour buttons): Picture, Sound, Inputs, Network, Screen saver, Sleep timer, Turn off, and all settings. Quick settings: always the launcher's panel, even with Google TV home on.")
+        note("Google TV home answers the gear button with its settings panel. Automatic: while Google TV home is switched off, the button opens the launcher's own quick settings instead, in every app (through the same accessibility service as the colour buttons). Quick settings: always the launcher's panel, even with Google TV home on. The gear in the home screen's top right corner opens it too.")
+        if (cfg.haEnabled) {
+            section("Quick settings · lights")
+            entityList("qlights", { r -> ConfigStore.array(r, "quick_lights") }, cfg.quickLights, "Add a light", "light", false)
+            note("The Home tiles of the quick settings: the cameras, all the lights of the TV's room, and these lights. With none chosen, the light groups of the TV's room are shown (at most four).")
+        }
     }
 
     private fun setColorKeysEverywhere(on: Boolean) {

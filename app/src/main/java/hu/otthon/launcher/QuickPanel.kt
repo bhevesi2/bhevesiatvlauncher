@@ -143,19 +143,20 @@ object QuickPanel {
 
     /**
      * The panel: made of the same parts as the settings screen (its panel, its title, its rows,
-     * its section headings and its cursor), so the two look like one thing.
+     * its section headings and its cursor), so the two look like one thing. The TV and Home
+     * sections are tiles two to a line, each with its name and what it is set to now.
      */
     private class Panel(private val ctx: Context, private val cfg: Config) : FrameLayout(ctx) {
         private val content = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         private val list = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         private var restartAsked = 0L
+        private var inSub = false
+        private val ha: HaClient? = if (cfg.haEnabled) HaClient(cfg.haUrl!!, cfg.haToken!!) else null
 
         init {
             isFocusable = false
             content.background = Look.panel(ctx)
-            content.clipToOutline = true
-            content.outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
-            content.setPadding(ctx.dp(22f), ctx.dp(20f), ctx.dp(22f), ctx.dp(20f))
+            content.setPadding(ctx.dp(20f), ctx.dp(18f), ctx.dp(20f), ctx.dp(18f))
             addView(content, LayoutParams(-1, -2, Gravity.END or Gravity.CENTER_VERTICAL).apply {
                 topMargin = ctx.dp(26f)
                 bottomMargin = ctx.dp(26f)
@@ -163,13 +164,33 @@ object QuickPanel {
             })
             FocusGlide.install(content)
 
-            // the title like the settings screen's, the time beside it
-            val head = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.BOTTOM }
-            head.addView(ctx.label("Quick settings", 17f, C.TEXT, bold = true), LinearLayout.LayoutParams(0, -2, 1f))
-            head.addView(ctx.label(SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date()), 17f, C.TEXT3, light = true))
-            content.addView(head, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ctx.dp(6f) })
+            // the title like the settings screen's, the time under it; the kids' bubble on the right
+            val head = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            val titles = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+            titles.addView(ctx.label("Quick settings", 17f, C.TEXT, bold = true))
+            titles.addView(ctx.label(SimpleDateFormat("HH:mm · EEEE", Locale.ENGLISH).format(Date()), 11f, C.TEXT3),
+                LinearLayout.LayoutParams(-2, -2).apply { topMargin = ctx.dp(3f) })
+            head.addView(titles, LinearLayout.LayoutParams(0, -2, 1f))
+            if (cfg.kids.on) head.addView(kidsBubble(), LinearLayout.LayoutParams(ctx.dp(46f), ctx.dp(46f)))
+            content.addView(head, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ctx.dp(4f) })
             content.addView(list, LinearLayout.LayoutParams(-1, -2))
             showMain()
+        }
+
+        /** The kids' picture in a bubble: one press, and the TV is theirs. Easy to spot for a child. */
+        private fun kidsBubble(): View = ImageView(ctx).apply {
+            setImageDrawable(KidsLook.kidAvatar(cfg.kids))
+            isFocusable = true
+            isClickable = true
+            contentDescription = "${cfg.kids.name}'s profile"
+            setPadding(ctx.dp(3f), ctx.dp(3f), ctx.dp(3f), ctx.dp(3f))
+            FocusGlide.shape(this, -1f)
+            FocusGlide.glow(this, KidsLook.CANDY[0])
+            setOnFocusChangeListener { v, f -> Look.grow(v, f, 1.1f) }
+            setOnClickListener {
+                Profile.set(ctx, true)
+                open(ctx, Intent(ctx, HomeActivity::class.java))
+            }
         }
 
         fun enter() {
@@ -179,12 +200,16 @@ object QuickPanel {
                 content.alpha = 0f
                 content.animate().translationX(0f).alpha(1f).setDuration(220).setInterpolator(DecelerateInterpolator(2f)).start()
             }
-            post { firstRow()?.requestFocus() }
+            post { firstInList()?.requestFocus() }
         }
 
-        private fun firstRow(): View? {
-            for (i in 0 until list.childCount) list.getChildAt(i).takeIf { it.isFocusable }?.let { return it }
-            return null
+        private fun firstInList(): View? {
+            fun find(v: View): View? {
+                if (v.isFocusable && v.visibility == View.VISIBLE) return v
+                if (v is android.view.ViewGroup) for (i in 0 until v.childCount) find(v.getChildAt(i))?.let { return it }
+                return null
+            }
+            return find(list)
         }
 
         override fun dispatchKeyEvent(event: KeyEvent): Boolean {
@@ -202,8 +227,6 @@ object QuickPanel {
             return super.dispatchKeyEvent(event)
         }
 
-        private var inSub = false
-
         private fun section(title: String) {
             list.addView(ctx.label(title, 11f, C.TEXT2, bold = true), LinearLayout.LayoutParams(-2, -2).apply {
                 topMargin = ctx.dp(14f)
@@ -219,49 +242,160 @@ object QuickPanel {
             return r
         }
 
+        /** Tiles two to a line. */
+        private fun grid(tiles: List<Tile>) {
+            var line: LinearLayout? = null
+            tiles.forEachIndexed { i, t ->
+                if (i % 2 == 0) {
+                    line = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
+                    list.addView(line, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(4f) })
+                }
+                line!!.addView(t, LinearLayout.LayoutParams(0, ctx.dp(54f), 1f).apply { if (i % 2 == 1) leftMargin = ctx.dp(4f) })
+            }
+            if (tiles.size % 2 == 1) line?.addView(View(ctx), LinearLayout.LayoutParams(0, 1, 1f).apply { leftMargin = ctx.dp(4f) })
+        }
+
         private fun showMain() {
             inSub = false
             list.removeAllViews()
-            if (cfg.kids.on) {
-                row("Switch to ${cfg.kids.name}'s profile") {
-                    Profile.set(ctx, true)
-                    open(ctx, Intent(ctx, HomeActivity::class.java))
-                }
-            }
             section("TV")
-            row("Inputs", "›") { showInputs() }
-            row("Network", network()) {
+            val inputs = Inputs.visible(ctx, cfg)
+            val inputsTile = Tile("Inputs", if (inputs.isEmpty()) "TV" else "TV + ${inputs.size} HDMI") { showInputs() }
+            val netTile = Tile("Network", network()) {
                 open(ctx, Intent(android.provider.Settings.ACTION_WIFI_SETTINGS), Intent(android.provider.Settings.ACTION_WIRELESS_SETTINGS))
             }
-            row("Sleep timer", SleepTimer.describe(ctx)) { r -> r.valueView.text = SleepTimer.next(ctx) }
+            val sleepTile = Tile("Sleep timer", SleepTimer.describe(ctx)) { t -> t.value(SleepTimer.next(ctx)) }
             // a restart is not undone easily: the first press asks, a second one within 4 s restarts
-            row("Restart", "") { r ->
+            val restartTile = Tile("Restart", "Press OK twice") { t ->
                 val now = System.currentTimeMillis()
                 if (now - restartAsked < 4000) {
-                    r.valueView.text = "Restarting…"
-                    Adb.run(ctx, cfg, "reboot") { res -> if (res != Adb.Result.OK) r.valueView.text = "Couldn't restart" }
+                    t.value("Restarting…")
+                    Adb.run(ctx, cfg, "reboot") { res -> if (res != Adb.Result.OK) t.value("Couldn't restart") }
                 } else {
                     restartAsked = now
-                    r.valueView.text = "Press OK again"
+                    t.value("Press OK again")
                 }
             }
-            if (cfg.haEnabled && cfg.cameras.isNotEmpty()) {
+            grid(listOf(inputsTile, netTile, sleepTile, restartTile))
+
+            if (ha != null) {
                 section("Home")
-                row("Cameras") { open(ctx, Intent(ctx, CamerasActivity::class.java)) }
+                val home = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+                list.addView(home, LinearLayout.LayoutParams(-1, -2))
+                loadHome(home)
             }
+
             section("Settings")
             row("Launcher settings") { open(ctx, Intent(ctx, SettingsActivity::class.java)) }
             row("All TV settings") { open(ctx, Intent(android.provider.Settings.ACTION_SETTINGS)) }
-            post { firstRow()?.requestFocus() }
+            post { firstInList()?.requestFocus() }
         }
 
+        // ---------- Home: cameras and the room's lights ----------
+
+        private class Light(val entity: String, val name: String, val on: Boolean, val pct: Int)
+
+        /** Cameras, all the lights of the TV's room, and the chosen lights (or the room's groups). */
+        private fun loadHome(box: LinearLayout) {
+            val client = ha ?: return
+            val adb = cfg.adbEntity ?: ""
+            val chosen = org.json.JSONArray(cfg.quickLights.map { it.entity }).toString()
+            Bg.run({
+                val t = client.template(
+                    "{% set a = area_id('$adb') %}{% set ls = (area_entities(a) | select('match', 'light\\.') | list) if a else [] %}" +
+                        "{% set chosen = $chosen %}{% if chosen | length == 0 %}{% set g = namespace(c=[]) %}" +
+                        "{% for l in ls if state_attr(l, 'group_entities') or state_attr(l, 'entity_id') %}{% set g.c = g.c + [l] %}{% endfor %}" +
+                        "{% set chosen = g.c[:4] %}{% endif %}{% set ns = namespace(o=[]) %}" +
+                        "{% for l in chosen %}{% set ns.o = ns.o + [[l, state_attr(l, 'friendly_name') or l, states(l), ((state_attr(l, 'brightness') or 0) / 2.55) | round(0) | int]] %}{% endfor %}" +
+                        "{{ {'area': a or '', 'name': area_name(a) if a else '', 'on': ls | select('is_state', 'on') | list | length, 'total': ls | length, 'lights': ns.o} | tojson }}"
+                )
+                org.json.JSONObject(t)
+            }) { o ->
+                if (!isAttachedToWindow) return@run
+                box.removeAllViews()
+                val tiles = ArrayList<Tile>()
+                if (cfg.cameras.isNotEmpty()) tiles.add(Tile("Cameras", "${cfg.cameras.size} cameras") { open(ctx, Intent(ctx, CamerasActivity::class.java)) })
+                if (o != null) {
+                    val area = o.optString("area", "")
+                    val total = o.optInt("total", 0)
+                    val on = o.optInt("on", 0)
+                    if (area.isNotBlank() && total > 0) {
+                        tiles.add(Tile("All lights", if (on == 0) "Off" else "$on of $total on") { t ->
+                            val turnOn = on == 0
+                            t.value(if (turnOn) "Turning on…" else "Turning off…")
+                            Bg.run({ client.call("light", if (turnOn) "turn_on" else "turn_off", org.json.JSONObject().put("area_id", area)) }) {
+                                Bg.main.postDelayed({ refreshHome(box) }, 700)
+                            }
+                        })
+                    }
+                    val arr = o.optJSONArray("lights") ?: org.json.JSONArray()
+                    for (i in 0 until arr.length()) {
+                        val a = arr.getJSONArray(i)
+                        val l = Light(a.getString(0), a.getString(1), a.getString(2) == "on", a.optInt(3, 0))
+                        val label = cfg.quickLights.firstOrNull { it.entity == l.entity }?.label?.takeIf { it.isNotBlank() } ?: l.name
+                        tiles.add(Tile(label, if (l.on) (if (l.pct > 0) "On · ${l.pct}%" else "On") else "Off") { t ->
+                            t.value(if (l.on) "Turning off…" else "Turning on…")
+                            Bg.run({ client.call("light", "toggle", org.json.JSONObject().put("entity_id", l.entity)) }) {
+                                Bg.main.postDelayed({ refreshHome(box) }, 700)
+                            }
+                        })
+                    }
+                }
+                if (tiles.isEmpty()) {
+                    box.addView(ctx.label("Nothing to show yet.", 11f, C.TEXT3).apply { setPadding(ctx.dp(2f), ctx.dp(6f), 0, 0) })
+                    return@run
+                }
+                val focusedIndex = lastFocusedHome.also { lastFocusedHome = -1 }
+                // the tiles go into the Home box, two to a line
+                var line: LinearLayout? = null
+                tiles.forEachIndexed { i, t ->
+                    if (i % 2 == 0) {
+                        line = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
+                        box.addView(line, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(4f) })
+                    }
+                    line!!.addView(t, LinearLayout.LayoutParams(0, ctx.dp(54f), 1f).apply { if (i % 2 == 1) leftMargin = ctx.dp(4f) })
+                }
+                if (tiles.size % 2 == 1) line?.addView(View(ctx), LinearLayout.LayoutParams(0, 1, 1f).apply { leftMargin = ctx.dp(4f) })
+                if (focusedIndex >= 0) tiles.getOrNull(focusedIndex)?.requestFocus()
+            }
+        }
+
+        private var lastFocusedHome = -1
+
+        private fun focusedTileIndex(box: LinearLayout): Int {
+            val f = box.findFocus() ?: return -1
+            var i = 0
+            for (r in 0 until box.childCount) {
+                val line = box.getChildAt(r) as? LinearLayout ?: continue
+                for (c in 0 until line.childCount) {
+                    val v = line.getChildAt(c)
+                    if (v is Tile) {
+                        if (v === f) return i
+                        i++
+                    }
+                }
+            }
+            return -1
+        }
+
+        private fun refreshHome(box: LinearLayout) {
+            lastFocusedHome = focusedTileIndex(box)
+            loadHome(box)
+        }
+
+        /** The network: the Wi-Fi's name (needs location access, given over ADB), or Ethernet. */
+        @Suppress("DEPRECATION")
         private fun network(): String = try {
             val cm = ctx.getSystemService(ConnectivityManager::class.java)
             val caps = cm?.getNetworkCapabilities(cm.activeNetwork)
             when {
                 caps == null -> "Offline"
                 caps.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "Ethernet"
-                caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "Wi-Fi"
+                caps.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> {
+                    val wm = ctx.applicationContext.getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
+                    val ssid = wm.connectionInfo?.ssid?.trim('"')
+                    if (ssid.isNullOrBlank() || ssid == "<unknown ssid>") "Wi-Fi" else ssid
+                }
                 else -> "Connected"
             }
         } catch (e: Exception) { "" }
@@ -281,7 +415,38 @@ object QuickPanel {
                 row(inp.name, inp.device) { if (Inputs.open(ctx, inp.id)) hide() }
             }
             if (!any) list.addView(ctx.label("This TV reports no inputs.", 11f, C.TEXT3).apply { setPadding(ctx.dp(2f), ctx.dp(6f), 0, 0) })
-            post { firstRow()?.requestFocus() }
+            post { firstInList()?.requestFocus() }
+        }
+
+        /** A tile: the name, and under it what it is set to now; the settings rows' colours and cursor. */
+        inner class Tile(name: String, value: String, onClick: (Tile) -> Unit) : LinearLayout(ctx) {
+            private val title = ctx.label(name, 12f, C.TEXT).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
+            private val sub = ctx.label(value, 11f, C.TEXT3).apply { maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END }
+            private val r = ctx.dp(Look.R_SMALL).toFloat()
+
+            init {
+                orientation = VERTICAL
+                gravity = Gravity.CENTER_VERTICAL
+                isFocusable = true
+                isClickable = true
+                setPadding(ctx.dp(12f), 0, ctx.dp(10f), 0)
+                addView(title)
+                addView(sub, LayoutParams(-2, -2).apply { topMargin = ctx.dp(3f) })
+                FocusGlide.shape(this, r)
+                paint(false)
+                setOnFocusChangeListener { _, f -> paint(f) }
+                setOnClickListener { onClick(this) }
+            }
+
+            private fun paint(f: Boolean) {
+                background = if (f) FocusGlide.fill(this, r) else rounded(C.ROW, r)
+                title.setTextColor(if (f) C.DARK else C.TEXT)
+                sub.setTextColor(if (f) C.DARK2 else C.TEXT3)
+            }
+
+            fun value(v: String) {
+                sub.text = v
+            }
         }
     }
 }

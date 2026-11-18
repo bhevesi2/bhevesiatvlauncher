@@ -109,6 +109,11 @@ asks for the first time (Allow). OK opens a programme, Hold OK moves its row up 
 is something below. Settings › Home screen › Recommendations switches them off, chooses the apps
 and Continue watching, and resets the row order.
 
+## Up and down on the home screen
+
+Down from the bottom row slides up the recommendations; Up from the top row (the status capsule
+and the buttons beside it) opens Home Assistant's dashboard.
+
 ## Design: Standard and Live
 
 Settings › Background › Design › Home screen chooses between two looks of the home screen.
@@ -238,13 +243,16 @@ are kept). Only buttons that have an action are taken over, the rest still reach
 Google TV home answers the remote's gear button with its settings panel. With Google TV home
 switched off, the launcher's `KeyService` takes the button and opens its own **quick settings**,
 over whatever is on screen (a film keeps playing): the time, the profile (one press into the
-kids profile), and rows made of the same parts as the settings screen: Inputs (listed in the
-panel), Network, Sleep timer (off → 15 → 30 → 60 → 90 → 120 minutes; the TV goes to sleep
-through Home Assistant's ADB), Restart (press OK twice), Cameras, Launcher settings and All TV
-settings. There is no Picture or Sound: the TCL's own menus only open over a film, and from the
+kids' picture as a bubble to switch to their profile), made of the settings screen's parts.
+TV, four tiles with what each is set to now: Inputs (listed in the panel), Network (the Wi-Fi's
+name, or Ethernet; the name needs location access, given over ADB), Sleep timer (off → 15 → 30 →
+60 → 90 → 120 minutes; the TV goes to sleep through Home Assistant's ADB) and Restart (press OK
+twice). Home: Cameras, All lights of the TV's room (on or off together, "3 of 19 on") and the
+lights chosen in Settings › Remote › Quick settings · lights (without a choice, the room's light
+groups), each with its state; OK switches them. Then Launcher settings and All TV settings. There is no Picture or Sound: the TCL's own menus only open over a film, and from the
 home screen only Android's generic page would come. The TCL does not let an app start the
 screen saver either. The gear again or Back
-closes it; it also closes after half a minute. The home screen has no TV-settings or profile
+closes it; it also closes after half a minute. The gear in the home screen's top right corner opens it too. The home screen has no TV-settings or profile
 button any more: both are here. Settings › Remote ›
 Gear button opens: Automatic (the panel while Google TV home is off), Quick settings (always),
 Display & sound, All settings, or TV decides.
