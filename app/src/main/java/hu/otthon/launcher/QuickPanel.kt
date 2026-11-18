@@ -242,27 +242,34 @@ object QuickPanel {
             pages.removeAllViews()
             val g = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL; clipChildren = false }
             val tiles = listOf(
+                // The TCL's own picture and sound menus only open over something playing (on the
+                // home screen they close at once); there, Android's Display & sound page opens.
                 Tile(R.drawable.ic_picture, "Picture", null) {
-                    open(ctx, cls("com.android.tv.settings", "com.tcl.settings.PictureActivity"),
-                        cls("com.android.tv.settings", "com.android.tv.settings.device.displaysound.DisplaySoundActivity"),
-                        Intent(android.provider.Settings.ACTION_DISPLAY_SETTINGS))
+                    if (overApp()) open(ctx, cls("com.android.tv.settings", "com.tcl.settings.PictureActivity"), displaySound())
+                    else open(ctx, displaySound(), Intent(android.provider.Settings.ACTION_DISPLAY_SETTINGS))
                 },
                 Tile(R.drawable.ic_speaker, "Sound", null) {
-                    open(ctx, cls("com.android.tv.settings", "com.tcl.settings.SoundActivity"),
-                        cls("com.android.tv.settings", "com.android.tv.settings.device.displaysound.DisplaySoundActivity"),
-                        Intent(android.provider.Settings.ACTION_SOUND_SETTINGS))
+                    if (overApp()) open(ctx, cls("com.android.tv.settings", "com.tcl.settings.SoundActivity"), displaySound())
+                    else open(ctx, displaySound(), Intent(android.provider.Settings.ACTION_SOUND_SETTINGS))
                 },
                 Tile(R.drawable.ic_input, "Inputs", null) { showInputs() },
                 Tile(R.drawable.ic_wifi, "Network", network()) {
                     open(ctx, Intent(android.provider.Settings.ACTION_WIFI_SETTINGS), Intent(android.provider.Settings.ACTION_WIRELESS_SETTINGS))
                 },
-                Tile(R.drawable.ic_moon, "Screen saver", null) {
-                    open(ctx, cls("com.android.systemui", "com.android.systemui.Somnambulator"), Intent(android.provider.Settings.ACTION_DREAM_SETTINGS))
+                Tile(R.drawable.ic_camera, "Cameras", null) {
+                    open(ctx, Intent(ctx, CamerasActivity::class.java))
                 },
                 Tile(R.drawable.ic_clock, "Sleep timer", SleepTimer.describe(ctx)) { t -> t.value(SleepTimer.next(ctx)) },
-                Tile(R.drawable.ic_power, "Turn off", null) {
-                    hide()
-                    Adb.run(ctx, cfg, "input keyevent KEYCODE_SLEEP") { }
+                // a restart is not undone easily: the first press asks, a second one within 4 s restarts
+                Tile(R.drawable.ic_power, "Restart", null) { t ->
+                    val now = System.currentTimeMillis()
+                    if (now - restartAsked < 4000) {
+                        t.value("Restarting…")
+                        Adb.run(ctx, cfg, "reboot") { r -> if (r != Adb.Result.OK) t.value("Couldn't restart") }
+                    } else {
+                        restartAsked = now
+                        t.value("Press again to restart")
+                    }
                 },
                 Tile(R.drawable.ic_gear, "Launcher", null) {
                     open(ctx, Intent(ctx, SettingsActivity::class.java))
@@ -284,6 +291,16 @@ object QuickPanel {
             pages.addView(g, LayoutParams(-1, -2))
             post { firstTile()?.requestFocus() }
         }
+
+        private var restartAsked = 0L
+
+        /** True when an app is in front (a film, a channel), not the launcher's own screens. */
+        private fun overApp(): Boolean {
+            val f = KidsGuard.front ?: return false
+            return f != ctx.packageName && !f.contains("launcher") && f != "com.android.systemui"
+        }
+
+        private fun displaySound() = cls("com.android.tv.settings", "com.android.tv.settings.device.displaysound.DisplaySoundActivity")
 
         private fun network(): String = try {
             val cm = ctx.getSystemService(ConnectivityManager::class.java)

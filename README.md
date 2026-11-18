@@ -221,11 +221,13 @@ are kept). Only buttons that have an action are taken over, the rest still reach
 Google TV home answers the remote's gear button with its settings panel. With Google TV home
 switched off, the launcher's `KeyService` takes the button and opens its own **quick settings**,
 over whatever is on screen (a film keeps playing): the time, the profile (one press into the
-kids profile), and tiles for Picture and Sound (the TCL's own pages, or Android's Display &
-sound), Inputs (listed in the panel), Network, Screen saver, Sleep timer (off → 15 → 30 → 60 →
-90 → 120 minutes; the TV goes to sleep through Home Assistant's ADB), Turn off, the launcher's
-settings, and All settings at the bottom. The gear again or Back closes it; it also closes after
-half a minute. The TV-settings button on the home screen opens the same panel. Settings › Remote ›
+kids profile), and nine tiles: Picture and Sound (over a film the TCL's own menus, which close at
+once on the home screen; there Android's Display & sound page), Inputs (listed in the panel),
+Network, Cameras, Sleep timer (off → 15 → 30 → 60 → 90 → 120 minutes; the TV goes to sleep through
+Home Assistant's ADB), Restart (press twice), the launcher's settings, and All settings. The TCL
+does not let an app start the screen saver, so there is no tile for it. The gear again or Back
+closes it; it also closes after half a minute. The home screen has no TV-settings or profile
+button any more: both are here. Settings › Remote ›
 Gear button opens: Automatic (the panel while Google TV home is off), Quick settings (always),
 Display & sound, All settings, or TV decides.
 

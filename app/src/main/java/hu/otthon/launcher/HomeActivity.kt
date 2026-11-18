@@ -644,42 +644,13 @@ class HomeActivity : Activity() {
             val today = iconButton(R.drawable.ic_today, "Today", false) { open(TodayActivity::class.java) }
             topButtons.addView(today, LinearLayout.LayoutParams(dp(40f), dp(40f)).apply { leftMargin = dp(8f) })
         }
-        // the TV's settings: the quick settings panel, like the gear on Google TV home
-        val tvGear = iconButton(R.drawable.ic_tv_gear, "TV settings", false) {
-            if (cfg.settingsKey == "tv" || cfg.settingsKey == "settings") {
-                if (!Apps.openSystemSettings(this)) toast("Android settings are not available")
-            } else QuickPanel.show(this)
-        }
-        topButtons.addView(tvGear, LinearLayout.LayoutParams(dp(40f), dp(40f)).apply { leftMargin = dp(8f) })
         val gear = iconButton(R.drawable.ic_gear, "Launcher settings", false) {
             open(SettingsActivity::class.java)
         }
         gearButton = gear
         markUpdate()
         topButtons.addView(gear, LinearLayout.LayoutParams(dp(40f), dp(40f)).apply { leftMargin = dp(8f) })
-        if (cfg.kids.on) {
-            // the profiles, in the top right corner like on Google TV: one press into the kids profile
-            val k = cfg.kids
-            val av = ImageView(this).apply {
-                setImageDrawable(KidsLook.kidAvatar(k))
-                isFocusable = true
-                isClickable = true
-                contentDescription = k.name
-                setPadding(dp(3f), dp(3f), dp(3f), dp(3f))
-                background = android.graphics.drawable.GradientDrawable().apply {
-                    shape = android.graphics.drawable.GradientDrawable.OVAL
-                    setColor(Look.SURFACE)
-                    setStroke(dp(1f), Look.HAIRLINE)
-                }
-                FocusGlide.shape(this, -1f)
-                setOnFocusChangeListener { v, f ->
-                    Look.grow(v, f, 1.12f)
-                    if (f) showHint(v, "${k.name}'s profile", false) else hideHint(v)
-                }
-                setOnClickListener { Profile.set(this@HomeActivity, true) }
-            }
-            topButtons.addView(av, LinearLayout.LayoutParams(dp(40f), dp(40f)).apply { leftMargin = dp(14f) })
-        }
+        // the TV's settings and the profiles are in the quick settings (the remote's gear button)
 
         // bottom row: icon buttons on the left, quick actions in the middle, inputs on the right
         bottom.removeAllViews()
