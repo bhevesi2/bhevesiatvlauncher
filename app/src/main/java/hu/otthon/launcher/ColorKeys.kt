@@ -55,7 +55,10 @@ object ColorKeys {
     /** Adds [KeyService] to the TV's accessibility services, keeping any others. */
     fun enableCommand(ctx: Context): String {
         val c = component(ctx)
+        // AUTO_START: TCL TVs refuse to start an app's background process without it (the
+        // button service has its own process); other TVs just answer that there is no such op
         return "pm grant ${ctx.packageName} android.permission.WRITE_SECURE_SETTINGS; " +
+            "appops set ${ctx.packageName} AUTO_START allow 2>/dev/null; " +
             "cur=\$(settings get secure enabled_accessibility_services); " +
             "case \"\$cur\" in *KeyService*) ;; ''|null) settings put secure enabled_accessibility_services $c ;; " +
             "*) settings put secure enabled_accessibility_services \"\$cur:$c\" ;; esac; " +
@@ -296,6 +299,7 @@ class KeyService : AccessibilityService() {
     override fun onKeyEvent(event: KeyEvent): Boolean {
         if (SettingsKey.isKey(event.keyCode)) {
             val c = config() ?: return false
+            if (event.action == KeyEvent.ACTION_DOWN) android.util.Log.i("OtthonQuick", "gear seen by the button service, mode ${c.settingsKey}")
             // no settings for the kids: the button stays with the TV (which, without Google TV home, ignores it)
             if (Profile.kids(this, c)) return false
             return SettingsKey.handle(this, c, event)
