@@ -117,7 +117,12 @@ class SettingsActivity : PanelActivity() {
                         // TV must not build every page it passes
                         navPending = i
                         Bg.main.removeCallbacks(navShow)
-                        Bg.main.postDelayed(navShow, if (LowRam.on) 220L else 120L)
+                        // after the cursor's 260 ms glide, so building the page does not stop it halfway
+                        Bg.main.postDelayed(navShow, if (LowRam.on) 300L else 120L)
+                    } else if (f && i == navIndex && navPending >= 0) {
+                        // back on the page already shown before the other one was built
+                        navPending = -1
+                        Bg.main.removeCallbacks(navShow)
                     }
                     paintNav()
                 }
@@ -271,14 +276,16 @@ class SettingsActivity : PanelActivity() {
     }
 
     private fun paintNav() {
+        // the page about to be shown is already the chosen one: its mark must not stay behind
+        val chosen = if (navPending >= 0) navPending else navIndex
         navViews.forEachIndexed { i, v ->
             val f = v.isFocused
             v.background = when {
                 f -> FocusGlide.fill(v, dp(Look.R_SMALL).toFloat())
-                i == navIndex -> rounded(0x1FFFFFFF, dp(Look.R_SMALL).toFloat())
+                i == chosen -> rounded(0x1FFFFFFF, dp(Look.R_SMALL).toFloat())
                 else -> null
             }
-            v.setTextColor(if (f) C.DARK else if (i == navIndex) C.TEXT else C.TEXT2)
+            v.setTextColor(if (f) C.DARK else if (i == chosen) C.TEXT else C.TEXT2)
         }
     }
 
