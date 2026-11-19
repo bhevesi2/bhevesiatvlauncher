@@ -1100,8 +1100,21 @@ class Backdrop(ctx: Context) : FrameLayout(ctx) {
         }
     }
 
+    private var nasLooking = false
+
     fun show(chosen: String, phase: Phase, animate: Boolean) {
         // Christmas mode brings its own landscapes, a different one every hour
+        // the NAS set: when its folder is due for another look, look first, then show
+        if (chosen == NasWallpapers.KEY && !nasLooking && NasWallpapers.stale(context)) {
+            nasLooking = true
+            val app = context.applicationContext
+            Bg.run({ NasWallpapers.refreshIfStale(app, Config.load(app)) }) {
+                nasLooking = false
+                key = null
+                show(chosen, phase, animate)
+            }
+            if (key != null) return
+        }
         // ... unless the NAS set has Christmas pictures of its own: then those
         val ownXmas = chosen == NasWallpapers.KEY && NasWallpapers.hasXmas(context)
         val xmas = if (FocusGlide.festive && !ownXmas) Winter.current(context) else null

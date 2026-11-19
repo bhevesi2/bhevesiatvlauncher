@@ -159,12 +159,12 @@ object NasWallpapers {
         }
     }
 
-    /** Reads the folder again when the last look is older than [maxAgeMs]. Call off the main thread. */
-    fun refreshIfStale(ctx: Context, cfg: Config, maxAgeMs: Long = 30 * 60_000L): Boolean {
-        val at = Prefs.of(ctx).getLong(LIST_AT, 0L)
-        if (System.currentTimeMillis() - at < maxAgeMs && pictures(ctx).isNotEmpty()) return false
-        return refresh(ctx, cfg)
-    }
+    /** True when the folder is due for another look: every half hour, 5 minutes after a failed one. */
+    fun stale(ctx: Context, maxAgeMs: Long = 30 * 60_000L) =
+        System.currentTimeMillis() - Prefs.of(ctx).getLong(LIST_AT, 0L) >= maxAgeMs
+
+    /** Reads the folder again when it is [stale]. Call off the main thread. */
+    fun refreshIfStale(ctx: Context, cfg: Config): Boolean = if (stale(ctx)) refresh(ctx, cfg) else false
 
     /** Reads the folder (and up to two levels of subfolders). Call off the main thread. */
     @Synchronized
