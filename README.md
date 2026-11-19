@@ -114,6 +114,20 @@ and Continue watching, and resets the row order.
 Down from the bottom row slides up the recommendations; OK on the status capsule in the top
 right corner opens Home Assistant's dashboard.
 
+## Wallpapers from the NAS
+
+Settings › Background › Wallpapers from a network folder: a Windows (SMB) share, e.g.
+`\\192.168.2.2\NAS\Wallpapers` (computer, share, folder, user, password; the password stays
+in the TV's config.json like the Home Assistant token). The picture set "Wallpapers (NAS)" then
+shows whatever is in that folder (and two levels of subfolders): the launcher looks again every
+half hour or on "Check the folder now", fetches only the picture on screen, keeps it on the TV,
+and drops pictures that left the folder. A word in a picture's name or folder gives its part of
+the day — hajnal / dawn / sunrise / reggel, nappal / day, alkony / dusk / sunset / este, éjszaka /
+night — and others suit any time; karácsony / christmas / xmas / advent pictures are used in
+Christmas mode instead of the Christmas illustrations. The pictures of a part of the day take
+turns every hour; Settings › Background › Next wallpaper skips to the next one (any photo set).
+Read with smbj (+ Bouncy Castle for NTLM's MD4).
+
 ## Design: Standard and Live
 
 Settings › Background › Design › Home screen chooses between two looks of the home screen.

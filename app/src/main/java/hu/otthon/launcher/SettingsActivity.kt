@@ -427,6 +427,13 @@ class SettingsActivity : PanelActivity() {
                 row(o.title, o.subtitle, o.key == cfg.background) { edit(close = true) { it.put("background", o.key) } }
             }
         }
+        if (Backgrounds.isPhoto(cfg.background)) {
+            row("Next wallpaper") {
+                Backgrounds.next(this)
+                backdrop.show(cfg.background, Backgrounds.phase(this, cfg), true)
+            }
+        }
+        nasSection()
         add(SliderRow(this, "Darkening", cfg.dim, 0f, 0.9f, 0.05f, { "${Math.round(it * 100)}%" }) { v ->
             backdrop.setDim(v)
             ConfigStore.edit(this) { it.put("dim", Math.round(v * 100) / 100.0) }
@@ -752,6 +759,42 @@ class SettingsActivity : PanelActivity() {
             entityList("qlights", { r -> ConfigStore.array(r, "quick_lights") }, cfg.quickLights, "Add a light", "light", false)
             note("The Home tiles of the quick settings: the cameras, all the lights of the TV's room, and these lights. With none chosen, the light groups of the TV's room are shown (at most four).")
         }
+    }
+
+    /** The "Wallpapers (NAS)" set: where the folder is, and a look at it now. */
+    private fun nasSection() {
+        val nas = cfg.nas
+        expand("nas", "Wallpapers from a network folder", nas?.label ?: "Not set") {
+            fun ask(title: String, now: String, hint: String, key: String, then: () -> Unit) {
+                Popup.text(this, title, now, hint) { v ->
+                    ConfigStore.edit(this) { r ->
+                        val o = r.optJSONObject("nas") ?: JSONObject().also { r.put("nas", it) }
+                        o.put(key, v.trim())
+                    }
+                    cfg = Config.load(this)
+                    then()
+                }
+            }
+            row("Computer", nas?.host ?: "") { ask("Computer", nas?.host ?: "192.168.2.2", "Its name or IP address", "host") { change { } } }
+            row("Share", nas?.share ?: "") { ask("Share", nas?.share ?: "NAS", "The shared folder's name, e.g. NAS", "share") { change { } } }
+            row("Folder", nas?.path ?: "") { ask("Folder", nas?.path ?: "Wallpapers", "Inside the share, e.g. Wallpapers", "path") { change { } } }
+            row("User", nas?.user ?: "") { ask("User", nas?.user ?: "", "The share's user name", "user") { change { } } }
+            row("Password", if (nas?.password.isNullOrEmpty()) "" else "••••••") { ask("Password", "", "The share's password", "password") { change { } } }
+            if (nas != null) {
+                row("Check the folder now", NasWallpapers.describe(this)) {
+                    toast("Reading ${nas.label}…")
+                    Bg.run({ NasWallpapers.refresh(applicationContext, cfg) }) { ok ->
+                        toast(if (ok == true) NasWallpapers.describe(this) else (NasWallpapers.lastError(this) ?: "Couldn't read the folder"))
+                        change { }
+                        if (cfg.background == NasWallpapers.KEY) backdrop.show(cfg.background, Backgrounds.phase(this, cfg), true)
+                    }
+                }
+                if (cfg.background != NasWallpapers.KEY) row("Use these wallpapers") {
+                    edit { it.put("background", NasWallpapers.KEY) }
+                }
+            }
+        }
+        note("Pictures for a part of the day have a word for it in their name or folder: hajnal / dawn, nappal / day, alkony / dusk, éjszaka / night (others suit any time). Pictures with karácsony / christmas in their name or folder are for Christmas mode. Whatever is in the folder is used; the launcher looks again every half hour.")
     }
 
     private fun setColorKeysEverywhere(on: Boolean) {

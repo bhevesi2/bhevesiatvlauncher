@@ -78,6 +78,8 @@ data class Config(
     val colorKeysEverywhere: Boolean,
     /** "standard": the app banners as tiles; "live": taller tiles showing the apps' recommendations. */
     val design: String,
+    /** The Windows share with the "Wallpapers (NAS)" picture set; null: none. */
+    val nas: NasSource?,
     /** Lights on the quick settings' Home tiles; empty: the light groups of the TV's room. */
     val quickLights: List<HaItem>,
     /** What the remote's gear button opens: "auto", "display_sound", "settings" or "tv" (see [SettingsKey]). */
@@ -158,6 +160,7 @@ data class Config(
                 colorKeys = colorKeys(json.optJSONObject("color_keys")),
                 colorKeysEverywhere = json.optBoolean("color_keys_everywhere", false),
                 quickLights = items(json.optJSONArray("quick_lights")),
+                nas = NasSource.from(json.optJSONObject("nas")),
                 design = json.optString("design", "standard").let { if (it == "live") "live" else "standard" },
                 settingsKey = json.optString("settings_key", "auto").let { if (it in SettingsKey.MODES) it else "auto" },
                 kids = Kids.from(json.optJSONObject("kids"))
@@ -436,6 +439,7 @@ object FavStore {
  *  "alpine", "hills"       – built-in vector landscapes
  *  "asset:<name>"          – photo set bundled in the APK (assets/backgrounds/<name>/)
  *  "foto:<name>"           – photo set in files/backgrounds/<name>/ on the TV
+ *  "nas"                   – the pictures in a folder of a Windows share ([NasWallpapers])
  */
 object Backgrounds {
     data class Option(val key: String, val title: String, val subtitle: String)
@@ -465,6 +469,7 @@ object Backgrounds {
             val n = files(ctx, "foto:${it.name}").size
             list.add(Option("foto:${it.name}", title(it.name), if (n > 4) "Your photos: $n, a new one every hour" else "Your photos"))
         }
+        if (Config.load(ctx).nas != null) list.add(Option(NasWallpapers.KEY, "Wallpapers (NAS)", NasWallpapers.describe(ctx)))
         list.add(Option("alpine", "Alpine lake", "Illustration"))
         list.add(Option("hills", "Rolling hills", "Illustration"))
         return list
@@ -472,7 +477,25 @@ object Backgrounds {
 
     private fun title(name: String) = name.replace('_', ' ').replace('-', ' ').replaceFirstChar { it.uppercase() }
 
-    fun isPhoto(key: String) = key.startsWith("asset:") || key.startsWith("foto:")
+    fun isPhoto(key: String) = key.startsWith("asset:") || key.startsWith("foto:") || key == NasWallpapers.KEY
+
+    private const val OFFSET = "bg_offset"
+
+    /** Which of [count] pictures is on now: a new one every hour, Next wallpaper skips ahead. */
+    fun turn(ctx: Context, count: Int): Int {
+        if (count <= 0) return 0
+        val zone = java.util.TimeZone.getDefault()
+        val now = System.currentTimeMillis()
+        val hours = (now + zone.getOffset(now)) / 3_600_000L
+        val skip = Prefs.of(ctx).getInt(OFFSET, 0)
+        return (((hours + skip) % count + count) % count).toInt()
+    }
+
+    /** Next wallpaper: the next picture of the set, now. */
+    fun next(ctx: Context) {
+        val p = Prefs.of(ctx)
+        p.edit().putInt(OFFSET, p.getInt(OFFSET, 0) + 1).apply()
+    }
 
     private val listings = HashMap<String, Pair<Long, List<String>>>()
 
@@ -501,19 +524,24 @@ object Backgrounds {
      * one every hour.
      */
     fun variant(ctx: Context, key: String, phase: Phase): String? {
+        if (key == NasWallpapers.KEY) return NasWallpapers.pick(ctx, phase, FocusGlide.festive)?.path
         val match = Regex("^" + phase.key + "[-_]?(\\d*)\\.(jpg|jpeg|png|webp)$")
         val names = files(ctx, key).filter { match.matches(it.lowercase()) }
             .sortedWith(compareBy({ match.find(it.lowercase())?.groupValues?.get(1)?.toIntOrNull() ?: 0 }, { it }))
         if (names.isEmpty()) return null
-        val zone = java.util.TimeZone.getDefault()
-        val now = System.currentTimeMillis()
-        val hours = (now + zone.getOffset(now)) / 3_600_000L
-        return names[(hours % names.size).toInt()]
+        return names[turn(ctx, names.size)]
     }
 
     /** Loads the photo for a phase, or null if the set has no such image. Call off the main thread. */
     @Synchronized
     fun photo(ctx: Context, key: String, phase: Phase, w: Int = 1920, h: Int = 1080): Bitmap? {
+        if (key == NasWallpapers.KEY) {
+            // the folder is looked at again every half hour; only the picture on screen is fetched
+            val cfg = Config.load(ctx)
+            NasWallpapers.refreshIfStale(ctx, cfg)
+            val pic = NasWallpapers.pick(ctx, phase, FocusGlide.festive) ?: return null
+            if (NasWallpapers.file(ctx, cfg, pic) == null) return null
+        }
         val name = variant(ctx, key, phase) ?: return null
         val ck = "$key/$name"
         if (ck == cacheKey && cacheBmp != null) return cacheBmp
@@ -523,6 +551,11 @@ object Backgrounds {
             }
             key.startsWith("foto:") -> {
                 { File(File(ctx.getExternalFilesDir("backgrounds"), key.removePrefix("foto:")), name).inputStream() }
+            }
+            key == NasWallpapers.KEY -> {
+                val pic = NasWallpapers.pictures(ctx).firstOrNull { it.path == name } ?: return null
+                val f = NasWallpapers.file(ctx, Config.load(ctx), pic) ?: return null
+                ({ f.inputStream() })
             }
             else -> null
         }
