@@ -46,6 +46,16 @@ class LandscapeView(context: Context) : View(context) {
         setLayerType(LAYER_TYPE_HARDWARE, null)
     }
 
+    /**
+     * The layer is a full-screen picture in the graphics memory (8 MB at 1080p): while a photo
+     * covers the landscape it is given back, which a 2 GB TV feels.
+     */
+    override fun setVisibility(visibility: Int) {
+        super.setVisibility(visibility)
+        val want = if (visibility == VISIBLE) LAYER_TYPE_HARDWARE else LAYER_TYPE_NONE
+        if (layerType != want) setLayerType(want, null)
+    }
+
     var style: String = "alpesi"
         set(value) { field = value; invalidate() }
 

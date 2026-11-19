@@ -73,7 +73,7 @@ class LiveTile(ctx: Context, val app: AppEntry) : FrameLayout(ctx) {
             texts.animate().alpha(if (f && title.text.isNotBlank()) 1f else 0f).setDuration(200).start()
             removeCallbacks(cycle)
             if (f) {
-                postDelayed(cycle, CYCLE_MS)
+                postDelayed(cycle, if (LowRam.on) CYCLE_MS * 2 else CYCLE_MS)
                 onFocused?.invoke()
             }
         }
@@ -174,7 +174,7 @@ class LiveTile(ctx: Context, val app: AppEntry) : FrameLayout(ctx) {
             show(programs[index], fade = true)
             // and the one after that is read ahead
             programs[(index + 1) % programs.size].image?.let { Reco.loadPicture(context, it, pictureWidth()) { } }
-            postDelayed(this, CYCLE_MS)
+            postDelayed(this, if (LowRam.on) CYCLE_MS * 2 else CYCLE_MS)
         }
     }
 

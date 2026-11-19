@@ -1378,3 +1378,27 @@ object Apps {
         return try { ctx.startActivity(i); true } catch (e: Exception) { false }
     }
 }
+
+/**
+ * A TV with little memory (the 2 GB Sony): fewer pictures kept, and what the launcher holds is
+ * handed back while another app is in front, so that app need not be squeezed.
+ */
+object LowRam {
+    @Volatile var on = false
+        private set
+
+    fun init(ctx: Context) {
+        val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        val mi = android.app.ActivityManager.MemoryInfo()
+        am.getMemoryInfo(mi)
+        on = am.isLowRamDevice || mi.totalMem < 3L * 1024 * 1024 * 1024
+    }
+
+    /** Called from onTrimMemory. */
+    fun trim(level: Int) {
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN && (on || level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW)) {
+            Reco.trim()
+            Backgrounds.trim()
+        }
+    }
+}

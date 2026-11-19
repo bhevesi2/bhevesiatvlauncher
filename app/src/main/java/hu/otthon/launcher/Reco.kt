@@ -231,8 +231,12 @@ object Reco {
     // ---------- pictures ----------
 
     private val pictures = object : LinkedHashMap<String, Bitmap>(64, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Bitmap>?) = size > 80
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Bitmap>?) =
+            size > (if (LowRam.on) 28 else 80)
     }
+
+    /** Lets go of the pictures not on screen, when the launcher is behind another app. */
+    fun trim() = synchronized(pictures) { pictures.clear() }
 
     fun cached(uri: String): Bitmap? = synchronized(pictures) { pictures[uri] }
 

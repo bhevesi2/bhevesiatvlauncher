@@ -112,6 +112,7 @@ class HomeActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        LowRam.init(this)
         buildUi()
         Profile.listeners.add(onProfile)
     }
@@ -850,6 +851,11 @@ class HomeActivity : Activity() {
             signature = sig
             rebuildDynamic(focusFav)
         }
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        LowRam.trim(level)
     }
 
     override fun onResume() {

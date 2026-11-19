@@ -448,6 +448,9 @@ object Backgrounds {
     private var cacheKey: String? = null
     private var cacheBmp: Bitmap? = null
 
+    /** Forgets the decoded photo; the one on screen stays with its view. */
+    fun trim() { cacheKey = null; cacheBmp = null }
+
     fun normalize(k: String): String = when (k) {
         "alpesi", "" -> "alpine"
         "domb" -> "hills"
