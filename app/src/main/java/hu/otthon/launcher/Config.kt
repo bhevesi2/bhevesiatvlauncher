@@ -330,17 +330,32 @@ class Follow(private val stiffness: Float, private val apply: (Float) -> Unit) :
 object ConfigStore {
     fun file(ctx: Context): File = File(ctx.getExternalFilesDir(null), "config.json")
 
+    // the file's text as last read: the screens ask for the settings often, the file seldom changes
+    private var memoText: String? = null
+    private var memoStamp = 0L to 0L
+
     fun read(ctx: Context): JSONObject = try {
         val f = file(ctx)
-        if (f.exists()) JSONObject(f.readText()) else JSONObject()
+        if (f.exists()) JSONObject(text(f)) else JSONObject()
     } catch (e: Exception) {
         JSONObject()
+    }
+
+    @Synchronized
+    private fun text(f: File): String {
+        val stamp = f.lastModified() to f.length()
+        memoText?.let { if (stamp == memoStamp) return it }
+        val t = f.readText()
+        memoText = t
+        memoStamp = stamp
+        return t
     }
 
     fun write(ctx: Context, json: JSONObject): Boolean = try {
         val f = file(ctx)
         f.parentFile?.mkdirs()
         f.writeText(json.toString(1))
+        synchronized(this) { memoText = null }
         true
     } catch (e: Exception) {
         false

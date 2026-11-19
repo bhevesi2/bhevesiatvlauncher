@@ -561,7 +561,9 @@ class FocusGlide private constructor(private val host: View) {
         val time = android.os.SystemClock.uptimeMillis() / 1000f
         val a = (k * 255).toInt()
         wirePaint.alpha = a
-        canvas.drawPath(lightPath, wirePaint)
+        // a plain rounded rectangle: the graphics chip draws it itself, a path it would have to
+        // rasterise and upload again in every frame
+        canvas.drawRoundRect(lightRect, r, r, wirePaint)
         // halos first, so no halo covers a neighbouring bulb
         val glow = FloatArray(n)
         for (i in 0 until n) {
@@ -767,7 +769,7 @@ class FocusGlide private constructor(private val host: View) {
                 drawLights(canvas, nowGlow)
                 canvas.restoreToCount(save)
                 // keep twinkling, at a pace that is kind to the TV
-                host.postInvalidateDelayed(40)
+                host.postInvalidateDelayed(if (LowRam.on) 120L else 40L)
             } else if (nowGlow > 0f && mask != null) {
                 val save = canvas.save()
                 // the glow may spill over the edge of its list, as far as it reaches
@@ -822,6 +824,7 @@ open class PanelActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        LowRam.init(this)
         overridePendingTransition(0, 0)
     }
 

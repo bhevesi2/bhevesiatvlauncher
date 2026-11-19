@@ -50,6 +50,22 @@ class SettingsActivity : PanelActivity() {
      * would take it as "the user moved here" and switch the page back to Appearance.
      */
     private var rendering = false
+    private var navPending = -1
+    private val navShow = Runnable {
+        val i = navPending
+        navPending = -1
+        if (i >= 0 && i != navIndex && !isFinishing) showRoot(i, false)
+    }
+
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        // stepping right into the page before it was built: build it now
+        if (navPending >= 0 && event.action == android.view.KeyEvent.ACTION_DOWN &&
+            event.keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT) {
+            Bg.main.removeCallbacks(navShow)
+            navShow.run()
+        }
+        return super.dispatchKeyEvent(event)
+    }
 
     /** Apps that publish recommendations, read once when the Home screen page is first shown. */
     private var publishers: List<Pair<String, String>>? = null
@@ -96,7 +112,13 @@ class SettingsActivity : PanelActivity() {
                 setPadding(dp(10f), dp(8f), dp(10f), dp(8f))
                 FocusGlide.shape(this, dp(Look.R_SMALL).toFloat())
                 setOnFocusChangeListener { _, f ->
-                    if (f && i != navIndex && !rendering) showRoot(i, false)
+                    if (f && i != navIndex && !rendering) {
+                        // the page is built once the cursor stops: walking down the list on a slow
+                        // TV must not build every page it passes
+                        navPending = i
+                        Bg.main.removeCallbacks(navShow)
+                        Bg.main.postDelayed(navShow, if (LowRam.on) 220L else 120L)
+                    }
                     paintNav()
                 }
                 setOnClickListener { showRoot(i, true) }
