@@ -481,6 +481,8 @@ class SettingsActivity : PanelActivity() {
             cfg = Config.load(this)
         })
         note("Reduced keeps only short fades. Off also stops the gliding cursor and the smooth scrolling.")
+        toggle("OLED pixel shift", cfg.pixelShift) { on -> edit { it.put("pixel_shift", on) } }
+        note("For OLED screens: the home screen moves by a pixel or two every minute, so nothing stays in one place long enough to burn in. LCD screens (the TCL) don't need it.")
         section("Little visitors")
         add(SegmentRow(this, "Bears and bunnies", listOf("Off", "A few", "Lots"), cfg.critters) { i ->
             ConfigStore.edit(this) { it.put("critters", i) }

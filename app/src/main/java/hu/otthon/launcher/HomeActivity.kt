@@ -951,10 +951,11 @@ class HomeActivity : Activity() {
             updateKids(force = false)
         }
         backdrop.show(cfg.background, Backgrounds.phase(this, cfg), true)
-        // OLED: shift static content by a few pixels every minute
+        // OLED: shift static content by a few pixels every minute (an LCD needs none of it)
         val shifts = arrayOf(0 to 0, 2 to 1, -1 to 2, -2 to -1, 1 to -2, 2 to -1, -1 to -1)
-        shiftIndex = (shiftIndex + 1) % shifts.size
+        shiftIndex = if (cfg.pixelShift) (shiftIndex + 1) % shifts.size else 0
         val (sx, sy) = shifts[shiftIndex]
+        if (!cfg.pixelShift && content.translationX == 0f && content.translationY == 0f) return
         content.animate().translationX(dp(sx.toFloat()).toFloat()).translationY(dp(sy.toFloat()).toFloat()).setDuration(1500).start()
     }
 

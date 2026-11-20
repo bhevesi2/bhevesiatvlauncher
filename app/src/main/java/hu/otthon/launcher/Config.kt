@@ -72,6 +72,8 @@ data class Config(
     val critters: Int,
     /** Christmas: reindeer instead of bears and bunnies, Santa's sleigh, fairy lights as the cursor. */
     val christmas: Boolean,
+    /** OLED care: the home screen moves by a few pixels every minute. Not needed on LCD TVs. */
+    val pixelShift: Boolean = true,
     /** The remote's colour buttons ("red", "green", "yellow", "blue") and what each one does. */
     val colorKeys: Map<String, HaItem>,
     /** True: the colour buttons work in every app (KeyService), not only on the home screen. */
@@ -159,6 +161,7 @@ data class Config(
                 recoOrder = strings(json.optJSONArray("reco_order")),
                 critters = json.optInt("critters", 0).coerceIn(0, 2),
                 christmas = json.optBoolean("christmas", false),
+                pixelShift = json.optBoolean("pixel_shift", true),
                 colorKeys = colorKeys(json.optJSONObject("color_keys")),
                 colorKeysEverywhere = json.optBoolean("color_keys_everywhere", false),
                 quickLights = items(json.optJSONArray("quick_lights")),
