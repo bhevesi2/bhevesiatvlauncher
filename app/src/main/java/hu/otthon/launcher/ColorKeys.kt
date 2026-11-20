@@ -289,6 +289,8 @@ class KeyService : AccessibilityService() {
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
     private var lastCount = 0L
 
+    private val volumeWatch by lazy { VolumeWatch(this) { config() } }
+
     private fun config(): Config? {
         val now = System.currentTimeMillis()
         return cfg?.takeIf { now - cfgAt < 5000 } ?: try {
@@ -348,6 +350,7 @@ class KeyService : AccessibilityService() {
             eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
         }
         try { registerReceiver(screenOff, android.content.IntentFilter(android.content.Intent.ACTION_SCREEN_OFF)) } catch (e: Exception) { }
+        volumeWatch.start()
         handler.postDelayed(tick, 30_000L)
         config()?.let { Profile.checkBoot(this, it) }
     }
@@ -356,6 +359,7 @@ class KeyService : AccessibilityService() {
         bound = false
         handler.removeCallbacks(tick)
         try { unregisterReceiver(screenOff) } catch (e: Exception) { }
+        volumeWatch.stop()
         super.onDestroy()
     }
 

@@ -58,6 +58,7 @@ object AmpVolume {
         val amp = cfg.amp ?: return false
         if (!cfg.haEnabled || !isKey(event.keyCode)) return false
         if (event.action != KeyEvent.ACTION_DOWN) return true
+        if (event.repeatCount == 0) android.util.Log.i("OtthonAmp", "volume button seen by the button service: ${KeyEvent.keyCodeToString(event.keyCode)}")
         val code = event.keyCode
         if (code == KeyEvent.KEYCODE_VOLUME_MUTE) {
             if (event.repeatCount > 0) return true
@@ -72,6 +73,23 @@ object AmpVolume {
         }
         kick(ctx, cfg, amp)
         return true
+    }
+
+    /** Steps the amplifier [delta] steps (negative: down), for volume changes seen afterwards. */
+    fun steps(ctx: Context, cfg: Config, delta: Int) {
+        val amp = cfg.amp ?: return
+        if (!cfg.haEnabled || delta == 0) return
+        synchronized(lock) { pending += delta }
+        Hud.show(ctx, if (delta > 0) Hud.UP else Hud.DOWN)
+        kick(ctx, cfg, amp)
+    }
+
+    fun mute(ctx: Context, cfg: Config) {
+        val amp = cfg.amp ?: return
+        if (!cfg.haEnabled) return
+        synchronized(lock) { mutePending = true }
+        Hud.show(ctx, Hud.MUTE)
+        kick(ctx, cfg, amp)
     }
 
     /** Sends one command now, for Settings' test rows. */
@@ -204,5 +222,81 @@ object AmpVolume {
                 }
             }.start()
         }
+    }
+}
+
+/**
+ * For TVs that keep the volume buttons to themselves (the TCL changes its own volume before the
+ * button service hears of them): every change of the TV's volume is passed on to the amplifier as
+ * steps, and the TV's volume is put straight back. The TV's volume rests one step above silent at
+ * least, so that a step down is still a change it reports. Mute the same way: the amplifier mutes,
+ * the TV unmutes.
+ */
+class VolumeWatch(private val svc: Context, private val config: () -> Config?) {
+    private val audio = svc.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+    private val music = android.media.AudioManager.STREAM_MUSIC
+    private var anchor = -1
+
+    private val receiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(c: Context?, i: android.content.Intent?) {
+            i ?: return
+            if (i.getIntExtra("android.media.EXTRA_VOLUME_STREAM_TYPE", -1) != music) return
+            val cfg = config() ?: return
+            if (cfg.amp == null || !cfg.haEnabled) {
+                anchor = -1
+                return
+            }
+            when (i.action) {
+                VOLUME -> changed(cfg, i.getIntExtra("android.media.EXTRA_PREV_VOLUME_STREAM_VALUE", -1))
+                MUTE -> if (i.getBooleanExtra("android.media.EXTRA_STREAM_VOLUME_MUTED", false)) {
+                    android.util.Log.i("OtthonAmp", "TV muted: muting the amplifier instead")
+                    AmpVolume.mute(svc, cfg)
+                    try { audio.adjustStreamVolume(music, android.media.AudioManager.ADJUST_UNMUTE, 0) } catch (e: Exception) { }
+                }
+            }
+        }
+    }
+
+    private fun rest(): Int {
+        val max = audio.getStreamMaxVolume(music)
+        val now = audio.getStreamVolume(music)
+        return now.coerceIn(1, maxOf(1, max - 1))
+    }
+
+    private fun changed(cfg: Config, prev: Int) {
+        val now = audio.getStreamVolume(music)
+        if (anchor < 0) {
+            // the first change since the amplifier was chosen: the level before it is the rest
+            val max = audio.getStreamMaxVolume(music)
+            anchor = (if (prev >= 0) prev else now).coerceIn(1, maxOf(1, max - 1))
+        }
+        val delta = now - anchor
+        if (delta == 0) return                     // our own putting back
+        android.util.Log.i("OtthonAmp", "TV volume moved $delta: passing it to the amplifier")
+        AmpVolume.steps(svc, cfg, delta)
+        try { audio.setStreamVolume(music, anchor, 0) } catch (e: Exception) { }
+    }
+
+    fun start() {
+        val f = android.content.IntentFilter().apply { addAction(VOLUME); addAction(MUTE) }
+        try {
+            if (Build.VERSION.SDK_INT >= 33) svc.registerReceiver(receiver, f, Context.RECEIVER_EXPORTED)
+            else svc.registerReceiver(receiver, f)
+        } catch (e: Exception) { }
+        // the resting level now, so the very first step down is already a change
+        val cfg = config()
+        if (cfg?.amp != null) {
+            anchor = rest()
+            if (audio.getStreamVolume(music) != anchor) try { audio.setStreamVolume(music, anchor, 0) } catch (e: Exception) { }
+        }
+    }
+
+    fun stop() {
+        try { svc.unregisterReceiver(receiver) } catch (e: Exception) { }
+    }
+
+    companion object {
+        const val VOLUME = "android.media.VOLUME_CHANGED_ACTION"
+        const val MUTE = "android.media.STREAM_MUTE_CHANGED_ACTION"
     }
 }
