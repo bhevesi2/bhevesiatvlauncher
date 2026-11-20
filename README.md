@@ -252,6 +252,25 @@ asks Home Assistant's Android TV integration to enable it over ADB (other access
 are kept). Only buttons that have an action are taken over, the rest still reach the app
 (teletext, programme guide). Choosing "On the home screen" removes the service again.
 
+## Amplifier volume
+
+For an amplifier that only listens to infrared (the Musical Fidelity M6si500), the TV remote's
+volume and mute buttons can work the amplifier instead of the TV, in every app, through an
+infrared remote in Home Assistant (a Broadlink). Settings › Remote › Volume buttons: choose the
+Broadlink's `remote.` entity, then teach it the amplifier remote's Volume +, Volume − and Mute
+(Teach the Broadlink…, each row waits 15 s for the button). The commands are saved in the
+Broadlink under the device `amplifier` as `volume_up`, `volume_down` and `mute`; commands
+learnt earlier under other names can be used by editing `amp_volume` in config.json:
+
+```json
+"amp_volume": { "remote": "remote.broadlink", "device": "amplifier",
+                "up": "volume_up", "down": "volume_down", "mute": "mute" }
+```
+
+Holding a button keeps stepping (about 7 steps a second); steps pressed while earlier ones are
+still on their way are sent together with `num_repeats`. A small sign in the top right corner
+shows the direction. Set the TV's optical output to a fixed level.
+
 ## Gear button and quick settings
 
 Remotes without a gear button (the Sony's): Settings › Remote › a colour button › "Open the quick

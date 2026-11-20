@@ -381,6 +381,10 @@ class KeyService : AccessibilityService() {
             if (Profile.kids(this, c)) return false
             return SettingsKey.handle(this, c, event)
         }
+        if (AmpVolume.isKey(event.keyCode)) {
+            val c = config() ?: return false
+            return AmpVolume.handle(this, c, event)
+        }
         if (ColorKeys.key(event.keyCode) == null) return false
         // the settings are read again at most every few seconds, not on every key
         val c = config() ?: return false

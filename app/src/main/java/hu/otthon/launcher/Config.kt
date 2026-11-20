@@ -80,6 +80,8 @@ data class Config(
     val design: String,
     /** The Windows share with the "Wallpapers (NAS)" picture set; null: none. */
     val nas: NasSource?,
+    /** The amplifier the volume buttons work, through a Home Assistant IR remote; null: the TV's own volume. */
+    val amp: AmpRemote? = null,
     /** Lights on the quick settings' Home tiles; empty: the light groups of the TV's room. */
     val quickLights: List<HaItem>,
     /** What the remote's gear button opens: "auto", "display_sound", "settings" or "tv" (see [SettingsKey]). */
@@ -161,6 +163,7 @@ data class Config(
                 colorKeysEverywhere = json.optBoolean("color_keys_everywhere", false),
                 quickLights = items(json.optJSONArray("quick_lights")),
                 nas = NasSource.from(json.optJSONObject("nas")),
+                amp = AmpRemote.from(json.optJSONObject("amp_volume")),
                 design = json.optString("design", "standard").let { if (it == "live") "live" else "standard" },
                 settingsKey = json.optString("settings_key", "auto").let { if (it in SettingsKey.MODES) it else "auto" },
                 kids = Kids.from(json.optJSONObject("kids"))

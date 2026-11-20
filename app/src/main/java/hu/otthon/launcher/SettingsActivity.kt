@@ -787,7 +787,55 @@ class SettingsActivity : PanelActivity() {
             section("Quick settings · lights")
             entityList("qlights", { r -> ConfigStore.array(r, "quick_lights") }, cfg.quickLights, "Add a light", "light", false)
             note("The Home tiles of the quick settings: the cameras, all the lights of the TV's room, and these lights. With none chosen, the light groups of the TV's room are shown (at most four).")
+            ampSection()
         }
+    }
+
+    /** The volume buttons working an infrared-only amplifier through a Home Assistant IR remote. */
+    private fun ampSection() {
+        section("Volume buttons")
+        val amp = cfg.amp
+        row("Volume buttons work", if (amp == null) "The TV" else "The amplifier · ${amp.remote}") {
+            pick("Infrared remote that reaches the amplifier", "remote") { entity, _ ->
+                edit { r -> ConfigStore.obj(r, "amp_volume").put("remote", entity) }
+                if (!KeyService.isOn(this)) {
+                    Adb.run(this, cfg, ColorKeys.enableCommand(this)) { r -> if (r != Adb.Result.OK) toast(Adb.explain(r)) }
+                }
+            }
+        }
+        if (amp == null) {
+            note("For an amplifier that only listens to infrared: the TV remote's volume and mute buttons are sent to it through an infrared remote in Home Assistant (a Broadlink), in every app.")
+            return
+        }
+        fun learn(title: String, command: String) {
+            toast("Point the amplifier's remote at the Broadlink and press $title")
+            val c = cfg
+            Bg.run({
+                try {
+                    HaClient(c.haUrl!!, c.haToken!!).call("remote", "learn_command", JSONObject()
+                        .put("entity_id", amp.remote).put("device", amp.device).put("command", command).put("timeout", 15), 25000)
+                    true
+                } catch (e: Exception) { false }
+            }) { ok -> toast(if (ok == true) "Done: try it with “Try” below" else "Nothing was learnt, try again") }
+        }
+        fun test(title: String, command: String) {
+            AmpVolume.test(this, cfg, command) { ok -> if (!ok) toast("Couldn't send $title") }
+        }
+        row("Try: volume up") { test("volume up", amp.up) }
+        row("Try: volume down") { test("volume down", amp.down) }
+        row("Try: mute") { test("mute", amp.mute) }
+        expand("amp_learn", "Teach the Broadlink the amplifier's buttons", "Commands of “${amp.device}”") {
+            row("Learn volume up") { learn("Volume +", amp.up) }
+            row("Learn volume down") { learn("Volume −", amp.down) }
+            row("Learn mute") { learn("Mute", amp.mute) }
+            row("Commands saved as", amp.device) {
+                Popup.text(this, "Commands saved as", amp.device, "The device name in the Broadlink, e.g. ${AmpRemote.DEVICE}") { v ->
+                    if (v.isNotBlank()) edit { r -> ConfigStore.obj(r, "amp_volume").put("device", v.trim()) }
+                }
+            }
+        }
+        row("Give the volume buttons back to the TV") { edit { r -> r.remove("amp_volume") } }
+        note("The volume and mute buttons go to the amplifier in every app; holding a button keeps stepping. The amplifier tells nothing back, so the corner sign shows the direction, not the level. Set the TV's optical output to a fixed level, so the TV does not turn the sound down before the amplifier.")
     }
 
     /** The "Wallpapers (NAS)" set: where the folder is, and a look at it now. */
