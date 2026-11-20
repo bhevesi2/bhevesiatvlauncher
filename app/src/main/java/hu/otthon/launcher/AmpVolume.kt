@@ -19,7 +19,11 @@ import java.util.concurrent.Executors
  * Home Assistant IR remote (a Broadlink): its learnt commands are sent with remote.send_command.
  * [remote] is the remote entity, [device] the name the commands were learnt under.
  */
-data class AmpRemote(val remote: String, val device: String, val up: String, val down: String, val mute: String) {
+data class AmpRemote(
+    val remote: String, val device: String, val up: String, val down: String, val mute: String,
+    /** The TV volume the TV is kept at (its optical output set to variable); -1: wherever it was. */
+    val rest: Int = -1
+) {
     companion object {
         const val DEVICE = "amplifier"
 
@@ -28,7 +32,7 @@ data class AmpRemote(val remote: String, val device: String, val up: String, val
             val remote = o.optString("remote", "").trim()
             if (remote.isBlank()) return null
             fun s(k: String, d: String) = o.optString(k, "").trim().ifBlank { d }
-            return AmpRemote(remote, s("device", DEVICE), s("up", "volume_up"), s("down", "volume_down"), s("mute", "mute"))
+            return AmpRemote(remote, s("device", DEVICE), s("up", "volume_up"), s("down", "volume_down"), s("mute", "mute"), o.optInt("rest", -1))
         }
     }
 }
@@ -257,21 +261,19 @@ class VolumeWatch(private val svc: Context, private val config: () -> Config?) {
         }
     }
 
-    private fun rest(): Int {
+    /** Where the TV's volume rests: the chosen level, or [fallback]; never silent or full. */
+    private fun rest(cfg: Config, fallback: Int): Int {
         val max = audio.getStreamMaxVolume(music)
-        val now = audio.getStreamVolume(music)
-        return now.coerceIn(1, maxOf(1, max - 1))
+        val want = cfg.amp?.rest?.takeIf { it > 0 } ?: fallback
+        return want.coerceIn(1, maxOf(1, max - 1))
     }
 
     private fun changed(cfg: Config, prev: Int) {
         val now = audio.getStreamVolume(music)
-        if (anchor < 0) {
-            // the first change since the amplifier was chosen: the level before it is the rest
-            val max = audio.getStreamMaxVolume(music)
-            anchor = (if (prev >= 0) prev else now).coerceIn(1, maxOf(1, max - 1))
-        }
-        val delta = now - anchor
-        if (delta == 0) return                     // our own putting back
+        // the resting level: the chosen one, else where the TV was before the first change
+        anchor = rest(cfg, if (anchor >= 0) anchor else if (prev >= 0) prev else now)
+        if (now == anchor) return                  // our own putting back
+        val delta = if (prev >= 0 && prev != now) now - prev else now - anchor
         android.util.Log.i("OtthonAmp", "TV volume moved $delta: passing it to the amplifier")
         AmpVolume.steps(svc, cfg, delta)
         try { audio.setStreamVolume(music, anchor, 0) } catch (e: Exception) { }
@@ -286,7 +288,7 @@ class VolumeWatch(private val svc: Context, private val config: () -> Config?) {
         // the resting level now, so the very first step down is already a change
         val cfg = config()
         if (cfg?.amp != null) {
-            anchor = rest()
+            anchor = rest(cfg, audio.getStreamVolume(music))
             if (audio.getStreamVolume(music) != anchor) try { audio.setStreamVolume(music, anchor, 0) } catch (e: Exception) { }
         }
     }
