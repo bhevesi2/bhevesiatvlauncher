@@ -160,6 +160,28 @@ object ServiceKeeper {
     fun ensure(ctx: Context, cfg: Config) {
         overlay(ctx, cfg)
         accessibility(ctx, cfg)
+        scale(ctx, cfg)
+    }
+
+    private var lastScaleTry = 0L
+
+    /**
+     * The TCL draws its screen at 1920×1080 but starts up at the density meant for 3840×2160:
+     * after a restart everything is twice as big and spills off the screen. A screen narrower
+     * than 800 dp at a full-HD size is that mistake: the density goes back to the one that
+     * makes 1920 pixels 960 dp (and it stays so, the TV keeps a forced density).
+     */
+    private fun scale(ctx: Context, cfg: Config) {
+        val m = ctx.resources.displayMetrics
+        val wdp = ctx.resources.configuration.screenWidthDp
+        val px = maxOf(m.widthPixels, m.heightPixels)
+        if (px < 1900 || wdp >= 800) return
+        val now = System.currentTimeMillis()
+        if (now - lastScaleTry < 600_000L) return
+        lastScaleTry = now
+        val want = px * 160 / 960
+        android.util.Log.w("OtthonScale", "screen is ${wdp} dp at $px px: setting the density to $want")
+        Adb.run(ctx, cfg, "wm density $want") { r -> android.util.Log.i("OtthonScale", "density: $r") }
     }
 
     /**
