@@ -19,8 +19,13 @@ import kotlin.random.Random
  * climb it and pack it away. Purely for fun; switched on in Settings › Appearance.
  *
  * [platforms] lists the views they may stand on; it is asked again every couple of seconds.
+ *
+ * They are drawn on a see-through surface of their own above the home screen, so their every step
+ * redraws only them: the home screen under them (the photo, the tiles) is not drawn again, which a
+ * weak TV (the Sony) feels as smooth scrolling.
  */
-class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View(ctx) {
+class CritterLayer(ctx: Context, private val platforms: () -> List<View>) :
+    android.view.SurfaceView(ctx), android.view.SurfaceHolder.Callback {
 
     /** AWAY: off screen fetching something. FLOAT: flying about after a magic cookie. */
     private enum class State { WALK, IDLE, JUMP, LADDER, AWAY, FLOAT }
@@ -102,10 +107,47 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
             if (!v) kick()
         }
 
+    /** True while the surface exists (it does only while the layer is visible). */
+    private var ready = false
+
     init {
         isFocusable = false
         isClickable = false
+        setZOrderOnTop(true)
+        holder.setFormat(android.graphics.PixelFormat.TRANSLUCENT)
+        holder.addCallback(this)
         visibility = INVISIBLE
+    }
+
+    override fun surfaceCreated(holder: android.view.SurfaceHolder) {
+        ready = true
+        kick()
+    }
+
+    override fun surfaceChanged(holder: android.view.SurfaceHolder, format: Int, width: Int, height: Int) {
+        if (!running) render()
+    }
+
+    override fun surfaceDestroyed(holder: android.view.SurfaceHolder) {
+        ready = false
+    }
+
+    /** One picture of them on their own surface: cleared, then everything drawn afresh. */
+    private fun render() {
+        if (!ready) return
+        val surface = holder.surface
+        if (!surface.isValid) return
+        val canvas = try {
+            surface.lockHardwareCanvas()
+        } catch (e: Exception) {
+            try { holder.lockCanvas() } catch (e2: Exception) { null }
+        } ?: return
+        try {
+            canvas.drawColor(0, android.graphics.PorterDuff.Mode.CLEAR)
+            drawScene(canvas)
+        } finally {
+            try { surface.unlockCanvasAndPost(canvas) } catch (e: Exception) { }
+        }
     }
 
     /** Christmas: reindeer instead of bears and bunnies, and now and then Santa flies over. */
@@ -175,7 +217,7 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
     }
 
     private fun kick() {
-        if (running || paused || critters.isEmpty() || !isAttachedToWindow) return
+        if (running || paused || !ready || critters.isEmpty() || !isAttachedToWindow) return
         running = true
         last = SystemClock.uptimeMillis()
         post(step)
@@ -194,23 +236,17 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
 
     private val step = object : Runnable {
         override fun run() {
-            if (paused || critters.isEmpty() || !isAttachedToWindow) {
+            if (paused || !ready || critters.isEmpty() || !isAttachedToWindow) {
                 running = false
                 return
             }
             val now = SystemClock.uptimeMillis()
-            if (LowRam.calm()) {
-                // buttons being pressed on a weak TV: hold still, draw nothing, look again soon
-                last = now
-                postDelayed(this, 200L)
-                return
-            }
             val dt = min(0.1f, (now - last) / 1000f)
             last = now
             update(dt)
-            invalidate()
-            // about 30 frames a second is plenty for them and kind to the TV; 20 on a weak one
-            postDelayed(this, if (LowRam.on) 50L else 33L)
+            render()
+            // about 30 frames a second is plenty for them and kind to the TV
+            postDelayed(this, 33L)
         }
     }
 
@@ -557,7 +593,7 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
         p.style = Paint.Style.FILL
     }
 
-    override fun onDraw(canvas: Canvas) {
+    private fun drawScene(canvas: Canvas) {
         for (c in critters) if (!c.bunny && c.state == State.LADDER) drawLadder(canvas, c)
         if (decor.isNotEmpty()) drawDecor(canvas)
         for (c in critters) {
