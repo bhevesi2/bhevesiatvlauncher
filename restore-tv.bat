@@ -69,7 +69,9 @@ for %%P in (
 
 echo.
 echo == Drawing the menus at 1080p again (as the TV came)
-"%ADB%" -s %TV% shell wm size 1920x1080 >nul 2>nul
+rem No forced size: the TV itself limits its menus to 1920 wide and scales the density with it.
+rem A forced 1920x1080 would start up at the 4K density after every restart (everything twice as big).
+"%ADB%" -s %TV% shell wm size reset >nul 2>nul
 "%ADB%" -s %TV% shell wm density reset >nul 2>nul
 
 if "%KEEP%"=="1" goto done
