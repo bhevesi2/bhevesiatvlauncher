@@ -302,6 +302,19 @@ pictures in a player are 4K. The TCL's graphics plane is limited to 1920×1080
 not sharpen it: the launcher has no 4K switch. `restore-tv.bat` sets the TV's own 1080p and
 density again if they were ever changed.
 
+## Camera detections
+
+On the camera page, in a camera's full-screen view, **▼** opens a strip of that camera's
+detections from Frigate (newest first, older ones load as you go right): the picture, what was
+seen and where, when, and how long. **OK** plays the recording full screen with its sound;
+**◀ ▶** step to the newer / older detection, **OK** pauses, **▲ ▼** jump 10 seconds, **Back**
+returns to the strip, and **▲** or **Back** there returns to the live picture.
+
+The list comes from the Frigate integration of Home Assistant (`frigate/events/get` over the
+WebSocket API); the camera's `camera_name` / `client_id` attributes tell which Frigate camera it
+is. Recordings play from the integration's clip link, or failing that as a stream of the same
+minutes from the recordings.
+
 ## Camera pop-ups
 
 When one of the chosen sensors turns on (by default: Frigate seeing a person on any camera of the
