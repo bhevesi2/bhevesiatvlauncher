@@ -769,7 +769,7 @@ class FocusGlide private constructor(private val host: View) {
                 drawLights(canvas, nowGlow)
                 canvas.restoreToCount(save)
                 // keep twinkling, at a pace that is kind to the TV
-                host.postInvalidateDelayed(if (LowRam.on) 120L else 40L)
+                host.postInvalidateDelayed(if (LowRam.on) (if (LowRam.calm()) 400L else 120L) else 40L)
             } else if (nowGlow > 0f && mask != null) {
                 val save = canvas.save()
                 // the glow may spill over the edge of its list, as far as it reaches
@@ -812,6 +812,7 @@ class FocusGlide private constructor(private val host: View) {
  */
 open class PanelActivity : Activity() {
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        LowRam.pressed()
         if (KeyLag.swallow(this, event)) return true
         return super.dispatchKeyEvent(event)
     }
@@ -1396,6 +1397,17 @@ object LowRam {
         am.getMemoryInfo(mi)
         on = am.isLowRamDevice || mi.totalMem < 3L * 1024 * 1024 * 1024
     }
+
+    /** When a button was last pressed in the launcher: the decorations rest while the cursor moves. */
+    @Volatile var keyAt = 0L
+
+    fun pressed() { keyAt = android.os.SystemClock.uptimeMillis() }
+
+    /**
+     * On a weak TV the little visitors and the fairy lights hold still while buttons are being
+     * pressed, so every frame the graphics chip can make goes to the cursor and the scrolling.
+     */
+    fun calm(): Boolean = on && android.os.SystemClock.uptimeMillis() - keyAt < 1500
 
     /** Called from onTrimMemory. */
     fun trim(level: Int) {

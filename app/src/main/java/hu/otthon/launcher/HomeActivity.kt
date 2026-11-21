@@ -477,6 +477,7 @@ class HomeActivity : Activity() {
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        LowRam.pressed()
         if (KeyLag.swallow(this, event)) return true
         if (picker.visibility == View.VISIBLE) {
             // a profile has to be chosen; Back does nothing here

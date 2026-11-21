@@ -199,12 +199,18 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) : View
                 return
             }
             val now = SystemClock.uptimeMillis()
+            if (LowRam.calm()) {
+                // buttons being pressed on a weak TV: hold still, draw nothing, look again soon
+                last = now
+                postDelayed(this, 200L)
+                return
+            }
             val dt = min(0.1f, (now - last) / 1000f)
             last = now
             update(dt)
             invalidate()
-            // about 30 frames a second is plenty for them and kind to the TV
-            postDelayed(this, 33L)
+            // about 30 frames a second is plenty for them and kind to the TV; 20 on a weak one
+            postDelayed(this, if (LowRam.on) 50L else 33L)
         }
     }
 

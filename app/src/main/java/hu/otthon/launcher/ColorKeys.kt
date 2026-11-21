@@ -274,14 +274,24 @@ class KeyService : AccessibilityService() {
          */
         fun isOn(ctx: Context): Boolean {
             if (bound) return true
-            return try {
+            // asked on every button press: the answer of the last few seconds will do, the
+            // question itself is a trip to the system (slow on the Sony)
+            val now = android.os.SystemClock.uptimeMillis()
+            if (now - onAt < 3000) return onLast
+            val on = try {
                 val am = ctx.getSystemService(Context.ACCESSIBILITY_SERVICE) as android.view.accessibility.AccessibilityManager
                 am.getEnabledAccessibilityServiceList(android.accessibilityservice.AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
                     .any { it.resolveInfo?.serviceInfo?.let { si -> si.packageName == ctx.packageName && si.name.endsWith("KeyService") } == true }
             } catch (e: Exception) {
                 false
             }
+            onLast = on
+            onAt = now
+            return on
         }
+
+        @Volatile private var onLast = false
+        @Volatile private var onAt = -10_000L
     }
 
     private var cfg: Config? = null
