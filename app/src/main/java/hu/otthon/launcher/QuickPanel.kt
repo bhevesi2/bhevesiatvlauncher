@@ -21,6 +21,7 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -149,7 +150,6 @@ object QuickPanel {
     private class Panel(private val ctx: Context, private val cfg: Config) : FrameLayout(ctx) {
         private val content = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         private val list = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
-        private var restartAsked = 0L
         private var inSub = false
         private val ha: HaClient? = if (cfg.haEnabled) HaClient(cfg.haUrl!!, cfg.haToken!!) else null
 
@@ -265,18 +265,8 @@ object QuickPanel {
                 open(ctx, Intent(android.provider.Settings.ACTION_WIFI_SETTINGS), Intent(android.provider.Settings.ACTION_WIRELESS_SETTINGS))
             }
             val sleepTile = Tile("Sleep timer", SleepTimer.describe(ctx)) { t -> t.value(SleepTimer.next(ctx)) }
-            // a restart is not undone easily: the first press asks, a second one within 4 s restarts
-            val restartTile = Tile("Restart", "Press OK twice") { t ->
-                val now = System.currentTimeMillis()
-                if (now - restartAsked < 4000) {
-                    t.value("Restarting…")
-                    Adb.run(ctx, cfg, "reboot") { res -> if (res != Adb.Result.OK) t.value("Couldn't restart") }
-                } else {
-                    restartAsked = now
-                    t.value("Press OK again")
-                }
-            }
-            grid(listOf(inputsTile, netTile, sleepTile, restartTile))
+            val powerTile = Tile("Power", "Turn off · Restart") { showPower() }
+            grid(listOf(inputsTile, netTile, sleepTile, powerTile))
 
             if (ha != null) {
                 section("Home")
@@ -411,6 +401,32 @@ object QuickPanel {
         } catch (e: Exception) {
             android.util.Log.w("OtthonQuick", "network state not readable", e)
             ""
+        }
+
+        /**
+         * Power, in the panel. Turning off here shuts the TV down completely, not just to sleep:
+         * a sleeping TV keeps its optical output alive, which holds a DAC that picks its input by
+         * itself (the Holo Cyan 2) on the TV. The remote's power button starts it again.
+         */
+        private fun showPower() {
+            inSub = true
+            list.removeAllViews()
+            section("Power")
+            row("Turn off", "Completely: the optical output goes quiet too") {
+                val c = cfg
+                hide()
+                Adb.run(ctx, c, "reboot -p") { res ->
+                    if (res != Adb.Result.OK) Toast.makeText(ctx, "Couldn't turn the TV off: " + Adb.explain(res), Toast.LENGTH_LONG).show()
+                }
+            }
+            row("Restart") {
+                val c = cfg
+                hide()
+                Adb.run(ctx, c, "reboot") { res ->
+                    if (res != Adb.Result.OK) Toast.makeText(ctx, "Couldn't restart: " + Adb.explain(res), Toast.LENGTH_LONG).show()
+                }
+            }
+            post { firstInList()?.requestFocus() }
         }
 
         /** Inputs, in the panel: the TV, then the HDMI inputs with what is plugged in. */
