@@ -115,8 +115,13 @@ object Glow {
     /** True when [v] glows: its text and icons stay light. */
     fun glows(v: View) = FocusGlide.covers(v)
 
-    /** The background of [v] while it has focus. */
-    fun lit(v: View, radius: Float): Drawable = rounded(if (glows(v)) SOLID else C.FOCUS_FILL, radius)
+    /** The edge of a glowing control: a thin light line inside the glow. */
+    const val EDGE = 0xD9F5F3EE.toInt()
+
+    /** The background of [v] while it has focus: solid dark with a thin light edge, inside its glow. */
+    fun lit(v: View, radius: Float): Drawable =
+        if (glows(v)) rounded(SOLID, radius, Math.round(1.5f * v.resources.displayMetrics.density), EDGE)
+        else rounded(C.FOCUS_FILL, radius)
 
     /** The grow and the neighbours' step aside, as on the app row. */
     fun move(v: View, focused: Boolean, by: Float = Look.GROW) {
