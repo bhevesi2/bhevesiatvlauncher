@@ -53,6 +53,8 @@ object QuickPanel {
 
     fun show(ctx: Context) {
         if (root != null) return
+        // a camera pop-up goes first: both at once are too much for a 2 GB TV's graphics memory
+        try { PopupService.closePopup?.invoke() } catch (e: Exception) { }
         try {
             build(ctx)
         } catch (e: Exception) {

@@ -45,6 +45,9 @@ class PopupService : Service() {
         /** True while the launcher's own camera screen is open: no pop-ups over it. */
         @Volatile var camerasOpen = false
 
+        /** Closes the camera pop-up, if one is up (the quick settings opening). */
+        @Volatile var closePopup: (() -> Unit)? = null
+
         /** Starts or stops the watcher to match the settings. */
         fun sync(ctx: Context) {
             val cfg = Config.load(ctx)
@@ -148,6 +151,7 @@ class PopupService : Service() {
     override fun onCreate() {
         super.onCreate()
         CrashLog.install(this)
+        closePopup = { main.post { hide(false) } }
         worker = HandlerThread("popups").apply { start() }
         bg = Handler(worker.looper)
         foreground()
@@ -174,6 +178,7 @@ class PopupService : Service() {
 
     override fun onDestroy() {
         super.onDestroy()
+        closePopup = null
         bg.removeCallbacksAndMessages(null)
         worker.quitSafely()
         main.removeCallbacksAndMessages(null)
@@ -294,6 +299,10 @@ class PopupService : Service() {
     private fun show(camera: String, title: String, test: Boolean) {
         val c = cfg ?: return
         if (camerasOpen && !test) return
+        // over the open quick settings there is no room for it (a 2 GB TV ran out of graphics
+        // memory with the home screen, the panel and the video at once): the alert is in the
+        // panel's list instead
+        if (QuickPanel.showing && !test) return
         if (!allowed(this)) return
         until = System.currentTimeMillis() + c.popupSeconds * 1000L
         caption?.text = title
