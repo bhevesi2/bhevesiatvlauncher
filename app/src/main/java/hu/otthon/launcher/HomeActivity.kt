@@ -159,7 +159,8 @@ class HomeActivity : Activity() {
         buildReco()
 
         // top row
-        val top = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.TOP }
+        // nothing cut: the corner buttons grow, and step aside for each other
+        val top = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.TOP; clipChildren = false }
         val clockCol = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         clock = label("--:--", 62f, C.TEXT, light = true).apply { letterSpacing = -0.02f }
         date = label("", 15f, C.TEXT2).apply { setPadding(dp(2f), dp(6f), 0, 0) }

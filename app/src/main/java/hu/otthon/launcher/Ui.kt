@@ -109,7 +109,8 @@ object Glow {
 
     fun on(v: View, radius: Float, color: Int = COLOR) {
         FocusGlide.shape(v, radius, 0f)
-        FocusGlide.glow(v, color)
+        // the fairy lights are for the pictures; on a small button their wire looked like a cable
+        FocusGlide.glow(v, color, lights = false)
     }
 
     /** True when [v] glows: its text and icons stay light. */
@@ -459,6 +460,8 @@ class FocusGlide private constructor(private val host: View) {
     private class Shape(val radius: Float, val outset: Float) {
         /** 0: the light fill. Otherwise the cursor is a soft glow of this colour around the control. */
         var glow = 0
+        /** At Christmas, the string of fairy lights around it (the pictures); false: the plain glow. */
+        var lights = true
     }
 
     companion object {
@@ -485,8 +488,11 @@ class FocusGlide private constructor(private val host: View) {
         )
 
         /** Makes the cursor a soft glow of [color] around [v] instead of the light fill under it. */
-        fun glow(v: View, color: Int) {
-            shapes[v]?.glow = color
+        fun glow(v: View, color: Int, lights: Boolean = true) {
+            shapes[v]?.let {
+                it.glow = color
+                it.lights = lights
+            }
         }
 
         private val glows = LinkedHashMap<String, Bitmap>()
@@ -537,6 +543,7 @@ class FocusGlide private constructor(private val host: View) {
     private var nowGlow = 0f
     private var fromColor = 0
     private var nowColor = 0
+    private var nowLights = true
     private val from = RectF()
     private val to = RectF()
     private val now = RectF()
@@ -724,6 +731,10 @@ class FocusGlide private constructor(private val host: View) {
         var changed = false
 
         // glow or light fill, blended while the cursor moves between the two kinds
+        if (nowLights != s.lights) {
+            nowLights = s.lights
+            changed = true
+        }
         val toGlow = if (s.glow != 0) 1f else 0f
         val toColor = if (s.glow != 0) s.glow else nowColor
         if (s.glow != 0) {
@@ -803,7 +814,7 @@ class FocusGlide private constructor(private val host: View) {
             base?.draw(canvas)
             if (!shown || now.isEmpty) return
             val mask = glowMask
-            if (nowGlow > 0f && festive) {
+            if (nowGlow > 0f && festive && nowLights) {
                 val save = canvas.save()
                 if (clipped) canvas.clipRect(clip.left - margin, clip.top - margin, clip.right + margin, clip.bottom + margin)
                 drawLights(canvas, nowGlow)
