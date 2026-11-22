@@ -181,7 +181,7 @@ class PopupService : Service() {
             TvState.front = pkg
             val c = cfg
             val api = client
-            if (c != null && api != null) bg.post { TvState.report(this, c, api) }
+            if (c != null && api != null) bg.post { try { TvState.report(this, c, api) } catch (e: Throwable) { CrashLog.note(e) } }
         }
         val quickAsked = intent?.getBooleanExtra(QUICK, false) == true
         if (quickAsked) main.post { QuickPanel.toggle(this) }
@@ -218,7 +218,7 @@ class PopupService : Service() {
         if (key != watchKey) {
             watch?.stop()
             watch = if (key == null) null else HaWatch(c.haUrl!!, c.haToken!!, want) { e, s, at, first ->
-                bg.post { onLive(e, s, at, first) }
+                bg.post { try { onLive(e, s, at, first) } catch (x: Throwable) { CrashLog.note(x) } }
             }.start()
             watchKey = key
         }
@@ -277,6 +277,17 @@ class PopupService : Service() {
 
     private val poll = object : Runnable {
         override fun run() {
+            // whatever goes wrong in one round is written down; the next round comes all the same
+            try {
+                round()
+            } catch (e: Throwable) {
+                CrashLog.note(e)
+            }
+            val screenOn = try { (getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive } catch (e: Exception) { true }
+            bg.postDelayed(this, if (screenOn) 2000L else 15_000L)
+        }
+
+        private fun round() {
             val c = cfg
             val api = client
             val screenOn = (getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive
@@ -304,7 +315,6 @@ class PopupService : Service() {
             val now = System.currentTimeMillis()
             if (c != null && api != null && screenOn && (!wasOn || now - backfilledAt > 15 * 60_000L)) backfill(c, api)
             wasOn = screenOn
-            bg.postDelayed(this, if (screenOn) 2000L else 15_000L)
         }
     }
 

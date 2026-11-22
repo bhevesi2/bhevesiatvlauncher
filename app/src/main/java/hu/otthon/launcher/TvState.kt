@@ -42,7 +42,7 @@ object TvState {
     fun state(ctx: Context): String {
         val on = (ctx.getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive
         if (!on) return "off"
-        val p = front ?: Prefs.of(ctx).getString("front", null) ?: return "home"
+        val p = front ?: Prefs.of(ctx).getString("front_app", null) ?: return "home"
         return when {
             isDream(p) -> "screensaver"
             p == ctx.packageName -> "home"
@@ -70,7 +70,7 @@ object TvState {
         val st = state(ctx)
         val now = System.currentTimeMillis()
         if (!force && st == sent && now - sentAt < 5 * 60_000L) return
-        val app = front ?: Prefs.of(ctx).getString("front", null)
+        val app = front ?: Prefs.of(ctx).getString("front_app", null)
         val label = app?.let { p ->
             try { ctx.packageManager.getApplicationLabel(ctx.packageManager.getApplicationInfo(p, 0)).toString() } catch (e: Exception) { p }
         }

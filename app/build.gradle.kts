@@ -56,7 +56,7 @@ android {
         checkReleaseBuilds = false
         // also into the build's log, to read without downloading the report
         textReport = true
-        textOutput = file("stdout")
+        textOutput = file("build/reports/lint-results.txt")
     }
     packaging {
         resources {

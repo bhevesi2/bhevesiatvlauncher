@@ -50,7 +50,10 @@ jobs:
       - name: Lint
         if: always()
         continue-on-error: true
-        run: gradle :app:lintRelease --no-daemon
+        run: |
+          gradle :app:lintRelease --no-daemon
+          echo "Lint findings by kind:"
+          grep -oE "(Error|Warning): .*\[[A-Za-z]+\]$" app/build/reports/lint-results.txt | sed -E 's/^(Error|Warning): .*\[([A-Za-z]+)\]$/\1 \2/' | sort | uniq -c | sort -rn || true
 
       - uses: actions/upload-artifact@v4
         if: always()

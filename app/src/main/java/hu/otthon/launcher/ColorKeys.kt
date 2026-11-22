@@ -406,7 +406,7 @@ class KeyService : AccessibilityService() {
         if (TvState.counts(pkg, event.className?.toString(), packageName) && pkg != lastFront) {
             lastFront = pkg
             // kept, so a main process that starts again later still knows it
-            Prefs.of(this).edit().putString("front", pkg).apply()
+            Prefs.of(this).edit().putString("front_app", pkg).apply()
             PopupService.front(this, pkg)
         }
         if (!KidsGuard.relevant(this, pkg)) return
