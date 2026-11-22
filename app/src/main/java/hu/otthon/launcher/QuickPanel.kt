@@ -484,16 +484,52 @@ object QuickPanel {
                         Bg.run({ RunningApps.close(c, apps.map { it.pkg }) }) { showRunning() }
                     }
                 }
-                for (a in apps) {
-                    row(a.label, if (a.mb > 0) "${a.mb} MB · OK closes it" else "OK closes it") { r ->
-                        r.valueView.text = "Closing…"
-                        Bg.run({ RunningApps.close(c, listOf(a.pkg)) }) { ok ->
-                            if (ok == true) showRunning() else r.valueView.text = "Couldn't close it"
-                        }
-                    }
-                }
+                for (a in apps) appRow(a, c)
+                note("OK brings an app to the front; ▶ then OK, or holding OK, closes it.")
                 post { firstInList()?.requestFocus() }
             }
+        }
+
+        /** A running app: the row brings it to the front, the round ✕ beside it closes it. */
+        private fun appRow(a: RunningApps.App, c: Config) {
+            val line = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+            val r = RowView(ctx, a.label, if (a.mb > 0) "${a.mb} MB" else null)
+            fun close() {
+                r.valueView.text = "Closing…"
+                Bg.run({ RunningApps.close(c, listOf(a.pkg)) }) { ok ->
+                    if (ok == true) showRunning() else r.valueView.text = "Couldn't close it"
+                }
+            }
+            r.setOnClickListener {
+                val pm = ctx.packageManager
+                val i = pm.getLeanbackLaunchIntentForPackage(a.pkg) ?: pm.getLaunchIntentForPackage(a.pkg)
+                if (i == null || !open(ctx, i)) r.valueView.text = "Couldn't open it"
+            }
+            r.setOnLongClickListener { close(); true }
+            line.addView(r, LinearLayout.LayoutParams(0, -2, 1f))
+            val x = ctx.label("✕", 14f, C.TEXT, bold = true).apply {
+                gravity = Gravity.CENTER
+                isFocusable = true
+                isClickable = true
+                contentDescription = "Close ${a.label}"
+            }
+            val round = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.OVAL
+                setColor(C.ROW)
+            }
+            x.background = round
+            FocusGlide.shape(x, -1f)
+            x.setOnFocusChangeListener { v, f ->
+                (v as TextView).setTextColor(if (f) C.DARK else C.TEXT)
+                round.setColor(if (f) C.TEXT else C.ROW)
+            }
+            x.setOnClickListener { close() }
+            line.addView(x, LinearLayout.LayoutParams(ctx.dp(36f), ctx.dp(36f)).apply { leftMargin = ctx.dp(8f) })
+            list.addView(line, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(4f) })
+        }
+
+        private fun note(text: String) {
+            list.addView(ctx.label(text, 10f, C.TEXT3).apply { setPadding(ctx.dp(2f), ctx.dp(8f), 0, 0) })
         }
 
         /** Inputs, in the panel: the TV, then the HDMI inputs with what is plugged in. */
