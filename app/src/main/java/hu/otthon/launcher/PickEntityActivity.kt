@@ -145,7 +145,7 @@ class PickEntityActivity : PanelActivity() {
         setContentView(root)
         animateIn(panel, side = false)
 
-        val client = HaClient(cfg.haUrl!!, cfg.haToken!!)
+        val client = cfg.client() ?: return
         Bg.run({ client.states() }) { list ->
             if (list == null) {
                 status.text = "Couldn't load entities from Home Assistant"

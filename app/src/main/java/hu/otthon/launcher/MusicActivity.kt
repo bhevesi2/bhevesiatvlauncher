@@ -84,7 +84,7 @@ class MusicActivity : PanelActivity() {
             finish()
             return
         }
-        ha = HaClient(cfg.haUrl!!, cfg.haToken!!)
+        ha = cfg.client()
         shown = cfg.nowPlaying
 
         frame = PanelFrame(this, "Music", "OK: show on the home screen")

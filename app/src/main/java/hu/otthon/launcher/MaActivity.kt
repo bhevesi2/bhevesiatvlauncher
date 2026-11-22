@@ -119,7 +119,7 @@ class MaActivity : PanelActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         cfg = Config.load(this)
-        ha = if (cfg.haEnabled) HaClient(cfg.haUrl!!, cfg.haToken!!) else null
+        ha = cfg.client()
         buildUi()
         if (ha == null) {
             showMessage("Set up or switch on Home Assistant first.")

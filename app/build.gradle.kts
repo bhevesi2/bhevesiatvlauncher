@@ -54,6 +54,9 @@ android {
         // reported, not blocking: the report is kept with each build
         abortOnError = false
         checkReleaseBuilds = false
+        // also into the build's log, to read without downloading the report
+        textReport = true
+        textOutput = file("stdout")
     }
     packaging {
         resources {

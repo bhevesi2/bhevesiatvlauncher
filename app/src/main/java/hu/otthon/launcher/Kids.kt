@@ -186,7 +186,7 @@ object KidsTime {
         val now = System.currentTimeMillis()
         if (!force && now - haAt < 55_000L) return
         haAt = now
-        val ha = HaClient(cfg.haUrl!!, cfg.haToken!!)
+        val ha = cfg.client() ?: return
         fun st(e: String): String? = try {
             ha.state(e).optString("state", "").takeIf { it.isNotBlank() && it != "unavailable" && it != "unknown" }
         } catch (x: Exception) {
@@ -222,7 +222,7 @@ object KidsTime {
         appCtx = ctx.applicationContext
         if (haPinHelper && cfg.haEnabled) {
             return try {
-                HaClient(cfg.haUrl!!, cfg.haToken!!).call("input_text", "set_value", JSONObject().put("entity_id", PIN).put("value", pin))
+                cfg.client()!!.call("input_text", "set_value", JSONObject().put("entity_id", PIN).put("value", pin))
                 Prefs.of(ctx).edit().putString("kids_ha_pin", pin).apply()
                 true
             } catch (e: Exception) {
@@ -265,7 +265,7 @@ object KidsTime {
         if (cfg.haEnabled && haUsed != null) {
             haUsed = (haUsed ?: 0) + 1
             try {
-                HaClient(cfg.haUrl!!, cfg.haToken!!).call("input_number", "increment", USED)
+                cfg.client()!!.call("input_number", "increment", USED)
             } catch (e: Exception) { }
         }
     }

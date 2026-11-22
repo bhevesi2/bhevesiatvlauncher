@@ -93,6 +93,9 @@ data class Config(
 ) {
     val haEnabled: Boolean get() = haOn && !haUrl.isNullOrBlank() && !haToken.isNullOrBlank()
 
+    /** A Home Assistant client, or null when Home Assistant is not set up or switched off. */
+    fun client(): HaClient? = if (haEnabled) HaClient(haUrl!!, haToken!!) else null
+
     /** The live stream of a camera entity, or null when live video is off. */
     fun stream(camera: String): String? {
         if (!liveVideo) return null

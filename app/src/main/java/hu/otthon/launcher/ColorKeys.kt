@@ -57,7 +57,7 @@ object ColorKeys {
             PopupService.showCamera(app, item.entity, item.title)
             return
         }
-        val client = HaClient(cfg.haUrl!!, cfg.haToken!!)
+        val client = cfg.client() ?: return
         Bg.run({ Actions.fire(client, item); true }) { ok ->
             Toast.makeText(app, Lang.tr(if (ok == true) "${item.title} ✓" else "Couldn't run ${item.title}"), Toast.LENGTH_SHORT).show()
         }

@@ -72,7 +72,7 @@ class CamerasActivity : PanelActivity() {
             finish()
             return
         }
-        ha = HaClient(cfg.haUrl!!, cfg.haToken!!)
+        ha = cfg.client()
         val cams = cfg.cameras
         pending = BooleanArray(cams.size)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)

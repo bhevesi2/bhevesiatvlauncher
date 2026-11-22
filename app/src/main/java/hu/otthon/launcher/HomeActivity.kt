@@ -850,7 +850,7 @@ class HomeActivity : Activity() {
     private fun reload(focusFav: Int = 0) {
         cfg = Config.load(this)
         Profile.checkBoot(this, cfg)
-        ha = if (cfg.haEnabled) HaClient(cfg.haUrl!!, cfg.haToken!!) else null
+        ha = cfg.client()
         backdrop.setDim(cfg.dim)
         val kids = Profile.kids(this, cfg)
         if (kids != kidsOn) {

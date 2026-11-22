@@ -137,7 +137,7 @@ object AmpVolume {
             .put("command", command)
         // a Broadlink waits 0.4 s between repeats unless told otherwise
         if (times > 1) data.put("num_repeats", times).put("delay_secs", 0.08)
-        HaClient(cfg.haUrl!!, cfg.haToken!!).call("remote", "send_command", data, 8000)
+        cfg.client()!!.call("remote", "send_command", data, 8000)
         true
     } catch (e: Exception) {
         android.util.Log.w("OtthonAmp", "send_command $command x$times failed: $e")

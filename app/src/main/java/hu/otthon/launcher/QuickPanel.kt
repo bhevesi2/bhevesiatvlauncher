@@ -156,7 +156,7 @@ object QuickPanel {
         private val list = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         private var inSub = false
         private var popupsOn = cfg.popups
-        private val ha: HaClient? = if (cfg.haEnabled) HaClient(cfg.haUrl!!, cfg.haToken!!) else null
+        private val ha: HaClient? = cfg.client()
 
         init {
             isFocusable = false
@@ -285,15 +285,15 @@ object QuickPanel {
             return r
         }
 
-        /** Tiles two to a line. */
-        private fun grid(tiles: List<Tile>) {
+        /** Tiles two to a line, into [into] (the panel's list unless said otherwise). */
+        private fun grid(tiles: List<Tile>, into: LinearLayout = list) {
             var line: LinearLayout? = null
             tiles.forEachIndexed { i, t ->
-                if (i % 2 == 0) {
-                    line = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
-                    list.addView(line, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(4f) })
+                val row = line.takeIf { i % 2 == 1 } ?: LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }.also {
+                    line = it
+                    into.addView(it, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(4f) })
                 }
-                line!!.addView(t, LinearLayout.LayoutParams(0, ctx.dp(54f), 1f).apply { if (i % 2 == 1) leftMargin = ctx.dp(4f) })
+                row.addView(t, LinearLayout.LayoutParams(0, ctx.dp(54f), 1f).apply { if (i % 2 == 1) leftMargin = ctx.dp(4f) })
             }
             if (tiles.size % 2 == 1) line?.addView(View(ctx), LinearLayout.LayoutParams(0, 1, 1f).apply { leftMargin = ctx.dp(4f) })
         }
@@ -443,24 +443,7 @@ object QuickPanel {
                     }
                 }
                 addView(row, LayoutParams(0, -2, 1f))
-                val x = ctx.label("✕", 14f, C.TEXT, bold = true).apply {
-                    gravity = Gravity.CENTER
-                    isFocusable = true
-                    isClickable = true
-                    contentDescription = "Dismiss"
-                }
-                val round = android.graphics.drawable.GradientDrawable().apply {
-                    shape = android.graphics.drawable.GradientDrawable.OVAL
-                    setColor(C.ROW)
-                }
-                x.background = round
-                FocusGlide.shape(x, -1f)
-                x.setOnFocusChangeListener { v, f ->
-                    (v as TextView).setTextColor(if (f) C.DARK else C.TEXT)
-                    round.setColor(if (f) C.TEXT else C.ROW)
-                }
-                x.setOnClickListener { Inbox.dismiss(ctx, item.id) }
-                addView(x, LayoutParams(ctx.dp(36f), ctx.dp(36f)).apply { leftMargin = ctx.dp(8f) })
+                addView(closeButton("Dismiss") { Inbox.dismiss(ctx, item.id) }, LayoutParams(ctx.dp(36f), ctx.dp(36f)).apply { leftMargin = ctx.dp(8f) })
             }
         }
 
@@ -592,15 +575,7 @@ object QuickPanel {
                 }
                 val focusedIndex = lastFocusedHome.also { lastFocusedHome = -1 }
                 // the tiles go into the Home box, two to a line
-                var line: LinearLayout? = null
-                tiles.forEachIndexed { i, t ->
-                    if (i % 2 == 0) {
-                        line = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL }
-                        box.addView(line, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(4f) })
-                    }
-                    line!!.addView(t, LinearLayout.LayoutParams(0, ctx.dp(54f), 1f).apply { if (i % 2 == 1) leftMargin = ctx.dp(4f) })
-                }
-                if (tiles.size % 2 == 1) line?.addView(View(ctx), LinearLayout.LayoutParams(0, 1, 1f).apply { leftMargin = ctx.dp(4f) })
+                grid(tiles, box)
                 if (focusedIndex >= 0) tiles.getOrNull(focusedIndex)?.requestFocus()
             }
         }
@@ -723,11 +698,17 @@ object QuickPanel {
             }
             r.setOnLongClickListener { close(); true }
             line.addView(r, LinearLayout.LayoutParams(0, -2, 1f))
+            line.addView(closeButton("Close ${a.label}") { close() }, LinearLayout.LayoutParams(ctx.dp(36f), ctx.dp(36f)).apply { leftMargin = ctx.dp(8f) })
+            list.addView(line, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(4f) })
+        }
+
+        /** The round ✕ beside a row: closes an app, dismisses a notification. */
+        private fun closeButton(description: String, onClick: () -> Unit): View {
             val x = ctx.label("✕", 14f, C.TEXT, bold = true).apply {
                 gravity = Gravity.CENTER
                 isFocusable = true
                 isClickable = true
-                contentDescription = "Close ${a.label}"
+                contentDescription = description
             }
             val round = android.graphics.drawable.GradientDrawable().apply {
                 shape = android.graphics.drawable.GradientDrawable.OVAL
@@ -739,9 +720,8 @@ object QuickPanel {
                 (v as TextView).setTextColor(if (f) C.DARK else C.TEXT)
                 round.setColor(if (f) C.TEXT else C.ROW)
             }
-            x.setOnClickListener { close() }
-            line.addView(x, LinearLayout.LayoutParams(ctx.dp(36f), ctx.dp(36f)).apply { leftMargin = ctx.dp(8f) })
-            list.addView(line, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(4f) })
+            x.setOnClickListener { onClick() }
+            return x
         }
 
         private fun note(text: String) {

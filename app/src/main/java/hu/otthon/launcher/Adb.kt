@@ -23,7 +23,7 @@ object Adb {
             Bg.slow({ if (local(command)) Result.OK else Result.FAILED }) { r -> done(r ?: Result.FAILED) }
             return
         }
-        val client = HaClient(cfg.haUrl!!, cfg.haToken!!)
+        val client = cfg.client() ?: run { done(Result.NO_HA); return }
         val configured = cfg.adbEntity
         Bg.slow({
             // the TV's own ADB first; Home Assistant's when that is not (yet) allowed
@@ -49,7 +49,7 @@ object Adb {
     fun runHere(cfg: Config, command: String, timeoutMs: Int = 25000, ownAdb: Boolean = true): Result {
         if (ownAdb && LocalAdb.ready() && local(command)) return Result.OK
         if (!cfg.haEnabled) return Result.NO_HA
-        val client = HaClient(cfg.haUrl!!, cfg.haToken!!)
+        val client = cfg.client() ?: return Result.NO_HA
         val entity = cfg.adbEntity ?: findTv(client) ?: return Result.NO_TV
         return try {
             client.call("androidtv", "adb_command", JSONObject().put("entity_id", entity).put("command", command), timeoutMs)
@@ -67,7 +67,7 @@ object Adb {
     fun output(cfg: Config, command: String, waitMs: Long = 8000): String? {
         if (LocalAdb.ready()) LocalAdb.shell(command)?.let { return it }
         if (!cfg.haEnabled) return null
-        val client = HaClient(cfg.haUrl!!, cfg.haToken!!)
+        val client = cfg.client() ?: return null
         val entity = cfg.adbEntity ?: findTv(client) ?: return null
         val mark = "@@" + java.lang.Long.toString(System.nanoTime(), 36)
         try {

@@ -67,7 +67,7 @@ class TodayActivity : PanelActivity() {
             finish()
             return
         }
-        ha = HaClient(cfg.haUrl!!, cfg.haToken!!)
+        ha = cfg.client()
         frame = PanelFrame(this, "Today", "OK on a to-do item: done")
         frame.update(cfg)
         buildLeft()

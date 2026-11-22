@@ -199,7 +199,7 @@ class DashboardActivity : PanelActivity() {
         clock.text = ZonedDateTime.now().format(clockFmt)
         backdrop.setDim(cfg.dim)
         backdrop.show(cfg.background, Backgrounds.phase(this, cfg), false)
-        val client = if (cfg.haEnabled) HaClient(cfg.haUrl!!, cfg.haToken!!) else null
+        val client = cfg.client()
         ha = client
         if (client == null) {
             showMessage("Home Assistant is not set up yet. Open Settings › Home Assistant.")

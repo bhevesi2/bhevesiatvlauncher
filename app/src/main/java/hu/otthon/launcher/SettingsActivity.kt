@@ -536,7 +536,7 @@ class SettingsActivity : PanelActivity() {
 
     /** Hands the Home button to this launcher or back to Google TV home, through Home Assistant's ADB connection. */
     private fun setDefaultHome(ours: Boolean) {
-        val client = if (cfg.haEnabled) HaClient(cfg.haUrl!!, cfg.haToken!!) else null
+        val client = cfg.client()
         if (client == null) {
             toast("Set up or switch on Home Assistant first: the TV only lets this be changed over ADB")
             return
@@ -833,7 +833,7 @@ class SettingsActivity : PanelActivity() {
             val c = cfg
             Bg.run({
                 try {
-                    HaClient(c.haUrl!!, c.haToken!!).call("remote", "learn_command", JSONObject()
+                    c.client()!!.call("remote", "learn_command", JSONObject()
                         .put("entity_id", amp.remote).put("device", amp.device).put("command", command).put("timeout", 15), 25000)
                     true
                 } catch (e: Exception) { false }
@@ -1138,7 +1138,7 @@ class SettingsActivity : PanelActivity() {
             }
         }
         val status = row("Status", if (cfg.haEnabled) "Checking…" else "Not set up")
-        val client = if (cfg.haEnabled) HaClient(cfg.haUrl!!, cfg.haToken!!) else null
+        val client = cfg.client()
         if (client != null) {
             Bg.run({ client.ping() }) { v ->
                 status.valueView.text = if (v != null) "Connected  ·  Home Assistant $v" else "Not reachable"

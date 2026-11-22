@@ -193,7 +193,7 @@ class PopupService : Service() {
     private fun reload() {
         val c = Config.load(this)
         cfg = c
-        client = if (c.haEnabled) HaClient(c.haUrl!!, c.haToken!!) else null
+        client = c.client()
         // the live subscription: started again only when what it watches changed
         val want = if (c.haEnabled && needed(c)) {
             (c.popupTriggers.map { it.entity } + (if (c.notify) listOf(c.notifyEntity) else emptyList())).distinct()
