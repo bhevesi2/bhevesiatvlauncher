@@ -469,7 +469,7 @@ class HomeActivity : Activity() {
             recoLoading = false
             if (!rows.isNullOrEmpty()) feedLive(rows)
             if (rows.isNullOrEmpty()) reco.showEmpty()
-            else reco.show(rows) { pkg -> Apps.one(this, pkg)?.let { AppColors.of(it) } ?: 0xFFE9E7E2.toInt() }
+            else reco.show(rows) { pkg -> AppColors.known(pkg) ?: Apps.one(this, pkg)?.let { AppColors.of(it) } ?: 0xFFE9E7E2.toInt() }
             showMoreHint()
             if (expanded && currentFocus?.let { isInside(it, recoBox) } != true) reco.firstFocusable?.requestFocus()
         }
@@ -877,7 +877,7 @@ class HomeActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        CrashLog.front++
+        CrashLog.entered(this)
         if (builtHu != Lang.hu) {
             builtHu = Lang.hu
             recreate()
@@ -928,7 +928,7 @@ class HomeActivity : Activity() {
 
     override fun onPause() {
         super.onPause()
-        CrashLog.front--
+        CrashLog.left(this)
         resumed = false
         critters?.paused = true
         try { unregisterReceiver(tick) } catch (e: Exception) { }
@@ -1024,7 +1024,7 @@ class HomeActivity : Activity() {
     /** Looks for a newer version at most every six hours. */
     private fun checkUpdates() {
         if (Updates.checkedAgo(this) < 6 * 3600_000L) return
-        Bg.run({ Updates.latest() }) { r ->
+        Bg.slow({ Updates.latest() }) { r ->
             Updates.remember(this, r)
             markUpdate()
         }
@@ -1215,7 +1215,7 @@ class HomeActivity : Activity() {
             recoLoading = false
             if (!kidsOn) return@run
             kidsHome.reco.visibility = if (rows.isNullOrEmpty()) View.GONE else View.VISIBLE
-            if (!rows.isNullOrEmpty()) kidsHome.reco.show(rows) { pkg -> Apps.one(this, pkg)?.let { AppColors.of(it) } ?: 0xFFE9E7E2.toInt() }
+            if (!rows.isNullOrEmpty()) kidsHome.reco.show(rows) { pkg -> AppColors.known(pkg) ?: Apps.one(this, pkg)?.let { AppColors.of(it) } ?: 0xFFE9E7E2.toInt() }
         }
     }
 

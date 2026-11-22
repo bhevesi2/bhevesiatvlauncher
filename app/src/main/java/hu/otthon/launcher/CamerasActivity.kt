@@ -479,12 +479,12 @@ class CamerasActivity : PanelActivity() {
         val gen = stripGen
         val before = detections.last().start
         val c = cfg
-        Bg.run({ try { Frigate.detections(c, cam, before) } catch (e: Exception) { null } }) { more ->
+        Bg.slow({ try { Frigate.detections(c, cam, before) } catch (e: Exception) { null } }) { more ->
             loadingMore = false
-            if (gen != stripGen || !stripOpen) return@run
+            if (gen != stripGen || !stripOpen) return@slow
             if (more == null || more.isEmpty()) {
                 noMore = true
-                return@run
+                return@slow
             }
             noMore = more.size < 40
             addDetections(more.filter { m -> detections.none { it.id == m.id } })

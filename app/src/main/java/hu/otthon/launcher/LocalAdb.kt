@@ -60,7 +60,7 @@ object LocalAdb {
         Bg.main.postDelayed({
             if (ready() || !stillHere() || p.getBoolean("local_adb_asked", false)) return@postDelayed
             p.edit().putBoolean("local_adb_asked", true).apply()
-            Bg.run({ shell("echo ok", askMs = 120_000) != null }) { ok ->
+            Bg.slow({ shell("echo ok", askMs = 120_000) != null }) { ok ->
                 android.util.Log.i("OtthonAdb", "own ADB allowed: $ok")
             }
         }, 20_000L)

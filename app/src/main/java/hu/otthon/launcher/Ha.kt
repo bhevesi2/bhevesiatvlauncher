@@ -20,12 +20,26 @@ object Bg {
     val main = Handler(Looper.getMainLooper())
 
     /**
+     * For work that may take long (ADB commands, the TV asking to allow ADB, downloads, the
+     * network folder, Frigate): threads of its own, so a slow answer never holds up the quick
+     * Home Assistant calls the screens wait for. Its threads end when idle.
+     */
+    private val slowExec = java.util.concurrent.ThreadPoolExecutor(
+        4, 4, 30, java.util.concurrent.TimeUnit.SECONDS, java.util.concurrent.LinkedBlockingQueue()
+    ).apply { allowCoreThreadTimeOut(true) }
+
+    /**
      * [work] in the background, then [done] with its result on the main thread. A failure in
      * either (Home Assistant gone, an answer not as expected) is written down and gives null or
      * nothing: it never stops the launcher.
      */
-    fun <T> run(work: () -> T, done: (T?) -> Unit) {
-        exec.execute {
+    fun <T> run(work: () -> T, done: (T?) -> Unit) = on(exec, work, done)
+
+    /** Like [run], for work that may take long. */
+    fun <T> slow(work: () -> T, done: (T?) -> Unit) = on(slowExec, work, done)
+
+    private fun <T> on(pool: java.util.concurrent.Executor, work: () -> T, done: (T?) -> Unit) {
+        pool.execute {
             val r = try {
                 work()
             } catch (e: Exception) {

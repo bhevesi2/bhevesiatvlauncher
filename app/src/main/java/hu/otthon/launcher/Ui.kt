@@ -285,6 +285,9 @@ object AppColors {
     private val cache = HashMap<String, Int>()
     private const val NEUTRAL = 0xFFE9E7E2.toInt()
 
+    /** The colour, when it is already known: no need to load the app for it. */
+    fun known(pkg: String): Int? = cache[pkg]
+
     fun of(app: AppEntry): Int = cache.getOrPut(app.pkg) {
         try { pick(app.banner ?: app.icon) } catch (e: Exception) { NEUTRAL }
     }
@@ -868,12 +871,12 @@ class FocusGlide private constructor(private val host: View) {
 open class PanelActivity : Activity() {
     override fun onResume() {
         super.onResume()
-        CrashLog.front++
+        CrashLog.entered(this)
     }
 
     override fun onPause() {
         super.onPause()
-        CrashLog.front--
+        CrashLog.left(this)
     }
 
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
@@ -1208,7 +1211,7 @@ class Backdrop(ctx: Context) : FrameLayout(ctx) {
         if (chosen == NasWallpapers.KEY && !nasLooking && NasWallpapers.stale(context)) {
             nasLooking = true
             val app = context.applicationContext
-            Bg.run({ NasWallpapers.refreshIfStale(app, Config.load(app)) }) {
+            Bg.slow({ NasWallpapers.refreshIfStale(app, Config.load(app)) }) {
                 nasLooking = false
                 key = null
                 show(chosen, phase, animate)
@@ -1383,16 +1386,34 @@ object Apps {
         return seen.values.sortedBy { it.label.lowercase() }
     }
 
+    /**
+     * One app, by its package. Its banner and icon are loaded once per installed version and kept:
+     * the home screen asks for them often (every favourite, every recommendation's glow), and
+     * loading them each time held up the main thread on a slower TV. Each caller gets its own
+     * drawables, sharing the pictures.
+     */
     fun one(ctx: Context, pkg: String): AppEntry? {
         val pm = ctx.packageManager
         return try {
             val ai = pm.getApplicationInfo(pkg, 0)
             if (!ai.enabled) return null
+            val stamp = pm.getPackageInfo(pkg, 0).lastUpdateTime
+            val kept = synchronized(oneCache) { oneCache[pkg]?.takeIf { it.first == stamp }?.second }
+            if (kept != null) return copy(ctx, kept)
             val banner = try { pm.getApplicationBanner(pkg) } catch (e: Exception) { null }
-            AppEntry(pkg, pm.getApplicationLabel(ai).toString(), banner, pm.getApplicationIcon(pkg))
+            val e = AppEntry(pkg, pm.getApplicationLabel(ai).toString(), banner, pm.getApplicationIcon(pkg))
+            synchronized(oneCache) { oneCache[pkg] = stamp to e }
+            copy(ctx, e)
         } catch (e: PackageManager.NameNotFoundException) {
             null
         }
+    }
+
+    private val oneCache = HashMap<String, Pair<Long, AppEntry>>()
+
+    private fun copy(ctx: Context, e: AppEntry): AppEntry {
+        fun d(x: Drawable?): Drawable? = x?.constantState?.newDrawable(ctx.resources) ?: x
+        return AppEntry(e.pkg, e.label, d(e.banner), d(e.icon) ?: e.icon)
     }
 
     /** Android TV home (Sony and other Android TV sets). */

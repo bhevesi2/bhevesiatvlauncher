@@ -583,7 +583,7 @@ class SettingsActivity : PanelActivity() {
         LocalAdb.init(this)
         row("This TV's own ADB", if (LocalAdb.ready()) "Allowed" else "Not allowed yet · OK to ask") {
             toast("Answer on the TV: tick Always allow, then Allow")
-            Bg.run({ LocalAdb.shell("echo ok", askMs = 90_000) != null }) { ok ->
+            Bg.slow({ LocalAdb.shell("echo ok", askMs = 90_000) != null }) { ok ->
                 toast(if (ok == true) "Allowed: the launcher no longer needs Home Assistant for this" else "Not allowed")
                 refresh()
             }
@@ -881,7 +881,7 @@ class SettingsActivity : PanelActivity() {
             if (nas != null) {
                 row("Check the folder now", NasWallpapers.describe(this)) {
                     toast("Reading ${nas.label}…")
-                    Bg.run({ NasWallpapers.refresh(applicationContext, cfg) }) { ok ->
+                    Bg.slow({ NasWallpapers.refresh(applicationContext, cfg) }) { ok ->
                         toast(if (ok == true) NasWallpapers.describe(this) else (NasWallpapers.lastError(this) ?: "Couldn't read the folder"))
                         change { }
                         if (cfg.background == NasWallpapers.KEY) backdrop.show(cfg.background, Backgrounds.phase(this, cfg), true)
@@ -1225,7 +1225,7 @@ class SettingsActivity : PanelActivity() {
                 newer -> install(r!!)
                 else -> {
                     toast("Checking…")
-                    Bg.run({ Updates.latest() }) { found ->
+                    Bg.slow({ Updates.latest() }) { found ->
                         Updates.remember(this, found)
                         if (found == null) toast("Couldn't reach GitHub")
                         release = found
@@ -1245,12 +1245,12 @@ class SettingsActivity : PanelActivity() {
         updating = true
         change { }
         toast("Downloading ${r.name}…")
-        Bg.run({ Updates.download(this, r) }) { apk ->
+        Bg.slow({ Updates.download(this, r) }) { apk ->
             if (apk == null) {
                 updating = false
                 toast("The download did not work")
                 change { }
-                return@run
+                return@slow
             }
             toast("Installing…")
             Adb.run(this, cfg, Updates.installCommand(this, apk), 90000) { res ->

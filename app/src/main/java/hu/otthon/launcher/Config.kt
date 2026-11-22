@@ -349,6 +349,21 @@ object ConfigStore {
      * empty settings, which the next change would then write back: the spare copy is used.
      */
     fun read(ctx: Context): JSONObject {
+        val j = readFile(ctx)
+        // a token or password written into the file (over ADB, or by an older version) moves to
+        // the app's own storage, out of the shared one; the file is written again without it
+        if (Secrets.hasAny(j)) {
+            synchronized(this) {
+                val again = readFile(ctx)
+                if (Secrets.hasAny(again)) write(ctx, again)
+            }
+        }
+        val out = readFile(ctx)
+        Secrets.merge(ctx, out)
+        return out
+    }
+
+    private fun readFile(ctx: Context): JSONObject {
         val f = file(ctx)
         try {
             if (f.exists()) return JSONObject(text(f))
@@ -378,11 +393,13 @@ object ConfigStore {
     fun write(ctx: Context, json: JSONObject): Boolean = try {
         val f = file(ctx)
         f.parentFile?.mkdirs()
-        val text = json.toString(1)
+        // the secrets go to the app's own storage, never into the shared file
+        val text = Secrets.extract(ctx, JSONObject(json.toString())).toString(1)
         try {
             if (f.exists() && f.length() > 2) {
-                JSONObject(f.readText())
-                f.copyTo(spare(ctx), overwrite = true)
+                val old = JSONObject(f.readText())
+                // a spare keeps no secret either
+                spare(ctx).writeText(Secrets.strip(old).toString(1))
             }
         } catch (e: Exception) { }
         val tmp = File(f.path + ".tmp")
@@ -442,6 +459,75 @@ object ConfigStore {
             if (p.contains("dim")) j.put("dim", p.getFloat("dim", 0.7f).toDouble())
         }
         p.edit().remove("background").remove("dim").apply()
+    }
+}
+
+/**
+ * The Home Assistant token and the network folder's password: in the app's own storage, which no
+ * other app can read (the settings file is on the shared storage, readable on Android 9 by any
+ * app with storage access). Written into the settings file (over ADB, say), they are moved here
+ * the next time it is read. Every screen still finds them in the settings as before.
+ */
+object Secrets {
+    private var memo: JSONObject? = null
+    private var memoStamp = 0L to 0L
+
+    private fun file(ctx: Context) = File(ctx.filesDir, "secrets.json")
+
+    @Synchronized
+    private fun all(ctx: Context): JSONObject {
+        val f = file(ctx)
+        val stamp = f.lastModified() to f.length()
+        memo?.let { if (stamp == memoStamp) return JSONObject(it.toString()) }
+        val j = try { if (f.exists()) JSONObject(f.readText()) else JSONObject() } catch (e: Exception) { JSONObject() }
+        memo = j
+        memoStamp = stamp
+        return JSONObject(j.toString())
+    }
+
+    @Synchronized
+    private fun save(ctx: Context, j: JSONObject) {
+        val f = file(ctx)
+        val tmp = File(f.path + ".tmp")
+        tmp.writeText(j.toString())
+        if (!tmp.renameTo(f)) {
+            f.writeText(j.toString())
+            tmp.delete()
+        }
+        memo = null
+    }
+
+    private fun nasPassword(j: JSONObject): String = j.optJSONObject("nas")?.optString("password", "") ?: ""
+
+    /** True when the settings carry a secret of their own. */
+    fun hasAny(j: JSONObject): Boolean = j.optString("ha_token", "").isNotBlank() || nasPassword(j).isNotEmpty()
+
+    /** The settings without their secrets. */
+    fun strip(j: JSONObject): JSONObject {
+        j.remove("ha_token")
+        j.optJSONObject("nas")?.remove("password")
+        return j
+    }
+
+    /** Keeps the secrets found in [j] and returns [j] without them. */
+    fun extract(ctx: Context, j: JSONObject): JSONObject {
+        val token = j.optString("ha_token", "").trim()
+        val pass = nasPassword(j)
+        if (token.isNotEmpty() || pass.isNotEmpty()) {
+            val s = all(ctx)
+            if (token.isNotEmpty()) s.put("ha_token", token)
+            if (pass.isNotEmpty()) s.put("nas_password", pass)
+            save(ctx, s)
+        }
+        return strip(j)
+    }
+
+    /** Puts the kept secrets back into settings just read. */
+    fun merge(ctx: Context, j: JSONObject) {
+        val s = all(ctx)
+        s.optString("ha_token", "").takeIf { it.isNotEmpty() }?.let { j.put("ha_token", it) }
+        val pass = s.optString("nas_password", "")
+        if (pass.isNotEmpty()) j.optJSONObject("nas")?.put("password", pass)
     }
 }
 

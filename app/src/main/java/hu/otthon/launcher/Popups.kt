@@ -151,6 +151,7 @@ class PopupService : Service() {
     override fun onCreate() {
         super.onCreate()
         CrashLog.install(this)
+        CrashLog.recover(this)
         LowRam.init(this)
         closePopup = { main.post { hide(false) } }
         worker = HandlerThread("popups").apply { start() }
@@ -183,6 +184,8 @@ class PopupService : Service() {
         bg.removeCallbacksAndMessages(null)
         worker.quitSafely()
         main.removeCallbacksAndMessages(null)
+        watch?.stop()
+        watch = null
         hide(false)
         hideNote(false)
     }
@@ -191,6 +194,18 @@ class PopupService : Service() {
         val c = Config.load(this)
         cfg = c
         client = if (c.haEnabled) HaClient(c.haUrl!!, c.haToken!!) else null
+        // the live subscription: started again only when what it watches changed
+        val want = if (c.haEnabled && needed(c)) {
+            (c.popupTriggers.map { it.entity } + (if (c.notify) listOf(c.notifyEntity) else emptyList())).distinct()
+        } else emptyList()
+        val key = if (want.isEmpty()) null else c.haUrl + "|" + c.haToken.hashCode() + "|" + want.joinToString(",")
+        if (key != watchKey) {
+            watch?.stop()
+            watch = if (key == null) null else HaWatch(c.haUrl!!, c.haToken!!, want) { e, s, at, first ->
+                bg.post { onLive(e, s, at, first) }
+            }.start()
+            watchKey = key
+        }
     }
 
     private fun notification(): Notification {
@@ -208,6 +223,38 @@ class PopupService : Service() {
 
     // ---------- watching ----------
 
+    /**
+     * Home Assistant tells of every change at once over a WebSocket ([HaWatch]); while that line
+     * is down, the sensors are asked every two seconds as before.
+     */
+    private var watch: HaWatch? = null
+    private var watchKey: String? = null
+
+    /** A state from the live subscription, on the watcher's thread ([bg]). */
+    private fun onLive(entity: String, state: String, at: Long, first: Boolean) {
+        val c = cfg ?: return
+        val screenOn = (getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive
+        if (c.notify && entity == c.notifyEntity) {
+            val before = lastNote
+            lastNote = state
+            val item = Inbox.note(state) ?: return
+            Inbox.add(this, item)
+            if (first || before == null || before == state) return
+            if (screenOn && Math.abs(System.currentTimeMillis() - item.at) <= 120_000L) main.post { showNote(Note(item.icon, item.level, item.title, item.text)) }
+            return
+        }
+        for (t in c.popupTriggers) {
+            if (t.entity != entity) continue
+            val before = last.put(t.entity, state)
+            if (state == "on" && before != "on" && at > 0) Inbox.add(this, Inbox.alert(t, at))
+            if (!first && screenOn && c.popups && state == "on" && before != null && before != "on") {
+                main.post { show(t.camera, t.title, false) }
+            } else if (state == "on" && showing == t.camera) {
+                main.post { until = maxOf(until, System.currentTimeMillis() + 5_000L) }
+            }
+        }
+    }
+
     private var wasOn = false
     private var backfilledAt = 0L
     @Volatile private var backfilling = false
@@ -217,8 +264,9 @@ class PopupService : Service() {
             val c = cfg
             val api = client
             val screenOn = (getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive
-            if (c != null && api != null && c.notify) checkNote(c, api, screenOn)
-            if (c != null && api != null && c.popupTriggers.isNotEmpty()) {
+            val live = watch?.connected == true
+            if (c != null && api != null && c.notify && !live) checkNote(c, api, screenOn)
+            if (c != null && api != null && c.popupTriggers.isNotEmpty() && !live) {
                 for (t in c.popupTriggers) {
                     val s = try { api.state(t.entity) } catch (e: Exception) { null } ?: continue
                     val state = s.optString("state")

@@ -20,14 +20,14 @@ object Adb {
                 done(Result.NO_HA)
                 return
             }
-            Bg.run({ if (local(command)) Result.OK else Result.FAILED }) { r -> done(r ?: Result.FAILED) }
+            Bg.slow({ if (local(command)) Result.OK else Result.FAILED }) { r -> done(r ?: Result.FAILED) }
             return
         }
         val client = HaClient(cfg.haUrl!!, cfg.haToken!!)
         val configured = cfg.adbEntity
-        Bg.run({
+        Bg.slow({
             // the TV's own ADB first; Home Assistant's when that is not (yet) allowed
-            if (LocalAdb.ready() && local(command)) return@run Result.OK
+            if (LocalAdb.ready() && local(command)) return@slow Result.OK
             val entity = configured ?: findTv(client)
             if (entity == null) {
                 Result.NO_TV

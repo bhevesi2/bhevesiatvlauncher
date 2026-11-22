@@ -313,7 +313,7 @@ object QuickPanel {
             grid(listOf(inputsTile, netTile, sleepTile, appsTile))
             // how many are running: one question to the TV over Home Assistant
             val c = cfg
-            Bg.run({ RunningApps.list(ctx, c) }) { apps ->
+            Bg.slow({ RunningApps.list(ctx, c) }) { apps ->
                 if (apps != null) appsTile.value(if (apps.isEmpty()) "None" else if (apps.size == 1) "1 app" else "${apps.size} apps")
             }
 
@@ -683,21 +683,21 @@ object QuickPanel {
             val wait = ctx.label("Asking the TV…", 11f, C.TEXT3).apply { setPadding(ctx.dp(2f), ctx.dp(6f), 0, 0) }
             list.addView(wait)
             val c = cfg
-            Bg.run({ RunningApps.list(ctx, c) }) { apps ->
-                if (!inSub || wait.parent == null) return@run
+            Bg.slow({ RunningApps.list(ctx, c) }) { apps ->
+                if (!inSub || wait.parent == null) return@slow
                 list.removeView(wait)
                 if (apps == null) {
                     list.addView(ctx.label("Couldn't ask the TV through Home Assistant.", 11f, C.TEXT3).apply { setPadding(ctx.dp(2f), ctx.dp(6f), 0, 0) })
-                    return@run
+                    return@slow
                 }
                 if (apps.isEmpty()) {
                     list.addView(ctx.label("No apps are running.", 11f, C.TEXT3).apply { setPadding(ctx.dp(2f), ctx.dp(6f), 0, 0) })
-                    return@run
+                    return@slow
                 }
                 if (apps.size > 1) {
                     row("Close all", "${apps.size} apps") { r ->
                         r.valueView.text = "Closing…"
-                        Bg.run({ RunningApps.close(c, apps.map { it.pkg }) }) { showRunning() }
+                        Bg.slow({ RunningApps.close(c, apps.map { it.pkg }) }) { showRunning() }
                     }
                 }
                 for (a in apps) appRow(a, c)
@@ -712,7 +712,7 @@ object QuickPanel {
             val r = RowView(ctx, a.label, if (a.mb > 0) "${a.mb} MB" else null)
             fun close() {
                 r.valueView.text = "Closing…"
-                Bg.run({ RunningApps.close(c, listOf(a.pkg)) }) { ok ->
+                Bg.slow({ RunningApps.close(c, listOf(a.pkg)) }) { ok ->
                     if (ok == true) showRunning() else r.valueView.text = "Couldn't close it"
                 }
             }

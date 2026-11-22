@@ -31,6 +31,31 @@ object CrashLog {
 
     /** A launcher screen is in front: after a crash it is brought back, otherwise the app in front stays. */
     @Volatile var front = 0
+        private set
+
+    /** A launcher screen came to the front; written down, so a crash the app cannot see is noticed too. */
+    fun entered(ctx: Context) {
+        if (front++ == 0) Prefs.of(ctx).edit().putBoolean("front", true).apply()
+    }
+
+    fun left(ctx: Context) {
+        if (front > 0 && --front == 0) Prefs.of(ctx).edit().putBoolean("front", false).apply()
+    }
+
+    /**
+     * Called when the main process starts: when a launcher screen was in front as the process
+     * ended, without ever being left, the process died under it. That is a crash the app could not
+     * see (the graphics driver running out of memory kills it outright): it is written down, and
+     * the launcher comes back, within the same three-in-ten-minutes allowance.
+     */
+    fun recover(ctx: Context) {
+        val p = Prefs.of(ctx)
+        if (!p.getBoolean("front", false) || front > 0) return
+        p.edit().putBoolean("front", false).commit()
+        if (processName().contains(':')) return
+        try { append("CRASH", "${java.util.Date()}  ·  the launcher stopped while it was in front (a crash outside the app's code, e.g. the graphics driver); see logcat") } catch (x: Throwable) { }
+        restartLater()
+    }
 
     /** Main-thread errors let through recently: too many in a row means the screen is broken. */
     private val recent = ArrayDeque<Long>()
@@ -46,7 +71,11 @@ object CrashLog {
                 File(app.filesDir, "crash.txt").writeText(text)
                 append("CRASH", text)
                 // the button service's process comes back by itself; the screens only when they were in front
-                if (front > 0 && !processName().contains(':')) restartLater()
+                if (front > 0 && !processName().contains(':')) {
+                    // handled here: [recover] must not bring it back a second time
+                    Prefs.of(app).edit().putBoolean("front", false).commit()
+                    restartLater()
+                }
             } catch (x: Throwable) { }
             previous?.uncaughtException(t, e)
         }
