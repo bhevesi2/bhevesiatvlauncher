@@ -120,7 +120,8 @@ object LocalAdb {
      */
     fun detached(command: String): Boolean {
         if (command.contains('\'')) return shell(command) != null
-        return shell("nohup sh -c '$command' </dev/null >/data/local/tmp/otthon-adb.log 2>&1 &") != null
+        // a session of its own: adbd ends the connection's processes when the launcher hangs up
+        return shell("setsid nohup sh -c 'sleep 1; $command' </dev/null >/data/local/tmp/otthon-adb.log 2>&1 &") != null
     }
 
     /** Commands that replace or stop the launcher while they run. */
