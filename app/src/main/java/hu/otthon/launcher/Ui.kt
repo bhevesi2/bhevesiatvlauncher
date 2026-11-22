@@ -97,6 +97,34 @@ object Look {
     }
 }
 
+/**
+ * The home screen's cursor on a control that is not a picture (a round button, a pill, the status
+ * capsule, the music card): the same soft glow around it as around the app tiles, the control
+ * itself turning a solid dark (so the glow is a halo, not seen through it) and growing a little,
+ * its neighbours stepping aside. Where no gliding cursor is drawn, the light fill as before.
+ */
+object Glow {
+    const val COLOR = 0xFFE9E7E2.toInt()
+    const val SOLID = 0xFF1D2026.toInt()
+
+    fun on(v: View, radius: Float, color: Int = COLOR) {
+        FocusGlide.shape(v, radius, 0f)
+        FocusGlide.glow(v, color)
+    }
+
+    /** True when [v] glows: its text and icons stay light. */
+    fun glows(v: View) = FocusGlide.covers(v)
+
+    /** The background of [v] while it has focus. */
+    fun lit(v: View, radius: Float): Drawable = rounded(if (glows(v)) SOLID else C.FOCUS_FILL, radius)
+
+    /** The grow and the neighbours' step aside, as on the app row. */
+    fun move(v: View, focused: Boolean, by: Float = Look.GROW) {
+        Look.grow(v, focused, by)
+        Neighbors.push(v, focused)
+    }
+}
+
 fun rounded(color: Int, radius: Float, stroke: Int = 0, strokeColor: Int = 0): GradientDrawable =
     GradientDrawable().apply {
         setColor(color)
@@ -132,7 +160,7 @@ fun Context.chip(iconRes: Int, text: String): TextView = label(text, 12f, C.TEXT
 }
 
 /** Focusable pill button: dark glass, turns light when focused. */
-fun Context.pill(text: String, iconRes: Int?, onClick: () -> Unit): TextView {
+fun Context.pill(text: String, iconRes: Int?, glow: Boolean = false, onClick: () -> Unit): TextView {
     val ctx = this
     return label(text, 12f, C.TEXT, bold = true).apply {
         isFocusable = true
@@ -145,15 +173,21 @@ fun Context.pill(text: String, iconRes: Int?, onClick: () -> Unit): TextView {
             setCompoundDrawables(icon, null, null, null)
             compoundDrawablePadding = dp(6f)
         }
-        FocusGlide.shape(this, dp(Look.R_TILE).toFloat())
+        val r = dp(Look.R_TILE).toFloat()
+        if (glow) Glow.on(this, r) else FocusGlide.shape(this, r)
         fun paint(focused: Boolean) {
-            background = if (focused) FocusGlide.fill(this, dp(Look.R_TILE).toFloat()) else Look.surface(ctx, dp(Look.R_TILE).toFloat())
-            setTextColor(if (focused) C.DARK else C.TEXT)
-            icon?.setTint(if (focused) C.DARK else C.TEXT)
+            val dark = focused && !(glow && Glow.glows(this))
+            background = if (!focused) Look.surface(ctx, r) else if (glow) Glow.lit(this, r) else FocusGlide.fill(this, r)
+            setTextColor(if (dark) C.DARK else C.TEXT)
+            icon?.setTint(if (dark) C.DARK else C.TEXT)
         }
         paint(false)
-        // pills sit in scrolling rows, which would cut off a pill that grows: they only light up
-        setOnFocusChangeListener { _, f -> paint(f) }
+        // pills in a scrolling list only light up (a pill that grew would be cut); the home
+        // screen's glow and grow like its app tiles
+        setOnFocusChangeListener { v, f ->
+            paint(f)
+            if (glow) Glow.move(v, f)
+        }
         setOnClickListener { onClick() }
     }
 }
@@ -729,7 +763,11 @@ class FocusGlide private constructor(private val host: View) {
         var any = false
         var p: ViewGroup? = v.parent as? ViewGroup
         while (p != null && p !== host) {
-            if (p is ScrollView || p is HorizontalScrollView) {
+            // only along the way a list scrolls, and only when it has more than it shows: a row
+            // that fits keeps the glow and a horizontal row does not cut it above and below
+            val across = p is HorizontalScrollView && (p.getChildAt(0)?.width ?: 0) > p.width - p.paddingLeft - p.paddingRight
+            val down = p is ScrollView && (p.getChildAt(0)?.height ?: 0) > p.height - p.paddingTop - p.paddingBottom
+            if (across || down) {
                 p.getLocationInWindow(a)
                 var cl = a[0] - b[0]
                 var ct = a[1] - b[1]
@@ -738,6 +776,8 @@ class FocusGlide private constructor(private val host: View) {
                 if (p.clipToPadding) {
                     cl += p.paddingLeft; ct += p.paddingTop; cr -= p.paddingRight; cb -= p.paddingBottom
                 }
+                // the other way it does not move: no edge there
+                if (across) { ct = -100_000; cb = 100_000 } else { cl = -100_000; cr = 100_000 }
                 if (!any) nextClip.set(cl, ct, cr, cb)
                 else nextClip.set(maxOf(nextClip.left, cl), maxOf(nextClip.top, ct), minOf(nextClip.right, cr), minOf(nextClip.bottom, cb))
                 any = true

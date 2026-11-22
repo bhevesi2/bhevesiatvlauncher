@@ -169,7 +169,7 @@ class HomeActivity : Activity() {
         top.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         chipsRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         top.addView(chipsRow, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(12f) })
-        topButtons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        topButtons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; clipChildren = false }
         top.addView(topButtons, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(10f); topMargin = dp(12f) })
         content.addView(top, LinearLayout.LayoutParams(-1, -2).apply { leftMargin = side; rightMargin = side })
 
@@ -523,8 +523,11 @@ class HomeActivity : Activity() {
             isClickable = true
             isLongClickable = true
             contentDescription = "Play / pause. Hold for music zones"
-            FocusGlide.shape(this, dp(Look.R_TILE).toFloat())
-            setOnFocusChangeListener { _, f -> paintNowPlaying(f) }
+            Glow.on(this, dp(Look.R_TILE).toFloat())
+            setOnFocusChangeListener { v, f ->
+                paintNowPlaying(f)
+                Glow.move(v, f, 1.04f)
+            }
             setOnClickListener { togglePlay() }
             setOnLongClickListener {
                 if (cfg.nowPlaying == null) {
@@ -565,13 +568,14 @@ class HomeActivity : Activity() {
     }
 
     private fun paintNowPlaying(f: Boolean) {
-        npCard.background = if (f) FocusGlide.fill(npCard, dp(Look.R_TILE).toFloat()) else Look.surface(this, dp(Look.R_TILE).toFloat())
-        npLabel.setTextColor(if (f) C.DARK2 else C.TEXT3)
-        npTitle.setTextColor(if (f) C.DARK else C.TEXT)
-        npArtist.setTextColor(if (f) C.DARK2 else C.TEXT2)
-        npProgress.background = rounded(if (f) C.DARK else C.TEXT, dp(1f).toFloat())
-        npButton.background = rounded(if (f) 0x26141413 else 0x33FFFFFF, dp(16f).toFloat())
-        npButton.setColorFilter(if (f) C.DARK else C.TEXT)
+        npCard.background = if (f) Glow.lit(npCard, dp(Look.R_TILE).toFloat()) else Look.surface(this, dp(Look.R_TILE).toFloat())
+        val dark = f && !Glow.glows(npCard)
+        npLabel.setTextColor(if (dark) C.DARK2 else C.TEXT3)
+        npTitle.setTextColor(if (dark) C.DARK else C.TEXT)
+        npArtist.setTextColor(if (dark) C.DARK2 else C.TEXT2)
+        npProgress.background = rounded(if (dark) C.DARK else C.TEXT, dp(1f).toFloat())
+        npButton.background = rounded(if (dark) 0x26141413 else 0x33FFFFFF, dp(16f).toFloat())
+        npButton.setColorFilter(if (dark) C.DARK else C.TEXT)
     }
 
     /** Round icon-only button; its name shows in a small label while it has focus. */
@@ -585,11 +589,11 @@ class HomeActivity : Activity() {
         val normal = Look.surface(this, dp(Look.R_TILE).toFloat())
         v.background = normal
         v.setColorFilter(C.TEXT)
-        FocusGlide.shape(v, dp(Look.R_TILE).toFloat())
+        Glow.on(v, dp(Look.R_TILE).toFloat())
         v.setOnFocusChangeListener { _, f ->
-            v.background = if (f) FocusGlide.fill(v, dp(Look.R_TILE).toFloat()) else normal
-            v.setColorFilter(if (f) C.DARK else C.TEXT)
-            Look.grow(v, f)
+            v.background = if (f) Glow.lit(v, dp(Look.R_TILE).toFloat()) else normal
+            v.setColorFilter(if (f && !Glow.glows(v)) C.DARK else C.TEXT)
+            Glow.move(v, f)
             if (f) showHint(v, name, above) else hideHint(v)
         }
         v.setOnClickListener { onClick() }
@@ -660,7 +664,7 @@ class HomeActivity : Activity() {
         }
         lastRows?.let { feedLive(it) }
         if (entries.isEmpty()) {
-            favRow.addView(pill("Add favorites", R.drawable.ic_plus) {
+            favRow.addView(pill("Add favorites", R.drawable.ic_plus, glow = true) {
                 open(AllAppsActivity::class.java)
             }, LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER_VERTICAL })
         }
@@ -689,7 +693,7 @@ class HomeActivity : Activity() {
 
         // bottom row: icon buttons on the left, quick actions in the middle, inputs on the right
         bottom.removeAllViews()
-        val icons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val icons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; clipChildren = false }
         addIcon(icons, iconButton(R.drawable.ic_grid, "All apps", true) {
             open(AllAppsActivity::class.java)
         })
@@ -719,12 +723,14 @@ class HomeActivity : Activity() {
             cfg.scenes.take(6).forEachIndexed { i, sc ->
                 val lp = LinearLayout.LayoutParams(-2, -2)
                 if (i > 0) lp.leftMargin = dp(8f)
-                actions.addView(pill(sc.title, sceneIcon(sc)) { runScene(sc) }, lp)
+                actions.addView(pill(sc.title, sceneIcon(sc), glow = true) { runScene(sc) }, lp)
             }
         }
+        // nothing cut: a pill grows and glows like an app tile (the row seldom scrolls at all)
+        actions.clipChildren = false
         val actionScroll = RowScroller(this)
-        actionScroll.clipToPadding = true
-        actionScroll.clipChildren = true
+        actionScroll.clipToPadding = false
+        actionScroll.clipChildren = false
         actionScroll.isFocusable = false
         actionScroll.isFillViewport = true      // stretches the row, so its pills sit centred
         actionScroll.addView(actions)
@@ -735,7 +741,7 @@ class HomeActivity : Activity() {
 
         // the TV and the inputs: one "Inputs" pill with a list, so the row never runs out of room
         val inputs = Inputs.visible(this, cfg)
-        val inputRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val inputRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; clipChildren = false }
         val choices = ArrayList<Pair<String, () -> Unit>>()
         if (Inputs.hasTv(this)) choices.add("TV" to { if (!Inputs.openTv(this)) toast("TV is not available") })
         inputs.forEach { inp ->
@@ -744,8 +750,8 @@ class HomeActivity : Activity() {
         }
         when (choices.size) {
             0 -> {}
-            1 -> inputRow.addView(pill(choices[0].first, if (choices[0].first == "TV") R.drawable.ic_tv else R.drawable.ic_input) { choices[0].second() })
-            else -> inputRow.addView(pill("Inputs", R.drawable.ic_input) {
+            1 -> inputRow.addView(pill(choices[0].first, if (choices[0].first == "TV") R.drawable.ic_tv else R.drawable.ic_input, glow = true) { choices[0].second() })
+            else -> inputRow.addView(pill("Inputs", R.drawable.ic_input, glow = true) {
                 Popup.menu(this, "Inputs", choices.map { it.first }) { i -> choices[i].second() }
             })
         }
@@ -783,10 +789,12 @@ class HomeActivity : Activity() {
             chipsRow.isFocusable = cfg.haEnabled
             chipsRow.isClickable = cfg.haEnabled
             chipsRow.contentDescription = "Home Assistant dashboard"
-            FocusGlide.shape(chipsRow, dp(Look.R_TILE).toFloat())
+            Glow.on(chipsRow, dp(Look.R_TILE).toFloat())
             paintChips(chipsRow.isFocused)
             chipsRow.setOnFocusChangeListener { v, f ->
                 paintChips(f)
+                // only grows: its neighbours are the clock and the corner buttons, which stay put
+                Look.grow(v, f, 1.05f)
                 if (f) showHint(v, "Home Assistant", false) else hideHint(v)
             }
             chipsRow.setOnClickListener { open(DashboardActivity::class.java) }
@@ -802,14 +810,16 @@ class HomeActivity : Activity() {
     /** The status capsule lit by the cursor: dark text and icons on the light fill. */
     private fun paintChips(f: Boolean) {
         val r = dp(Look.R_TILE).toFloat()
-        chipsRow.background = if (f) FocusGlide.fill(chipsRow, r) else Look.surface(this, r)
+        chipsRow.background = if (f) Glow.lit(chipsRow, r) else Look.surface(this, r)
+        val dark = f && !Glow.glows(chipsRow)
         for (i in 0 until chipsRow.childCount) {
             val c = chipsRow.getChildAt(i)
             if (c is TextView) {
-                c.setTextColor(if (f) C.DARK else C.TEXT2)
-                c.compoundDrawables.forEach { it?.setTint(if (f) C.DARK else C.TEXT2) }
+                // glowing: the text a step brighter
+                c.setTextColor(if (dark) C.DARK else if (f) C.TEXT else C.TEXT2)
+                c.compoundDrawables.forEach { it?.setTint(if (dark) C.DARK else if (f) C.TEXT else C.TEXT2) }
             } else if (c !is ViewGroup) {
-                c.setBackgroundColor(if (f) 0x40141413 else Look.DIVIDER)
+                c.setBackgroundColor(if (dark) 0x40141413 else Look.DIVIDER)
             }
         }
     }

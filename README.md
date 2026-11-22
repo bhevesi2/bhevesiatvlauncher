@@ -170,8 +170,12 @@ fill; no rings, no frames and no lifted shadows.
 The home screen's controls share one look, in the manner of Google TV: round icon buttons (Today,
 TV settings, Launcher settings, All apps, Dashboard, Cameras), the statuses together in one glass
 capsule with thin lines between them, and pills for the scenes and the inputs. All of them sit on
-the same dark frosted glass with a hairline edge; the focused one turns light and grows a little.
-The profile avatar is in the top right corner.
+the same dark frosted glass. The cursor is the same everywhere on the home screen: the soft glow
+of the app row, gliding from one control to the next; the focused control turns solid dark inside
+its glow and grows a little, and in a row (the round buttons, the scenes) its neighbours step
+aside with a small spring, like the app tiles. The music card and the status capsule only grow.
+Lists elsewhere (settings, quick settings) keep the light fill. A glow is only cut where a list
+really scrolls, and only in the direction it scrolls.
 
 ## Little visitors
 
