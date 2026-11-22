@@ -306,6 +306,16 @@ pictures in a player are 4K. The TCL's graphics plane is limited to 1920×1080
 not sharpen it: the launcher has no 4K switch. `restore-tv.bat` sets the TV's own 1080p and
 density again if they were ever changed.
 
+## The TV's own ADB
+
+What only ADB may do (closing apps, turning the TV off, the sleep timer, giving the launcher its
+permissions, installing updates) the launcher does itself on the TV's network ADB, connecting
+from inside the TV to 127.0.0.1:5555 with a key of its own. The first time (once, on the home
+screen, or from Settings › Home screen › This TV's own ADB) the TV asks "Allow USB debugging?":
+tick Always allow, then Allow. Until then, and whenever it fails, Home Assistant's Android TV
+(ADB) integration does it as before. Commands that outlive the launcher (its own update, a
+restart) are started apart from the connection, so they finish when the launcher is replaced.
+
 ## Camera detections
 
 On the camera page, in a camera's full-screen view, **▼** opens a strip of that camera's

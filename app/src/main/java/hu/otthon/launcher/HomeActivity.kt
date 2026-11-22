@@ -113,6 +113,7 @@ class HomeActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         LowRam.init(this)
+        LocalAdb.init(this)
         buildUi()
         Profile.listeners.add(onProfile)
     }
@@ -863,6 +864,7 @@ class HomeActivity : Activity() {
         resumed = true
         reload()
         ServiceKeeper.ensure(this, cfg)
+        LocalAdb.askOnce(this)
         critters?.setCount(cfg.critters, cfg.christmas)
         critters?.paused = expanded
         if (awayOnOwnScreen) {

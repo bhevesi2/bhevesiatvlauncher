@@ -116,6 +116,7 @@ object Updates {
         remember(ctx, r)
         if (!force && !isNewer(ctx, r)) return "up to date"
         val apk = download(ctx, r) ?: return "download failed"
+        LocalAdb.init(ctx)
         // The install replaces this app, so a call that works ends with the process. Home
         // Assistant's ADB connection to a TV drops now and then, and a command sent just then is
         // lost: while this app is still alive half a minute later, it tries again (three times).

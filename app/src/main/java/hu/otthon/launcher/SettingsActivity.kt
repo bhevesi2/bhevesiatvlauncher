@@ -570,6 +570,15 @@ class SettingsActivity : PanelActivity() {
             pick("Choose this TV's Android TV (ADB) player", "media_player") { entity, _ -> edit { it.put("adb_entity", entity) } }
         }
         note("The TV only allows this change over ADB, so the launcher asks Home Assistant's Android TV (ADB) integration to do it. Choosing this launcher switches the Google TV home app off, because the TV otherwise always prefers it; choosing Google TV home switches it back on. Nothing is uninstalled.")
+        LocalAdb.init(this)
+        row("This TV's own ADB", if (LocalAdb.ready()) "Allowed" else "Not allowed yet · OK to ask") {
+            toast("Answer on the TV: tick Always allow, then Allow")
+            Bg.run({ LocalAdb.shell("echo ok", askMs = 90_000) != null }) { ok ->
+                toast(if (ok == true) "Allowed: the launcher no longer needs Home Assistant for this" else "Not allowed")
+                refresh()
+            }
+        }
+        note("What only ADB may do (closing apps, turning the TV off, permissions, updates) the launcher does on the TV's own network ADB once it is allowed; Home Assistant's ADB is used while it is not.")
         section("Recommendations")
         toggle("Show recommendations", cfg.recommendations) { on -> edit { it.put("recommendations", on) } }
         if (!cfg.recommendations) note("Switched off: the streaming apps' rows below the home screen, the mark at its bottom edge and their options here are hidden.")
