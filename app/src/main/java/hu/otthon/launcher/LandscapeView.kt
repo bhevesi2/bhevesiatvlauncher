@@ -42,18 +42,41 @@ data class Palette(
  * and without the layer every frame of a cursor move would paint them all again.
  */
 class LandscapeView(context: Context) : View(context) {
+    /**
+     * Whether it may keep its layer: a full-screen picture in the graphics memory (8 MB at 1080p,
+     * four times that at 4K). The settings' preview on a weak TV goes without it: a second
+     * full-screen layer next to the home screen's ran the Philips out of graphics memory
+     * (EGL_BAD_ALLOC, and Android stops the launcher). Above 1920 wide never.
+     */
+    var useLayer = true
+        set(v) {
+            field = v
+            updateLayer()
+        }
+
+    private var windowShown = true
+
     init {
-        setLayerType(LAYER_TYPE_HARDWARE, null)
+        updateLayer()
     }
 
-    /**
-     * The layer is a full-screen picture in the graphics memory (8 MB at 1080p): while a photo
-     * covers the landscape it is given back, which a 2 GB TV feels.
-     */
+    private fun updateLayer() {
+        val wide = resources.displayMetrics.widthPixels > 1920
+        val want = if (useLayer && !wide && windowShown && visibility == VISIBLE) LAYER_TYPE_HARDWARE else LAYER_TYPE_NONE
+        if (layerType != want) setLayerType(want, null)
+    }
+
+    /** While a photo covers the landscape its layer is given back, which a 2 GB TV feels. */
     override fun setVisibility(visibility: Int) {
         super.setVisibility(visibility)
-        val want = if (visibility == VISIBLE) LAYER_TYPE_HARDWARE else LAYER_TYPE_NONE
-        if (layerType != want) setLayerType(want, null)
+        updateLayer()
+    }
+
+    /** Also while another screen is in front (the home screen under the settings). */
+    override fun onWindowVisibilityChanged(visibility: Int) {
+        super.onWindowVisibilityChanged(visibility)
+        windowShown = visibility == VISIBLE
+        updateLayer()
     }
 
     var style: String = "alpesi"

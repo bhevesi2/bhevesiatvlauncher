@@ -1080,7 +1080,10 @@ object Popup {
  * for the current time of day, cross-faded, with a darkening layer on top.
  */
 class Backdrop(ctx: Context) : FrameLayout(ctx) {
-    private val landscape = LandscapeView(ctx)
+    private val landscape = LandscapeView(ctx).apply {
+        // only the home screen keeps the landscape's layer on a weak TV (see LandscapeView.useLayer)
+        useLayer = ctx is HomeActivity || !LowRam.on
+    }
     private val snow = SnowView(ctx)
     private val photoA = ImageView(ctx).apply { scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0f }
     private val photoB = ImageView(ctx).apply { scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0f }
