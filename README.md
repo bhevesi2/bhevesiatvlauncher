@@ -283,9 +283,12 @@ kids' picture as a bubble to switch to their profile), made of the settings scre
 TV, four tiles with what each is set to now: Inputs (listed in the panel), Network (the Wi-Fi's
 name, or Ethernet; the name needs location access, also in the background, since the panel
 opens from the button service: given over ADB), Sleep timer (off → 15 → 30 →
-60 → 90 → 120 minutes; the TV goes to sleep through Home Assistant's ADB) and Power (Turn off:
-a complete shutdown, not sleep, so the optical output goes quiet and a DAC that picks its input
-by itself lets go of the TV; Restart). The remote's power button starts the TV again. Home: Cameras, All lights of the TV's room (on or off together, "3 of 19 on") and the
+60 → 90 → 120 minutes; the TV goes to sleep through Home Assistant's ADB) and Running apps (the
+apps with a tile that are running, the biggest first with their memory; OK closes one, or Close
+all; listed and closed over Home Assistant's ADB). The round power button beside the profile
+bubble offers Turn off (a complete shutdown, not sleep, so the optical output goes quiet and a
+DAC that picks its input by itself lets go of the TV) and Restart. The remote's power button
+starts the TV again. Home: Cameras, All lights of the TV's room (on or off together, "3 of 19 on") and the
 lights chosen in Settings › Remote › Quick settings · lights (without a choice, the room's light
 groups), each with its state; OK switches them. Then Launcher settings and All TV settings. There is no Picture or Sound: the TCL's own menus only open over a film, and from the
 home screen only Android's generic page would come. The TCL does not let an app start the

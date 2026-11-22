@@ -171,10 +171,35 @@ object QuickPanel {
             titles.addView(ctx.label(SimpleDateFormat("HH:mm · EEEE", Locale.ENGLISH).format(Date()), 11f, C.TEXT3),
                 LinearLayout.LayoutParams(-2, -2).apply { topMargin = ctx.dp(3f) })
             head.addView(titles, LinearLayout.LayoutParams(0, -2, 1f))
-            if (cfg.kids.on) head.addView(kidsBubble(), LinearLayout.LayoutParams(ctx.dp(46f), ctx.dp(46f)))
+            head.addView(powerButton(), LinearLayout.LayoutParams(ctx.dp(46f), ctx.dp(46f)))
+            if (cfg.kids.on) head.addView(kidsBubble(), LinearLayout.LayoutParams(ctx.dp(46f), ctx.dp(46f)).apply { leftMargin = ctx.dp(10f) })
             content.addView(head, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ctx.dp(4f) })
             content.addView(list, LinearLayout.LayoutParams(-1, -2))
             showMain()
+        }
+
+        /** The round power button beside the profile: turn off or restart. */
+        private fun powerButton(): View = ImageView(ctx).apply {
+            setImageResource(R.drawable.ic_power)
+            imageTintList = android.content.res.ColorStateList.valueOf(C.TEXT)
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
+            val pad = ctx.dp(12f)
+            setPadding(pad, pad, pad, pad)
+            isFocusable = true
+            isClickable = true
+            contentDescription = "Power"
+            val round = android.graphics.drawable.GradientDrawable().apply {
+                shape = android.graphics.drawable.GradientDrawable.OVAL
+                setColor(C.ROW)
+            }
+            background = round
+            FocusGlide.shape(this, -1f)
+            setOnFocusChangeListener { v, f ->
+                (v as ImageView).imageTintList = android.content.res.ColorStateList.valueOf(if (f) C.DARK else C.TEXT)
+                round.setColor(if (f) C.TEXT else C.ROW)
+                Look.grow(v, f, 1.08f)
+            }
+            setOnClickListener { showPower() }
         }
 
         /** The kids' picture in a bubble: one press, and the TV is theirs. Easy to spot for a child. */
@@ -265,8 +290,13 @@ object QuickPanel {
                 open(ctx, Intent(android.provider.Settings.ACTION_WIFI_SETTINGS), Intent(android.provider.Settings.ACTION_WIRELESS_SETTINGS))
             }
             val sleepTile = Tile("Sleep timer", SleepTimer.describe(ctx)) { t -> t.value(SleepTimer.next(ctx)) }
-            val powerTile = Tile("Power", "Turn off · Restart") { showPower() }
-            grid(listOf(inputsTile, netTile, sleepTile, powerTile))
+            val appsTile = Tile("Running apps", "See and close") { showRunning() }
+            grid(listOf(inputsTile, netTile, sleepTile, appsTile))
+            // how many are running: one question to the TV over Home Assistant
+            val c = cfg
+            Bg.run({ RunningApps.list(ctx, c) }) { apps ->
+                if (apps != null) appsTile.value(if (apps.isEmpty()) "None" else if (apps.size == 1) "1 app" else "${apps.size} apps")
+            }
 
             if (ha != null) {
                 section("Home")
@@ -427,6 +457,43 @@ object QuickPanel {
                 }
             }
             post { firstInList()?.requestFocus() }
+        }
+
+        /** The running apps (the ones with a tile), the biggest first; OK closes one. */
+        private fun showRunning() {
+            inSub = true
+            list.removeAllViews()
+            section("Running apps")
+            val wait = ctx.label("Asking the TV…", 11f, C.TEXT3).apply { setPadding(ctx.dp(2f), ctx.dp(6f), 0, 0) }
+            list.addView(wait)
+            val c = cfg
+            Bg.run({ RunningApps.list(ctx, c) }) { apps ->
+                if (!inSub || wait.parent == null) return@run
+                list.removeView(wait)
+                if (apps == null) {
+                    list.addView(ctx.label("Couldn't ask the TV through Home Assistant.", 11f, C.TEXT3).apply { setPadding(ctx.dp(2f), ctx.dp(6f), 0, 0) })
+                    return@run
+                }
+                if (apps.isEmpty()) {
+                    list.addView(ctx.label("No apps are running.", 11f, C.TEXT3).apply { setPadding(ctx.dp(2f), ctx.dp(6f), 0, 0) })
+                    return@run
+                }
+                if (apps.size > 1) {
+                    row("Close all", "${apps.size} apps") { r ->
+                        r.valueView.text = "Closing…"
+                        Bg.run({ RunningApps.close(c, apps.map { it.pkg }) }) { showRunning() }
+                    }
+                }
+                for (a in apps) {
+                    row(a.label, if (a.mb > 0) "${a.mb} MB · OK closes it" else "OK closes it") { r ->
+                        r.valueView.text = "Closing…"
+                        Bg.run({ RunningApps.close(c, listOf(a.pkg)) }) { ok ->
+                            if (ok == true) showRunning() else r.valueView.text = "Couldn't close it"
+                        }
+                    }
+                }
+                post { firstInList()?.requestFocus() }
+            }
         }
 
         /** Inputs, in the panel: the TV, then the HDMI inputs with what is plugged in. */
