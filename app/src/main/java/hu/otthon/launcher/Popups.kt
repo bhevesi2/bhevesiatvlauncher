@@ -144,6 +144,7 @@ class PopupService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        CrashLog.install(this)
         worker = HandlerThread("popups").apply { start() }
         bg = Handler(worker.looper)
         foreground()

@@ -376,6 +376,7 @@ class KeyService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        CrashLog.install(this)
         bound = true
         // the window changes too, not only the keys: the kids profile needs to see which app is in front
         serviceInfo = serviceInfo?.apply {

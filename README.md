@@ -66,6 +66,16 @@ makes an item display-only. A section with `hide_when` disappears while that ent
   built-in illustrations `alpine` and `hills`. A set may hold several pictures per time of day
   (`hajnal.jpg`, `hajnal2.jpg`, `hajnal3.jpg` ...): they take turns, a new one every hour.
 
+## Staying up
+
+An error on the main thread that does not break a screen being opened or drawn (a Home Assistant
+answer that went missing, a callback that did not expect it) is written down and the launcher
+goes on; background work (`Bg.run`) never stops it either. A real crash is written down too, and
+when a launcher screen was in front the launcher starts again by itself, at most three times in
+ten minutes. Everything goes to `files/crashes.log` (also under `Android/data/hu.otthon.launcher/
+files/` for ADB); the last crash is shown on the home screen the next time it opens, and holding
+OK on the gear button shows the log, so a TV without ADB or Home Assistant can show it too.
+
 ## Language
 
 English by default; Settings › Appearance › Language switches the launcher to Hungarian

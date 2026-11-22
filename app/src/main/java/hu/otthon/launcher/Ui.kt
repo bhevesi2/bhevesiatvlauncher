@@ -811,6 +811,16 @@ class FocusGlide private constructor(private val host: View) {
  * is more than this TV can do smoothly). Only the panel moves, as one pre-rendered layer.
  */
 open class PanelActivity : Activity() {
+    override fun onResume() {
+        super.onResume()
+        CrashLog.front++
+    }
+
+    override fun onPause() {
+        super.onPause()
+        CrashLog.front--
+    }
+
     override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
         if (KeyLag.swallow(this, event)) return true
         return super.dispatchKeyEvent(event)

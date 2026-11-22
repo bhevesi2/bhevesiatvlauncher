@@ -868,6 +868,7 @@ class HomeActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
+        CrashLog.front++
         if (builtHu != Lang.hu) {
             builtHu = Lang.hu
             recreate()
@@ -912,6 +913,7 @@ class HomeActivity : Activity() {
 
     override fun onPause() {
         super.onPause()
+        CrashLog.front--
         resumed = false
         critters?.paused = true
         try { unregisterReceiver(tick) } catch (e: Exception) { }

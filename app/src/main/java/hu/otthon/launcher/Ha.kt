@@ -19,10 +19,24 @@ object Bg {
     val exec = Executors.newFixedThreadPool(4)
     val main = Handler(Looper.getMainLooper())
 
+    /**
+     * [work] in the background, then [done] with its result on the main thread. A failure in
+     * either (Home Assistant gone, an answer not as expected) is written down and gives null or
+     * nothing: it never stops the launcher.
+     */
     fun <T> run(work: () -> T, done: (T?) -> Unit) {
         exec.execute {
-            val r = try { work() } catch (e: Exception) { null }
-            main.post { done(r) }
+            val r = try {
+                work()
+            } catch (e: Exception) {
+                null
+            } catch (e: Throwable) {
+                CrashLog.note(e)
+                null
+            }
+            main.post {
+                try { done(r) } catch (e: Throwable) { CrashLog.note(e) }
+            }
         }
     }
 }
