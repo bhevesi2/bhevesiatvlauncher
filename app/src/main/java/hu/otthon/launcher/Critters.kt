@@ -119,6 +119,21 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) :
         visibility = INVISIBLE
     }
 
+    /**
+     * The surface's own size: never above full HD, a quarter of it on a weak TV. The little
+     * visitors are drawn smaller into it and the TV scales the picture up; their buffers are
+     * graphics memory the Philips did not have to spare.
+     */
+    private var scale = 1f
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        if (w <= 0 || h <= 0) return
+        val bw = minOf(w, if (LowRam.on) 960 else 1920)
+        scale = bw.toFloat() / w
+        holder.setFixedSize(bw, maxOf(1, (h * scale).toInt()))
+    }
+
     override fun surfaceCreated(holder: android.view.SurfaceHolder) {
         ready = true
         kick()
@@ -144,6 +159,7 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) :
         } ?: return
         try {
             canvas.drawColor(0, android.graphics.PorterDuff.Mode.CLEAR)
+            if (scale != 1f) canvas.scale(scale, scale)
             drawScene(canvas)
         } finally {
             try { surface.unlockCanvasAndPost(canvas) } catch (e: Exception) { }

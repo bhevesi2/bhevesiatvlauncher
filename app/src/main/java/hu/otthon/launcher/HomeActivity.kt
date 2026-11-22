@@ -911,6 +911,12 @@ class HomeActivity : Activity() {
         }
     }
 
+    override fun onStop() {
+        super.onStop()
+        // another screen in front: on a weak TV the photos make room in the graphics memory
+        if (LowRam.on) backdrop.release()
+    }
+
     override fun onPause() {
         super.onPause()
         CrashLog.front--

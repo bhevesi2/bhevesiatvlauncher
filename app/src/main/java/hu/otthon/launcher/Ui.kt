@@ -1092,6 +1092,13 @@ class Backdrop(ctx: Context) : FrameLayout(ctx) {
     private var key: String? = null
     private var gen = 0
 
+    /**
+     * Behind the settings and the other panels of a weak TV: only a dark gradient. Every
+     * full-screen picture there sits in the graphics memory next to the home screen's, and the
+     * Philips (2 GB) ran out of it (EGL_BAD_ALLOC, and Android stops the launcher).
+     */
+    private val lite = ctx !is HomeActivity && LowRam.on
+
     init {
         // no black underneath: the landscape or the photo always covers the whole screen, and
         // every full-screen layer is painted again in every frame of a cursor move
@@ -1119,7 +1126,28 @@ class Backdrop(ctx: Context) : FrameLayout(ctx) {
 
     private var nasLooking = false
 
+    /** The home screen, while another screen is in front on a weak TV: its photos let go. */
+    fun release() {
+        gen++
+        key = null
+        photoA.setImageDrawable(null)
+        photoB.setImageDrawable(null)
+        photoA.alpha = 0f
+        photoB.alpha = 0f
+        front = null
+    }
+
     fun show(chosen: String, phase: Phase, animate: Boolean) {
+        if (lite) {
+            landscape.visibility = GONE
+            photoA.visibility = GONE
+            photoB.visibility = GONE
+            snow.visibility = GONE
+            if (background == null) background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR, intArrayOf(0xFF1B2633.toInt(), 0xFF0B0F14.toInt())
+            )
+            return
+        }
         // Christmas mode brings its own landscapes, a different one every hour
         // the NAS set: when its folder is due for another look, look first, then show
         if (chosen == NasWallpapers.KEY && !nasLooking && NasWallpapers.stale(context)) {

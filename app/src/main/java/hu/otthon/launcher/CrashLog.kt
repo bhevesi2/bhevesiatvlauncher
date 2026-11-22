@@ -200,7 +200,7 @@ object CrashLog {
                 }
             }
         }) { lines ->
-            if (lines != null && !act.isFinishing) dialog(act, "The launcher stopped last time", lines.joinToString("\n"))
+            if (lines != null && !act.isFinishing) dialog(act, "The launcher stopped last time", (listOf(device(act)) + lines).joinToString("\n"))
         }
     }
 
@@ -208,10 +208,20 @@ object CrashLog {
     fun showLog(act: Activity) {
         Bg.run({
             val f = File(act.filesDir, "crashes.log")
-            if (f.exists() && f.length() > 0) f.readText().takeLast(6000).lines() else ownLog().takeLast(60)
+            listOf(device(act)) + (if (f.exists() && f.length() > 0) f.readText().takeLast(6000).lines() else ownLog().takeLast(60))
         }) { lines ->
             if (lines != null && !act.isFinishing) dialog(act, "Launcher log", lines.joinToString("\n"))
         }
+    }
+
+    /** What the TV is: its screen as the launcher sees it, its memory. */
+    fun device(ctx: Context): String {
+        val m = ctx.resources.displayMetrics
+        val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
+        val mi = android.app.ActivityManager.MemoryInfo().also { am.getMemoryInfo(it) }
+        return "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} · Android ${android.os.Build.VERSION.RELEASE} · " +
+            "${m.widthPixels}x${m.heightPixels} ${m.densityDpi} dpi · RAM ${mi.totalMem / 1048576} MB, free ${mi.availMem / 1048576} MB · " +
+            "weak: ${LowRam.on} · ${try { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName } catch (e: Exception) { "?" }}"
     }
 
     private fun dialog(act: Activity, title: String, text: String) {
