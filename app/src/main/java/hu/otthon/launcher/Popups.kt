@@ -169,6 +169,23 @@ class PopupService : Service() {
         foreground()
         reload()
         bg.post(poll)
+        // the screensaver starting and stopping, for the TV's state in Home Assistant
+        try {
+            registerReceiver(dreams, android.content.IntentFilter().apply {
+                addAction(Intent.ACTION_DREAMING_STARTED)
+                addAction(Intent.ACTION_DREAMING_STOPPED)
+                addAction(Intent.ACTION_SCREEN_OFF)
+            })
+        } catch (e: Exception) { CrashLog.note(e) }
+    }
+
+    private val dreams = object : android.content.BroadcastReceiver() {
+        override fun onReceive(ctx: Context, intent: Intent) {
+            TvState.dreaming = intent.action == Intent.ACTION_DREAMING_STARTED
+            val c = cfg
+            val api = client
+            if (c != null && api != null) bg.post { try { TvState.report(this@PopupService, c, api) } catch (e: Throwable) { CrashLog.note(e) } }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -197,6 +214,7 @@ class PopupService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         closePopup = null
+        try { unregisterReceiver(dreams) } catch (e: Exception) { }
         bg.removeCallbacksAndMessages(null)
         worker.quitSafely()
         main.removeCallbacksAndMessages(null)

@@ -20,6 +20,9 @@ object TvState {
     /** The app in front, as the button service last saw it. */
     @Volatile var front: String? = null
 
+    /** The screensaver is on: Android tells it (a screensaver's window is not always seen as an app). */
+    @Volatile var dreaming = false
+
     private var sent: String? = null
     private var sentAt = 0L
 
@@ -42,6 +45,7 @@ object TvState {
     fun state(ctx: Context): String {
         val on = (ctx.getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive
         if (!on) return "off"
+        if (dreaming) return "screensaver"
         val p = front ?: Prefs.of(ctx).getString("front_app", null) ?: return "home"
         return when {
             isDream(p) -> "screensaver"
@@ -62,7 +66,7 @@ object TvState {
 
     fun deviceName(ctx: Context): String = try {
         android.provider.Settings.Global.getString(ctx.contentResolver, "device_name")
-    } catch (e: Exception) { null }?.takeIf { it.isNotBlank() } ?: Build.MODEL
+    } catch (e: Exception) { null }?.trim()?.takeIf { it.isNotBlank() } ?: Build.MODEL
 
     /** Sends the state when it changed, or when five minutes passed. Background thread only. */
     fun report(ctx: Context, cfg: Config, client: HaClient, force: Boolean = false) {
