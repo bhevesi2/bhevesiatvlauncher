@@ -47,6 +47,14 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
+    lint {
+        // reported, not blocking: the report is kept with each build
+        abortOnError = false
+        checkReleaseBuilds = false
+    }
     packaging {
         resources {
             excludes += setOf("META-INF/versions/9/OSGI-INF/MANIFEST.MF", "META-INF/DEPENDENCIES", "META-INF/LICENSE*", "META-INF/NOTICE*", "META-INF/*.SF", "META-INF/*.DSA", "META-INF/*.RSA")
@@ -58,4 +66,8 @@ dependencies {
     // Windows (SMB) shares, for the wallpapers on the NAS; Bouncy Castle gives it MD4 for NTLM
     implementation("com.hierynomus:smbj:0.13.0")
     implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
+
+    testImplementation("junit:junit:4.13.2")
+    // the real org.json: Android's own is only there on a device
+    testImplementation("org.json:json:20240303")
 }

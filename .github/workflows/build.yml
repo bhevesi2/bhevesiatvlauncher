@@ -23,6 +23,10 @@ jobs:
         with:
           gradle-version: "8.7"
 
+      # a build whose checks fail is not released
+      - name: Unit tests
+        run: gradle :app:testReleaseUnitTest --no-daemon --stacktrace
+
       - name: Build release APK
         run: gradle :app:assembleRelease --no-daemon --stacktrace
 
@@ -41,3 +45,16 @@ jobs:
           name: Build ${{ github.run_number }}
           files: launcher.apk
           make_latest: "true"
+
+      # after the release, so it never holds one up: Android's code checks, kept as a report
+      - name: Lint
+        if: always()
+        continue-on-error: true
+        run: gradle :app:lintRelease --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lint-report
+          path: app/build/reports/lint-results-release.html
+          if-no-files-found: ignore

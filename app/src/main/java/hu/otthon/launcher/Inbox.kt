@@ -42,7 +42,7 @@ object Inbox {
     private var items: ArrayList<Item>? = null
     /** Ids dismissed in the last day: history must not bring them back. */
     private var gone: HashMap<String, Long>? = null
-    private val main = Handler(Looper.getMainLooper())
+    private val main by lazy { Handler(Looper.getMainLooper()) }
 
     /** Called on the main thread when the list changes (the open quick settings redraw). */
     @Volatile var onChange: (() -> Unit)? = null

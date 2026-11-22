@@ -255,7 +255,7 @@ class HaWatch(
     }
 
     /** "a": the states as they are now (on subscribing); "c": changes, "+" holding what is new. */
-    private fun handle(ev: JSONObject?) {
+    internal fun handle(ev: JSONObject?) {
         if (ev == null) return
         ev.optJSONObject("a")?.let { a ->
             for (e in a.keys()) {
