@@ -50,15 +50,20 @@ object LocalAdb {
      * Once, on the home screen: asks the TV to allow the launcher's key, while someone is there
      * to answer. Later only from Settings.
      */
-    fun askOnce(ctx: Context) {
+    fun askOnce(ctx: Context, stillHere: () -> Boolean) {
         init(ctx)
         if (ready()) return
         val p = Prefs.of(ctx)
         if (p.getBoolean("local_adb_asked", false)) return
-        p.edit().putBoolean("local_adb_asked", true).apply()
-        Bg.run({ shell("echo ok", askMs = 120_000) != null }) { ok ->
-            android.util.Log.i("OtthonAdb", "own ADB allowed: $ok")
-        }
+        // not straight away: right after an update or a start the home screen is opened again,
+        // and an activity opened over the TV's question takes it away before it can be answered
+        Bg.main.postDelayed({
+            if (ready() || !stillHere() || p.getBoolean("local_adb_asked", false)) return@postDelayed
+            p.edit().putBoolean("local_adb_asked", true).apply()
+            Bg.run({ shell("echo ok", askMs = 120_000) != null }) { ok ->
+                android.util.Log.i("OtthonAdb", "own ADB allowed: $ok")
+            }
+        }, 20_000L)
     }
 
     /** The TV has allowed the launcher's key: commands go here first. */

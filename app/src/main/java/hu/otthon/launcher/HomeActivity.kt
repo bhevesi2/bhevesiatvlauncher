@@ -864,7 +864,7 @@ class HomeActivity : Activity() {
         resumed = true
         reload()
         ServiceKeeper.ensure(this, cfg)
-        LocalAdb.askOnce(this)
+        LocalAdb.askOnce(this) { resumed && !isFinishing }
         critters?.setCount(cfg.critters, cfg.christmas)
         critters?.paused = expanded
         if (awayOnOwnScreen) {
