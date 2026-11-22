@@ -341,11 +341,23 @@ object ConfigStore {
     private var memoText: String? = null
     private var memoStamp = 0L to 0L
 
-    fun read(ctx: Context): JSONObject = try {
+    /** The last good settings, kept beside the file: used when the file itself cannot be read. */
+    private fun spare(ctx: Context) = File(file(ctx).path + ".bak")
+
+    /**
+     * The settings. A file that cannot be read (cut short by a power cut, say) does not count as
+     * empty settings, which the next change would then write back: the spare copy is used.
+     */
+    fun read(ctx: Context): JSONObject {
         val f = file(ctx)
-        if (f.exists()) JSONObject(text(f)) else JSONObject()
-    } catch (e: Exception) {
-        JSONObject()
+        try {
+            if (f.exists()) return JSONObject(text(f))
+        } catch (e: Exception) { }
+        try {
+            val b = spare(ctx)
+            if (b.exists()) return JSONObject(b.readText())
+        } catch (e: Exception) { }
+        return JSONObject()
     }
 
     @Synchronized
@@ -358,13 +370,31 @@ object ConfigStore {
         return t
     }
 
+    /**
+     * Writes the settings whole or not at all: into a new file first, which then takes the old
+     * one's place, so a power cut never leaves half a file. The old one, when it was good, stays
+     * as the spare.
+     */
     fun write(ctx: Context, json: JSONObject): Boolean = try {
         val f = file(ctx)
         f.parentFile?.mkdirs()
-        f.writeText(json.toString(1))
+        val text = json.toString(1)
+        try {
+            if (f.exists() && f.length() > 2) {
+                JSONObject(f.readText())
+                f.copyTo(spare(ctx), overwrite = true)
+            }
+        } catch (e: Exception) { }
+        val tmp = File(f.path + ".tmp")
+        tmp.writeText(text)
+        if (!tmp.renameTo(f)) {
+            f.writeText(text)
+            tmp.delete()
+        }
         synchronized(this) { memoText = null }
         true
     } catch (e: Exception) {
+        CrashLog.note(e)
         false
     }
 
@@ -467,11 +497,11 @@ object Backgrounds {
     data class Option(val key: String, val title: String, val subtitle: String)
 
     private val EXT = listOf("jpg", "jpeg", "png", "webp")
-    private var cacheKey: String? = null
-    private var cacheBmp: Bitmap? = null
+    // the last photo, key and picture together: read on a background thread, let go on the main one
+    @Volatile private var cache: Pair<String, Bitmap>? = null
 
     /** Forgets the decoded photo; the one on screen stays with its view. */
-    fun trim() { cacheKey = null; cacheBmp = null }
+    fun trim() { cache = null }
 
     fun normalize(k: String): String = when (k) {
         "alpesi", "" -> "alpine"
@@ -569,7 +599,7 @@ object Backgrounds {
         }
         val name = variant(ctx, key, phase) ?: return null
         val ck = "$key/$name"
-        if (ck == cacheKey && cacheBmp != null) return cacheBmp
+        cache?.let { if (it.first == ck) return it.second }
         val opener: (() -> InputStream)? = when {
             key.startsWith("asset:") -> {
                 { ctx.assets.open("backgrounds/" + key.removePrefix("asset:") + "/" + name) }
@@ -595,10 +625,7 @@ object Backgrounds {
                 inPreferredConfig = Bitmap.Config.ARGB_8888
             })
         }
-        if (bmp != null) {
-            cacheKey = ck
-            cacheBmp = bmp
-        }
+        if (bmp != null) cache = ck to bmp
         return bmp
     }
 }
