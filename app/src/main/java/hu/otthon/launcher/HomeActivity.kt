@@ -681,6 +681,7 @@ class HomeActivity : Activity() {
         val gear = iconButton(R.drawable.ic_gear, "Quick settings", false) {
             QuickPanel.show(this)
         }
+        gear.setOnLongClickListener { CrashLog.showLog(this); true }
         gearButton = gear
         markUpdate()
         topButtons.addView(gear, LinearLayout.LayoutParams(dp(40f), dp(40f)).apply { leftMargin = dp(8f) })
