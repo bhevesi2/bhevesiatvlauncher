@@ -109,8 +109,7 @@ object Glow {
 
     fun on(v: View, radius: Float, color: Int = COLOR) {
         FocusGlide.shape(v, radius, 0f)
-        // the fairy lights are for the pictures; on a small button their wire looked like a cable
-        FocusGlide.glow(v, color, lights = false)
+        FocusGlide.glow(v, color)
     }
 
     /** True when [v] glows: its text and icons stay light. */

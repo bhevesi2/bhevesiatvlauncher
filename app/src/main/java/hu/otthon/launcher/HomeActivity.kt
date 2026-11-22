@@ -579,7 +579,7 @@ class HomeActivity : Activity() {
         npButton.setColorFilter(if (dark) C.DARK else C.TEXT)
     }
 
-    /** Round icon-only button; its name shows in a small label while it has focus. */
+    /** Round icon-only button; no name label (the icons speak for themselves). */
     private fun iconButton(icon: Int, name: String, above: Boolean, onClick: () -> Unit): ImageView {
         val v = ImageView(this)
         v.setImageResource(icon)
@@ -595,7 +595,6 @@ class HomeActivity : Activity() {
             v.background = if (f) Glow.lit(v, dp(Look.R_TILE).toFloat()) else normal
             v.setColorFilter(if (f && !Glow.glows(v)) C.DARK else C.TEXT)
             Glow.move(v, f)
-            if (f) showHint(v, name, above) else hideHint(v)
         }
         v.setOnClickListener { onClick() }
         return v
@@ -796,7 +795,6 @@ class HomeActivity : Activity() {
                 paintChips(f)
                 // only grows: its neighbours are the clock and the corner buttons, which stay put
                 Look.grow(v, f, 1.05f)
-                if (f) showHint(v, "Home Assistant", false) else hideHint(v)
             }
             chipsRow.setOnClickListener { open(DashboardActivity::class.java) }
         } else {

@@ -173,7 +173,7 @@ capsule with thin lines between them, and pills for the scenes and the inputs. A
 the same dark frosted glass. The cursor is the same everywhere on the home screen: the soft glow
 of the app row, gliding from one control to the next; the focused control turns solid dark inside
 its glow and grows a little, and in a row (the round buttons, the scenes) its neighbours step
-aside with a small spring, like the app tiles. The music card and the status capsule only grow.
+aside with a small spring, like the app tiles. The music card and the status capsule only grow. No name labels pop up under the buttons.
 Lists elsewhere (settings, quick settings) keep the light fill. A glow is only cut where a list
 really scrolls, and only in the direction it scrolls.
 
