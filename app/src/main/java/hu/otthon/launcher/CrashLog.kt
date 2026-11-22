@@ -53,7 +53,7 @@ object CrashLog {
         if (!p.getBoolean("front", false) || front > 0) return
         p.edit().putBoolean("front", false).commit()
         if (processName().contains(':')) return
-        try { append("CRASH", "${java.util.Date()}  ·  the launcher stopped while it was in front (a crash outside the app's code, e.g. the graphics driver); see logcat") } catch (x: Throwable) { }
+        try { append("CRASH", "${stamp()}  ·  the launcher stopped while it was in front (a crash outside the app's code, e.g. the graphics driver); see logcat") } catch (x: Throwable) { }
         restartLater()
     }
 
@@ -124,8 +124,33 @@ object CrashLog {
         try { append("caught", describe(Thread.currentThread(), e)) } catch (x: Throwable) { }
     }
 
+    private fun stamp(): String = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.ENGLISH).format(java.util.Date())
+
+    /** Crashes in the last day, and the time of the last one ("yyyy-MM-dd HH:mm:ss"), from the log. */
+    fun recent(ctx: Context): Pair<Int, String?> = try {
+        val f = File(ctx.filesDir, "crashes.log")
+        val fmt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.ENGLISH)
+        val since = System.currentTimeMillis() - 24 * 3600_000L
+        var n = 0
+        var last: String? = null
+        if (f.exists()) {
+            val lines = f.readLines()
+            for (i in lines.indices) {
+                if (lines[i] != "===== CRASH") continue
+                val t = lines.getOrNull(i + 1)?.take(19) ?: continue
+                val ms = try { fmt.parse(t)?.time ?: 0L } catch (e: Exception) { 0L }
+                if (ms <= 0L) continue
+                last = t
+                if (ms >= since) n++
+            }
+        }
+        n to last
+    } catch (e: Exception) {
+        0 to null
+    }
+
     private fun describe(t: Thread, e: Throwable) = buildString {
-        append(java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.ENGLISH).format(java.util.Date()))
+        append(stamp())
         append("  ·  ").append(try { app.packageManager.getPackageInfo(app.packageName, 0).versionName } catch (x: Exception) { "?" })
         append("  ·  Android ").append(android.os.Build.VERSION.RELEASE)
         append("  ·  ").append(android.os.Build.MANUFACTURER).append(' ').append(android.os.Build.MODEL)

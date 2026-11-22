@@ -109,7 +109,17 @@ class PopupService : Service() {
          * True when there is something to watch: camera sensors or notifications. The sensors are
          * watched even with the pop-ups off, for the quick settings' list of the last day.
          */
-        fun needed(c: Config): Boolean = c.haEnabled && (c.popupTriggers.isNotEmpty() || c.notify)
+        fun needed(c: Config): Boolean = c.haEnabled && (c.popupTriggers.isNotEmpty() || c.notify || c.reportState)
+
+        private const val FRONT = "front"
+
+        /** The button service saw another app come to the front: passed on to Home Assistant. */
+        fun front(ctx: Context, pkg: String) {
+            val i = Intent(ctx, PopupService::class.java).putExtra(FRONT, pkg)
+            try {
+                if (Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(i) else ctx.startService(i)
+            } catch (e: Exception) { }
+        }
 
         fun allowed(ctx: Context): Boolean = Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(ctx)
 
@@ -167,13 +177,19 @@ class PopupService : Service() {
         reload()
         intent?.getStringExtra(TEST)?.let { cam -> main.post { show(cam, "Test", true) } }
         intent?.getStringExtra(CAMERA)?.let { cam -> main.post { show(cam, intent.getStringExtra(CAMERA_TITLE) ?: "", true) } }
+        intent?.getStringExtra(FRONT)?.let { pkg ->
+            TvState.front = pkg
+            val c = cfg
+            val api = client
+            if (c != null && api != null) bg.post { TvState.report(this, c, api) }
+        }
         val quickAsked = intent?.getBooleanExtra(QUICK, false) == true
         if (quickAsked) main.post { QuickPanel.toggle(this) }
         val noteTest = intent?.getBooleanExtra(NOTE_TEST, false) == true
         if (noteTest) main.post { showNote(Note("bell", "info", "Test notification", "This is how Home Assistant's messages look on this TV.")) }
         val c = cfg
         if (c == null || !needed(c)) {
-            if (intent?.getStringExtra(TEST) == null && intent?.getStringExtra(CAMERA) == null && !noteTest && !quickAsked) stopSelf()
+            if (intent?.getStringExtra(TEST) == null && intent?.getStringExtra(CAMERA) == null && !noteTest && !quickAsked && intent?.getStringExtra(FRONT) == null) stopSelf()
         }
         return START_STICKY
     }
@@ -282,6 +298,8 @@ class PopupService : Service() {
                 }
                 primed = true
             }
+            // what the TV is doing, for Home Assistant: on a change (the screen going off, say) and every few minutes
+            if (c != null && api != null) TvState.report(this@PopupService, c, api)
             // what happened while the TV slept (or before the launcher started): from the history
             val now = System.currentTimeMillis()
             if (c != null && api != null && screenOn && (!wasOn || now - backfilledAt > 15 * 60_000L)) backfill(c, api)

@@ -53,6 +53,10 @@ data class Config(
     val notifySeconds: Int,
     /** The text helper Home Assistant writes the notifications into. */
     val notifyEntity: String,
+    /** Tell Home Assistant what the TV is doing ([TvState]). */
+    val reportState: Boolean,
+    /** The sensor for that; null: from the TV's name. */
+    val stateEntity: String?,
     /** The outside weather as the first chip on the home screen. */
     val weatherChip: Boolean,
     /** To-do lists shown on the Today panel. */
@@ -155,6 +159,8 @@ data class Config(
                 notify = (json.optJSONObject("notify") ?: JSONObject()).optBoolean("enabled", true),
                 notifySeconds = (json.optJSONObject("notify") ?: JSONObject()).optInt("seconds", 12).coerceIn(5, 60),
                 notifyEntity = (json.optJSONObject("notify") ?: JSONObject()).optString("entity", "").ifBlank { DEFAULT_NOTIFY_ENTITY },
+                reportState = json.optBoolean("report_state", true),
+                stateEntity = json.optString("state_entity", "").trim().takeIf { it.startsWith("sensor.") },
                 weatherChip = json.optBoolean("weather_chip", true),
                 todoLists = json.optJSONArray("todo_lists")?.let { items(it) } ?: listOf(HaItem("todo.shopping_list", "")),
                 liveVideo = (json.optJSONObject("live") ?: JSONObject()).optBoolean("enabled", false),

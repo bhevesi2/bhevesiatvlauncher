@@ -105,6 +105,23 @@ class HaClient(private val base: String, private val token: String) {
         }
     }
 
+    /**
+     * Sets the state of an entity of the launcher's own (POST /api/states): Home Assistant shows
+     * it like any sensor until it restarts, so it is sent again now and then.
+     */
+    fun setState(entity: String, state: String, attributes: JSONObject) {
+        val c = open("/api/states/$entity")
+        try {
+            c.requestMethod = "POST"
+            c.doOutput = true
+            c.outputStream.use { it.write(JSONObject().put("state", state).put("attributes", attributes).toString().toByteArray()) }
+            val code = c.responseCode
+            if (code !in 200..299) throw IllegalStateException("HTTP $code")
+        } finally {
+            c.disconnect()
+        }
+    }
+
     /** Calls a service that answers with data (Music Assistant's library, search) and returns that answer. */
     fun callResponse(domain: String, service: String, data: JSONObject, readMs: Int = 15000): JSONObject {
         val c = open("/api/services/$domain/$service?return_response", readMs)

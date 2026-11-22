@@ -396,10 +396,19 @@ class KeyService : AccessibilityService() {
         super.onDestroy()
     }
 
+    /** The app last told to the main process, so each change is passed on once. */
+    private var lastFront: String? = null
+
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
         val pkg = event.packageName?.toString() ?: return
         QuickPanel.onAppChanged(pkg, packageName)
+        if (TvState.counts(pkg, event.className?.toString(), packageName) && pkg != lastFront) {
+            lastFront = pkg
+            // kept, so a main process that starts again later still knows it
+            Prefs.of(this).edit().putString("front", pkg).apply()
+            PopupService.front(this, pkg)
+        }
         if (!KidsGuard.relevant(this, pkg)) return
         KidsGuard.front = pkg
         val c = config() ?: return

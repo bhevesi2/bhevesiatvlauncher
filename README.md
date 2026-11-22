@@ -32,7 +32,11 @@ go through Home Assistant's ADB integration, so on such a TV use `home-button.ba
 The settings are stored in `/sdcard/Android/data/hu.otthon.launcher/files/config.json`, which can
 also be written over ADB. Main keys: `ha_url`, `ha_token`, `lat`, `lon`, `background`, `dim`,
 `status`, `scenes`, `cameras` (lists of `{ "entity", "label" }`), `now_playing`, `inputs_hidden`,
-`input_names`, and `dashboard`:
+`input_names`, and `dashboard`. The Home Assistant token and the network folder's password do not
+stay in this file: the launcher moves them into its own storage (which other apps cannot read)
+the next time it reads the settings, and writes the file without them. Writing them into the
+file again (a new token over ADB, say) works the same way. The file is written whole or not at
+all, and the last good one is kept as `config.json.bak`:
 
 ```json
 "dashboard": {
@@ -72,7 +76,10 @@ An error on the main thread that does not break a screen being opened or drawn (
 answer that went missing, a callback that did not expect it) is written down and the launcher
 goes on; background work (`Bg.run`) never stops it either. A real crash is written down too, and
 when a launcher screen was in front the launcher starts again by itself, at most three times in
-ten minutes. A TV whose graphics memory runs out can be given plainer graphics with
+ten minutes. A crash outside the app's code (the graphics driver running out of memory kills the
+process outright) is noticed when the process starts again: a launcher screen was in front and
+never left, so it is written down and the launcher comes back, within the same allowance. A TV
+whose graphics memory runs out can be given plainer graphics with
 `"lite_graphics": true` in its settings file (panels without the landscape, the critters at
 quarter size); off by default, the 2 GB Sony copes with the full look. Everything goes to `files/crashes.log` (also under `Android/data/hu.otthon.launcher/
 files/` for ADB); the last crash is shown on the home screen the next time it opens, and holding
@@ -367,9 +374,10 @@ camera wall except indoor ones), that camera appears in the bottom right corner 
 whatever is playing (on a TV with little memory, such as the 2 GB Sony, not over the open quick
 settings: there the alert just goes into their list, since it ran out of graphics memory with both
 at once; a TV with more memory, such as the TCL, shows it over the panel too). While it is up, Back closes it, OK opens the camera full screen and any other
-key just closes it (volume keys still work). A background service checks the sensors every two
-seconds while the TV is on (and every 15 seconds while it is off, for the quick settings' list,
-which collects the alerts even with the pop-ups off). Settings › Cameras › Pop-ups (or the Camera
+key just closes it (volume keys still work). A background service hears every change of the
+sensors at once over Home Assistant's WebSocket (subscribe_entities), also while the TV is off,
+for the quick settings' list, which collects the alerts even with the pop-ups off; while that line
+is down it asks every two seconds (15 while the TV is off) and reconnects by itself. Settings › Cameras › Pop-ups (or the Camera
 alerts tile of the quick settings) switches it off, sets how long it stays,
 and edits the sensors. Drawing over other apps is allowed over ADB:
 `appops set hu.otthon.launcher SYSTEM_ALERT_WINDOW allow`. The launcher asks Home Assistant's ADB
@@ -380,6 +388,18 @@ Settings › Cameras › Live video plays the full-screen view and the pop-ups a
 Frigate's RTSP restream (`rtsp://{host}:8554/{camera}` by default, editable), with Android's own
 player; the Frigate add-on has to publish its port 8554. A stream that does not start within ten
 seconds falls back to the still pictures.
+
+## The TV's state in Home Assistant
+
+The launcher tells Home Assistant what the TV is doing, as a sensor of its own,
+`sensor.<the TV's name>_launcher` (the name from Android's device name, e.g.
+`sensor.living_room_tv_launcher`; `"state_entity"` in the settings file sets another):
+`off`, `screensaver`, `home` (a launcher screen in front), `menu` (the TV's settings, the app
+store, the search) or `watching` (any other app). The button service sees every app that comes to
+the front; the main process sends the state on each change and every five minutes (Home
+Assistant forgets such a state when it restarts). Attributes: `app`, `app_name`, `version`,
+`model`, `android`, `low_memory`, `crashes_24h`, `last_crash`, `notifications`, `updated`.
+`"report_state": false` switches it off.
 
 ## Notifications
 
