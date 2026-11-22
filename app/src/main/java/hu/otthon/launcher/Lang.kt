@@ -47,6 +47,7 @@ object Lang {
     )
 
     private val words: Map<String, String> = mapOf(
+        "The launcher stopped last time" to "A launcher legutóbb leállt",
         "Partly cloudy" to "Részben felhős",
         "Sunny" to "Napos",
         "Clear night" to "Tiszta éjszaka",

@@ -824,6 +824,7 @@ open class PanelActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        CrashLog.install(this)
         LowRam.init(this)
         overridePendingTransition(0, 0)
     }

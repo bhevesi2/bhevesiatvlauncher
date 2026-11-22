@@ -112,6 +112,7 @@ class HomeActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        CrashLog.install(this)
         LowRam.init(this)
         LocalAdb.init(this)
         Config.load(this)
@@ -875,6 +876,7 @@ class HomeActivity : Activity() {
         reload()
         ServiceKeeper.ensure(this, cfg)
         LocalAdb.askOnce(this) { resumed && !isFinishing }
+        CrashLog.showIfAny(this)
         critters?.setCount(cfg.critters, cfg.christmas)
         critters?.paused = expanded
         if (awayOnOwnScreen) {
