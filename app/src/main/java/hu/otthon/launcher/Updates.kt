@@ -122,7 +122,9 @@ object Updates {
         // lost: while this app is still alive half a minute later, it tries again (three times).
         var res = Adb.Result.FAILED
         for (attempt in 1..3) {
-            res = Adb.runHere(Config.load(ctx), installCommand(ctx, apk), 90000)
+            // first on the TV's own ADB; while the launcher is still alive after it, the install
+            // did not happen: then over Home Assistant
+            res = Adb.runHere(Config.load(ctx), installCommand(ctx, apk), 90000, ownAdb = attempt == 1)
             try { Thread.sleep(25_000) } catch (e: InterruptedException) { break }
         }
         return Adb.explain(res)

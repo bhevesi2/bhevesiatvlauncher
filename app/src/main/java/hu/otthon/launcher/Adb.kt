@@ -46,8 +46,8 @@ object Adb {
     }
 
     /** The same as [run], on the calling thread: for work that already runs in the background. */
-    fun runHere(cfg: Config, command: String, timeoutMs: Int = 25000): Result {
-        if (LocalAdb.ready() && local(command)) return Result.OK
+    fun runHere(cfg: Config, command: String, timeoutMs: Int = 25000, ownAdb: Boolean = true): Result {
+        if (ownAdb && LocalAdb.ready() && local(command)) return Result.OK
         if (!cfg.haEnabled) return Result.NO_HA
         val client = HaClient(cfg.haUrl!!, cfg.haToken!!)
         val entity = cfg.adbEntity ?: findTv(client) ?: return Result.NO_TV
