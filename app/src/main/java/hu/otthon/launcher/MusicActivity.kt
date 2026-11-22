@@ -80,7 +80,7 @@ class MusicActivity : PanelActivity() {
         super.onCreate(savedInstanceState)
         cfg = Config.load(this)
         if (!cfg.haEnabled) {
-            Toast.makeText(this, "Set up or switch on Home Assistant first", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, Lang.tr("Set up or switch on Home Assistant first"), Toast.LENGTH_SHORT).show()
             finish()
             return
         }
@@ -517,7 +517,7 @@ class MusicActivity : PanelActivity() {
         } catch (e: Exception) { }
     }
 
-    private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+    private fun toast(msg: String) = Toast.makeText(this, Lang.tr(msg), Toast.LENGTH_SHORT).show()
 
     companion object {
         private val PROGRESS = Any()

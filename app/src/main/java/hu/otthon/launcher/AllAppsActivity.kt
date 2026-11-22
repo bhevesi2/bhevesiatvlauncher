@@ -101,5 +101,5 @@ class AllAppsActivity : PanelActivity() {
         return super.onKeyDown(keyCode, event)
     }
 
-    private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+    private fun toast(msg: String) = Toast.makeText(this, Lang.tr(msg), Toast.LENGTH_SHORT).show()
 }

@@ -66,6 +66,14 @@ makes an item display-only. A section with `hide_when` disappears while that ent
   built-in illustrations `alpine` and `hills`. A set may hold several pictures per time of day
   (`hajnal.jpg`, `hajnal2.jpg`, `hajnal3.jpg` ...): they take turns, a new one every hour.
 
+## Language
+
+English by default; Settings › Appearance › Language switches the launcher to Hungarian
+(`"language": "hu"` in config.json). The texts are written in English in the code; `Lang.kt` holds
+their Hungarian, whole texts and patterns for texts with names and numbers in them. Every text
+view the launcher makes (`label`) translates what is set on it, so a new English text simply
+shows in English until its Hungarian is added there. Dates follow the language too.
+
 ## Background photos
 
 The `matterhorn` and `city` sets live in `app/src/main/assets/backgrounds/` (fetched with `tools/fetch_backgrounds.py`) and come from Unsplash, under the Unsplash License:

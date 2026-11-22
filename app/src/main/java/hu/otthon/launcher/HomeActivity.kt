@@ -90,8 +90,8 @@ class HomeActivity : Activity() {
         }
     }
 
-    private val timeFmt = DateTimeFormatter.ofPattern("HH:mm", Locale.ENGLISH)
-    private val dateFmt = DateTimeFormatter.ofPattern("EEEE, MMMM d", Locale.ENGLISH)
+    private val timeFmt = Lang.dtf("HH:mm")
+    private val dateFmt = Lang.dtf("EEEE, MMMM d")
 
     private val tick = object : BroadcastReceiver() {
         override fun onReceive(c: Context?, i: Intent?) = onMinute()
@@ -114,6 +114,8 @@ class HomeActivity : Activity() {
         super.onCreate(savedInstanceState)
         LowRam.init(this)
         LocalAdb.init(this)
+        Config.load(this)
+        builtHu = Lang.hu
         buildUi()
         Profile.listeners.add(onProfile)
     }
@@ -859,8 +861,16 @@ class HomeActivity : Activity() {
         LowRam.trim(level)
     }
 
+    /** The language the screen was built in: a change in Settings builds it again. */
+    private var builtHu = Lang.hu
+
     override fun onResume() {
         super.onResume()
+        if (builtHu != Lang.hu) {
+            builtHu = Lang.hu
+            recreate()
+            return
+        }
         resumed = true
         reload()
         ServiceKeeper.ensure(this, cfg)
@@ -1208,7 +1218,7 @@ class HomeActivity : Activity() {
         }
     }
 
-    private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+    private fun toast(msg: String) = Toast.makeText(this, Lang.tr(msg), Toast.LENGTH_SHORT).show()
 }
 
 /** The dot in the corner of a round button. */

@@ -105,7 +105,7 @@ fun rounded(color: Int, radius: Float, stroke: Int = 0, strokeColor: Int = 0): G
     }
 
 fun Context.label(text: String, sp: Float, color: Int = C.TEXT, bold: Boolean = false, light: Boolean = false): TextView =
-    TextView(this).apply {
+    LText(this).apply {
         this.text = text
         textSize = sp
         setTextColor(color)
@@ -1041,7 +1041,7 @@ object Popup {
         val edit = EditText(act).apply {
             setText(initial)
             setSelection(initial.length)
-            this.hint = hint
+            this.hint = Lang.tr(hint)
             setHintTextColor(0x66FFFFFF)
             setTextColor(C.TEXT)
             textSize = 13f
@@ -1255,8 +1255,8 @@ class PanelFrame(private val act: Activity, title: String, hint: String? = null)
 
     fun tick() {
         val now = java.time.ZonedDateTime.now()
-        clock.text = now.format(java.time.format.DateTimeFormatter.ofPattern("HH:mm", java.util.Locale.ENGLISH))
-        date.text = now.format(java.time.format.DateTimeFormatter.ofPattern("EEEE, MMMM d", java.util.Locale.ENGLISH))
+        clock.text = now.format(Lang.dtf("HH:mm"))
+        date.text = now.format(Lang.dtf("EEEE, MMMM d"))
     }
 
     fun update(cfg: Config) {

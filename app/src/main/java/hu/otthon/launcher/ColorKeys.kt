@@ -59,7 +59,7 @@ object ColorKeys {
         }
         val client = HaClient(cfg.haUrl!!, cfg.haToken!!)
         Bg.run({ Actions.fire(client, item); true }) { ok ->
-            Toast.makeText(app, if (ok == true) "${item.title} ✓" else "Couldn't run ${item.title}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(app, Lang.tr(if (ok == true) "${item.title} ✓" else "Couldn't run ${item.title}"), Toast.LENGTH_SHORT).show()
         }
     }
 

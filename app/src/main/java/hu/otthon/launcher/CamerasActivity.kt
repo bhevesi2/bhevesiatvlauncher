@@ -66,7 +66,7 @@ class CamerasActivity : PanelActivity() {
         super.onCreate(savedInstanceState)
         cfg = Config.load(this)
         if (!cfg.haEnabled || cfg.cameras.isEmpty()) {
-            Toast.makeText(this, "No cameras configured", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, Lang.tr("No cameras configured"), Toast.LENGTH_SHORT).show()
             finish()
             return
         }
@@ -126,7 +126,7 @@ class CamerasActivity : PanelActivity() {
         live.onFailed = {
             if (!liveWarned && fullIndex >= 0) {
                 liveWarned = true
-                Toast.makeText(this, "Live video is not available, showing pictures", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, Lang.tr("Live video is not available, showing pictures"), Toast.LENGTH_SHORT).show()
             }
         }
         full.addView(live, FrameLayout.LayoutParams(-1, -1))
@@ -145,7 +145,7 @@ class CamerasActivity : PanelActivity() {
         clip.onEnded = { showClipInfo() }
         clip.onFailed = {
             if (clipOpen) {
-                Toast.makeText(this, "This recording can't be played", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, Lang.tr("This recording can't be played"), Toast.LENGTH_SHORT).show()
                 closeClip()
             }
         }
@@ -574,7 +574,7 @@ class DetectionCard(ctx: android.content.Context, val d: Detection) : LinearLayo
 
     companion object {
         private val hm = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")
-        private val day = java.time.format.DateTimeFormatter.ofPattern("MMM d", java.util.Locale.ENGLISH)
+        private val day get() = Lang.dtf("MMM d")
 
         /** "Today 21:05:34", "Yesterday 18:00:02", "Nov 19 10:12:40". */
         fun whenText(epochSeconds: Double): String {

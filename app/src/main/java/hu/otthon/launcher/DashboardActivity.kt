@@ -69,7 +69,7 @@ class DashboardActivity : PanelActivity() {
 
     private val ranges = intArrayOf(6, 24, 72, 168)
     private val rangeNames = listOf("6 hours", "24 hours", "3 days", "7 days")
-    private val clockFmt = DateTimeFormatter.ofPattern("EEEE, MMMM d   ·   HH:mm", Locale.ENGLISH)
+    private val clockFmt = Lang.dtf("EEEE, MMMM d   ·   HH:mm")
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -556,7 +556,7 @@ class DashboardActivity : PanelActivity() {
 
     private fun showForecast(list: List<Forecast>) {
         forecastRow.removeAllViews()
-        val dayFmt = DateTimeFormatter.ofPattern("EEE", Locale.ENGLISH).withZone(ZoneId.systemDefault())
+        val dayFmt = Lang.dtf("EEE").withZone(ZoneId.systemDefault())
         val today = ZonedDateTime.now().toLocalDate()
         val days = list.filter { Instant.ofEpochMilli(it.time).atZone(ZoneId.systemDefault()).toLocalDate() >= today }.take(5)
         for (f in days) {
@@ -701,7 +701,7 @@ class DashboardActivity : PanelActivity() {
             else "Min " + Fmt.num(chart.min.toDouble(), statsUnit) + "   ·   Avg " + Fmt.num(chart.avg.toDouble(), statsUnit) +
                 "   ·   Max " + Fmt.num(chart.max.toDouble(), statsUnit)
         } else {
-            val fmt = DateTimeFormatter.ofPattern("EEE HH:mm", Locale.ENGLISH).withZone(ZoneId.systemDefault())
+            val fmt = Lang.dtf("EEE HH:mm").withZone(ZoneId.systemDefault())
             val lines = data.asReversed().take(12).map { (t, s) ->
                 fmt.format(Instant.ofEpochMilli(t)) + "     " + s.replace('_', ' ').replaceFirstChar { it.uppercase() }
             }
@@ -733,7 +733,7 @@ class DashboardActivity : PanelActivity() {
         return super.dispatchKeyEvent(event)
     }
 
-    private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+    private fun toast(msg: String) = Toast.makeText(this, Lang.tr(msg), Toast.LENGTH_SHORT).show()
 
     companion object {
         /** Curves survive closing and reopening the dashboard. */

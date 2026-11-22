@@ -43,8 +43,8 @@ class TodayActivity : PanelActivity() {
     private lateinit var dayText: TextView
 
     private val zone = ZoneId.systemDefault()
-    private val hourFmt = DateTimeFormatter.ofPattern("HH:mm", Locale.ENGLISH)
-    private val dayFmt = DateTimeFormatter.ofPattern("EEE d MMM", Locale.ENGLISH)
+    private val hourFmt = Lang.dtf("HH:mm")
+    private val dayFmt = Lang.dtf("EEE d MMM")
 
     /** Everything the panel shows, gathered off the main thread. */
     private class Data {
@@ -63,7 +63,7 @@ class TodayActivity : PanelActivity() {
         super.onCreate(savedInstanceState)
         cfg = Config.load(this)
         if (!cfg.haEnabled) {
-            Toast.makeText(this, "Set up or switch on Home Assistant first", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, Lang.tr("Set up or switch on Home Assistant first"), Toast.LENGTH_SHORT).show()
             finish()
             return
         }
@@ -312,7 +312,7 @@ class TodayActivity : PanelActivity() {
                     false
                 }
                 main.post {
-                    Toast.makeText(this, if (ok) "${item.summary} ✓" else "Couldn't update the list", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, Lang.tr(if (ok) "${item.summary} ✓" else "Couldn't update the list"), Toast.LENGTH_SHORT).show()
                     if (ok) load()
                 }
             }

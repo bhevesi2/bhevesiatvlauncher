@@ -76,7 +76,7 @@ class PickEntityActivity : PanelActivity() {
         super.onCreate(savedInstanceState)
         val cfg = Config.load(this)
         if (!cfg.haEnabled) {
-            Toast.makeText(this, "Set up or switch on Home Assistant first", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, Lang.tr("Set up or switch on Home Assistant first"), Toast.LENGTH_SHORT).show()
             finish()
             return
         }
@@ -96,7 +96,7 @@ class PickEntityActivity : PanelActivity() {
         panel.addView(label(intent.getStringExtra("title") ?: "Choose an entity", 17f, C.TEXT, bold = true))
 
         val search = EditText(this).apply {
-            hint = "Search by name"
+            hint = Lang.tr("Search by name")
             setHintTextColor(0x66FFFFFF)
             setTextColor(C.TEXT)
             textSize = 12f

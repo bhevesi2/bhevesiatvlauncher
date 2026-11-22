@@ -142,7 +142,7 @@ class ChartView(ctx: Context) : View(ctx) {
 
         // time labels
         val long = end - start > 26 * 3600_000L
-        val fmt = DateTimeFormatter.ofPattern(if (long) "EEE d" else "HH:mm", Locale.ENGLISH).withZone(ZoneId.systemDefault())
+        val fmt = Lang.dtf(if (long) "EEE d" else "HH:mm").withZone(ZoneId.systemDefault())
         for (i in 0..3) {
             val frac = i / 3f
             val t = start + ((end - start) * frac).toLong()

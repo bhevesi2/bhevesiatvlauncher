@@ -168,7 +168,7 @@ object QuickPanel {
             val head = LinearLayout(ctx).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
             val titles = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
             titles.addView(ctx.label("Quick settings", 17f, C.TEXT, bold = true))
-            titles.addView(ctx.label(SimpleDateFormat("HH:mm · EEEE", Locale.ENGLISH).format(Date()), 11f, C.TEXT3),
+            titles.addView(ctx.label(Lang.sdf("HH:mm · EEEE").format(Date()), 11f, C.TEXT3),
                 LinearLayout.LayoutParams(-2, -2).apply { topMargin = ctx.dp(3f) })
             head.addView(titles, LinearLayout.LayoutParams(0, -2, 1f))
             head.addView(powerButton(), LinearLayout.LayoutParams(ctx.dp(46f), ctx.dp(46f)))
@@ -446,14 +446,14 @@ object QuickPanel {
                 val c = cfg
                 hide()
                 Adb.run(ctx, c, "reboot -p") { res ->
-                    if (res != Adb.Result.OK) Toast.makeText(ctx, "Couldn't turn the TV off: " + Adb.explain(res), Toast.LENGTH_LONG).show()
+                    if (res != Adb.Result.OK) Toast.makeText(ctx, Lang.tr("Couldn't turn the TV off: " + Adb.explain(res)), Toast.LENGTH_LONG).show()
                 }
             }
             row("Restart") {
                 val c = cfg
                 hide()
                 Adb.run(ctx, c, "reboot") { res ->
-                    if (res != Adb.Result.OK) Toast.makeText(ctx, "Couldn't restart: " + Adb.explain(res), Toast.LENGTH_LONG).show()
+                    if (res != Adb.Result.OK) Toast.makeText(ctx, Lang.tr("Couldn't restart: " + Adb.explain(res)), Toast.LENGTH_LONG).show()
                 }
             }
             post { firstInList()?.requestFocus() }

@@ -125,6 +125,7 @@ data class Config(
             val animations = json.optString("animations", "full").let { if (it == "reduced" || it == "off") it else "full" }
             Motion.level = when (animations) { "off" -> Motion.OFF; "reduced" -> Motion.REDUCED; else -> Motion.FULL }
             FocusGlide.festive = json.optBoolean("christmas", false)
+            Lang.set(json.optString("language", "en"))
             return Config(
                 haUrl = json.optString("ha_url", "").trim().trimEnd('/').ifBlank { null },
                 haToken = json.optString("ha_token", "").trim().ifBlank { null },

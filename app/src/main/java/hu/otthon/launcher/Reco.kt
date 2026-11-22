@@ -420,7 +420,7 @@ class RecoPanel(private val act: android.app.Activity) : LinearLayout(act) {
             for (p in row.programs) {
                 val glow = if (p.pkg.isNotEmpty()) glowOf(p.pkg) else 0xFFE9E7E2.toInt()
                 val card = RecoCard(act, p, row, glow)
-                card.setOnClickListener { if (!Reco.open(act, p, row)) android.widget.Toast.makeText(act, "Can't open this", android.widget.Toast.LENGTH_SHORT).show() }
+                card.setOnClickListener { if (!Reco.open(act, p, row)) android.widget.Toast.makeText(act, Lang.tr("Can't open this"), android.widget.Toast.LENGTH_SHORT).show() }
                 card.setOnLongClickListener { onHold?.invoke(card); true }
                 card.onFocusChangeListener.let { old ->
                     card.setOnFocusChangeListener { v, f ->

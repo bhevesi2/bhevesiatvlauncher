@@ -243,8 +243,8 @@ class SettingsActivity : PanelActivity() {
     private fun render(focus: Int) {
         cfg = Config.load(this)
         val now = ZonedDateTime.now()
-        previewClock.text = now.format(DateTimeFormatter.ofPattern("HH:mm", Locale.ENGLISH))
-        previewDate.text = now.format(DateTimeFormatter.ofPattern("EEEE, MMMM d", Locale.ENGLISH))
+        previewClock.text = now.format(Lang.dtf("HH:mm"))
+        previewDate.text = now.format(Lang.dtf("EEEE, MMMM d"))
         backdrop.setDim(cfg.dim)
         backdrop.show(cfg.background, Backgrounds.phase(this, cfg), true)
 
@@ -442,6 +442,16 @@ class SettingsActivity : PanelActivity() {
     // ---------- pages ----------
 
     private fun backgroundPage() {
+        section("Language")
+        add(SegmentRow(this, "Language", listOf("English", "Magyar"), if (Lang.hu) 1 else 0) { i ->
+            val code = if (i == 1) "hu" else "en"
+            if ((code == "hu") != Lang.hu) {
+                ConfigStore.edit(this) { it.put("language", code) }
+                cfg = Config.load(this)
+                recreate()
+            }
+        })
+        note("The launcher's language. The TV's own menus follow the TV's language.")
         section("Design")
         add(SegmentRow(this, "Home screen", listOf("Standard", "Live"), if (cfg.design == "live") 1 else 0) { i ->
             ConfigStore.edit(this) { it.put("design", if (i == 1) "live" else "standard") }
@@ -1252,5 +1262,5 @@ class SettingsActivity : PanelActivity() {
         }
     }
 
-    private fun toast(msg: String) = Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+    private fun toast(msg: String) = Toast.makeText(this, Lang.tr(msg), Toast.LENGTH_SHORT).show()
 }
