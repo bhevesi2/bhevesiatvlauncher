@@ -38,8 +38,12 @@ object Adb {
         }) { r -> done(r ?: Result.FAILED) }
     }
 
-    private fun local(command: String): Boolean =
-        if (LocalAdb.outlives(command)) LocalAdb.detached(command) else LocalAdb.shell(command) != null
+    private fun local(command: String): Boolean {
+        if (!LocalAdb.outlives(command)) return LocalAdb.shell(command) != null
+        // the launcher may not live to hear the answer: begun is done
+        LocalAdb.shell(command, readMs = 120_000)
+        return true
+    }
 
     /** The same as [run], on the calling thread: for work that already runs in the background. */
     fun runHere(cfg: Config, command: String, timeoutMs: Int = 25000): Result {

@@ -115,16 +115,11 @@ object LocalAdb {
     }
 
     /**
-     * For commands that outlive the launcher (installing the launcher itself kills it midway):
-     * run apart from this connection, so closing it does not stop them.
+     * Commands that replace or stop the launcher while they run (its own update, a restart):
+     * the connection ends with the launcher, and adbd ends the command's own leftovers with it,
+     * but what Android has begun (the install, the restart) goes on. What is left after an update
+     * the new launcher does itself ([ReplacedReceiver]).
      */
-    fun detached(command: String): Boolean {
-        if (command.contains('\'')) return shell(command) != null
-        // a session of its own: adbd ends the connection's processes when the launcher hangs up
-        return shell("setsid nohup sh -c 'sleep 1; $command' </dev/null >/data/local/tmp/otthon-adb.log 2>&1 &") != null
-    }
-
-    /** Commands that replace or stop the launcher while they run. */
     fun outlives(command: String) = command.contains("pm install") || command.contains("reboot")
 
     private fun signIn(ctx: Context, inp: DataInputStream, out: OutputStream, socket: Socket, askMs: Int): Boolean {

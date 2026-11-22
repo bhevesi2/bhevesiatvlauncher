@@ -158,3 +158,31 @@ class UpdateReceiver : BroadcastReceiver() {
         }.start()
     }
 }
+
+/**
+ * The launcher was just replaced by a newer one. When the launcher installed itself over its own
+ * ADB, the steps after the install did not run (the connection ended with the old launcher):
+ * Android leaves the button service unbound after an update, so it is switched off and on again,
+ * and the home screen comes back.
+ */
+class ReplacedReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: android.content.Intent?) {
+        val app = context.applicationContext
+        // an install over Home Assistant does this itself: only when the service is still unbound
+        // a little later (two rebinds at once leave it in a state that delays every button)
+        val pending = goAsync()
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            try {
+                val list = android.provider.Settings.Secure.getString(app.contentResolver, "enabled_accessibility_services").orEmpty()
+                if (list.contains("KeyService") && !KeyService.isOn(app)) ServiceKeeper.rebind(app)
+            } finally {
+                pending.finish()
+            }
+        }, 8000L)
+        try {
+            app.startActivity(android.content.Intent(app, HomeActivity::class.java).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (e: Exception) {
+            android.util.Log.w("OtthonUpdate", "home screen not reopened after the update: $e")
+        }
+    }
+}

@@ -116,6 +116,16 @@
             </intent-filter>
         </receiver>
 
+        <!-- after an update installed by the launcher itself (its own ADB ends with it): the
+             button service is bound again and the home screen opened -->
+        <receiver
+            android:name=".ReplacedReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
         <!-- the remote's colour buttons in every app; switched on over ADB from Settings › Remote.
              Its own process: it sees every key press before the apps do, and the home screen's
              busy drawing thread must never make it answer late (a late key-up repeats the key). -->
