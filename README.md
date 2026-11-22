@@ -364,8 +364,9 @@ minutes from the recordings.
 
 When one of the chosen sensors turns on (by default: Frigate seeing a person on any camera of the
 camera wall except indoor ones), that camera appears in the bottom right corner for a while, over
-whatever is playing (not over the open quick settings: there the alert just goes into their list,
-since a 2 GB TV ran out of graphics memory with both at once). While it is up, Back closes it, OK opens the camera full screen and any other
+whatever is playing (on a TV with little memory, such as the 2 GB Sony, not over the open quick
+settings: there the alert just goes into their list, since it ran out of graphics memory with both
+at once; a TV with more memory, such as the TCL, shows it over the panel too). While it is up, Back closes it, OK opens the camera full screen and any other
 key just closes it (volume keys still work). A background service checks the sensors every two
 seconds while the TV is on (and every 15 seconds while it is off, for the quick settings' list,
 which collects the alerts even with the pop-ups off). Settings › Cameras › Pop-ups (or the Camera
