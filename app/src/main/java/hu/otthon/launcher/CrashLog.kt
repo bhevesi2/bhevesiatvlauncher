@@ -221,7 +221,7 @@ object CrashLog {
         val mi = android.app.ActivityManager.MemoryInfo().also { am.getMemoryInfo(it) }
         return "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} · Android ${android.os.Build.VERSION.RELEASE} · " +
             "${m.widthPixels}x${m.heightPixels} ${m.densityDpi} dpi · RAM ${mi.totalMem / 1048576} MB, free ${mi.availMem / 1048576} MB · " +
-            "weak: ${LowRam.on} · ${try { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName } catch (e: Exception) { "?" }}"
+            "weak: ${LowRam.on}${if (LowRam.lite) " (lite)" else ""} · ${try { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName } catch (e: Exception) { "?" }}"
     }
 
     private fun dialog(act: Activity, title: String, text: String) {

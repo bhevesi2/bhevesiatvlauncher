@@ -72,7 +72,9 @@ An error on the main thread that does not break a screen being opened or drawn (
 answer that went missing, a callback that did not expect it) is written down and the launcher
 goes on; background work (`Bg.run`) never stops it either. A real crash is written down too, and
 when a launcher screen was in front the launcher starts again by itself, at most three times in
-ten minutes. Everything goes to `files/crashes.log` (also under `Android/data/hu.otthon.launcher/
+ten minutes. A TV whose graphics memory runs out can be given plainer graphics with
+`"lite_graphics": true` in its settings file (panels without the landscape, the critters at
+quarter size); off by default, the 2 GB Sony copes with the full look. Everything goes to `files/crashes.log` (also under `Android/data/hu.otthon.launcher/
 files/` for ADB); the last crash is shown on the home screen the next time it opens, and holding
 OK on the gear button shows the log, so a TV without ADB or Home Assistant can show it too.
 
@@ -309,7 +311,13 @@ bubble offers Turn off (a complete shutdown, not sleep, so the optical output go
 DAC that picks its input by itself lets go of the TV) and Restart. The remote's power button
 starts the TV again. Home: Cameras, All lights of the TV's room (on or off together, "3 of 19 on") and the
 lights chosen in Settings › Remote › Quick settings · lights (without a choice, the room's light
-groups), each with its state; OK switches them. Then Launcher settings and All TV settings. There is no Picture or Sound: the TCL's own menus only open over a film, and from the
+groups), each with its state; OK switches them. Camera alerts (beside Cameras) switches the
+camera pop-ups on or off. Then Launcher settings and All TV settings, and at the bottom (the panel
+scrolls) the last 24 hours' **notifications and camera alerts**, the newest four, with All
+notifications for the rest: OK on an alert opens that camera with the recording of its detection,
+OK on a notification or the round ✕ dismisses it, Clear all clears them. They are kept in
+`files/inbox.json` on each TV; what came while the TV slept is taken from Home Assistant's
+history (the sensors' and the notification helper's), so it is there too. There is no Picture or Sound: the TCL's own menus only open over a film, and from the
 home screen only Android's generic page would come. The TCL does not let an app start the
 screen saver either. The gear again or Back
 closes it; it also closes after half a minute. The gear in the home screen's top right corner opens it too. The home screen has no TV-settings or profile
@@ -354,7 +362,9 @@ When one of the chosen sensors turns on (by default: Frigate seeing a person on 
 camera wall except indoor ones), that camera appears in the bottom right corner for a while, over
 whatever is playing. While it is up, Back closes it, OK opens the camera full screen and any other
 key just closes it (volume keys still work). A background service checks the sensors every two
-seconds while the TV is on. Settings › Cameras › Pop-ups switches it off, sets how long it stays,
+seconds while the TV is on (and every 15 seconds while it is off, for the quick settings' list,
+which collects the alerts even with the pop-ups off). Settings › Cameras › Pop-ups (or the Camera
+alerts tile of the quick settings) switches it off, sets how long it stays,
 and edits the sensors. Drawing over other apps is allowed over ADB:
 `appops set hu.otthon.launcher SYSTEM_ALERT_WINDOW allow`. The launcher asks Home Assistant's ADB
 for it by itself (at most once an hour) whenever it is missing, and `update.bat` gives it on every

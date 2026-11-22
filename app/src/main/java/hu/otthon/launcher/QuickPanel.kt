@@ -38,6 +38,8 @@ import java.util.Locale
  */
 object QuickPanel {
     private val main = Handler(Looper.getMainLooper())
+    /** How many of the last day's notifications show in the panel itself; the rest on their own page. */
+    private const val INLINE = 4
     private var root: View? = null
     private var wm: WindowManager? = null
     private var shownAt = 0L
@@ -151,6 +153,7 @@ object QuickPanel {
         private val content = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         private val list = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
         private var inSub = false
+        private var popupsOn = cfg.popups
         private val ha: HaClient? = if (cfg.haEnabled) HaClient(cfg.haUrl!!, cfg.haToken!!) else null
 
         init {
@@ -174,8 +177,21 @@ object QuickPanel {
             head.addView(powerButton(), LinearLayout.LayoutParams(ctx.dp(46f), ctx.dp(46f)))
             if (cfg.kids.on) head.addView(kidsBubble(), LinearLayout.LayoutParams(ctx.dp(46f), ctx.dp(46f)).apply { leftMargin = ctx.dp(10f) })
             content.addView(head, LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = ctx.dp(4f) })
-            content.addView(list, LinearLayout.LayoutParams(-1, -2))
+            // the list scrolls when it is taller than the screen (the notifications are at its bottom)
+            val scroller = ColScroller(ctx)
+            scroller.addView(list, LayoutParams(-1, -2))
+            content.addView(scroller, LinearLayout.LayoutParams(-1, -2))
             showMain()
+        }
+
+        override fun onAttachedToWindow() {
+            super.onAttachedToWindow()
+            Inbox.onChange = { inboxChanged() }
+        }
+
+        override fun onDetachedFromWindow() {
+            super.onDetachedFromWindow()
+            if (Inbox.onChange != null) Inbox.onChange = null
         }
 
         /** The round power button beside the profile: turn off or restart. */
@@ -282,6 +298,7 @@ object QuickPanel {
 
         private fun showMain() {
             inSub = false
+            inboxAll = false
             list.removeAllViews()
             section("TV")
             val inputs = Inputs.visible(ctx, cfg)
@@ -308,7 +325,196 @@ object QuickPanel {
             section("Settings")
             row("Launcher settings") { open(ctx, Intent(ctx, SettingsActivity::class.java)) }
             row("All TV settings") { open(ctx, Intent(android.provider.Settings.ACTION_SETTINGS)) }
+
+            val items = Inbox.list(ctx)
+            inboxTitle = ctx.label(if (items.isEmpty()) "Notifications" else "Notifications · ${items.size}", 11f, C.TEXT2, bold = true)
+            list.addView(inboxTitle, LinearLayout.LayoutParams(-2, -2).apply {
+                topMargin = ctx.dp(14f)
+                bottomMargin = ctx.dp(2f)
+                leftMargin = ctx.dp(2f)
+            })
+            val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+            list.addView(box, LinearLayout.LayoutParams(-1, -2))
+            inboxBox = box
+            fillInbox(box, items, INLINE)
             post { firstInList()?.requestFocus() }
+        }
+
+        // ---------- notifications and camera alerts of the last day ----------
+
+        private var inboxBox: LinearLayout? = null
+        private var inboxTitle: TextView? = null
+        private var inboxAll = false
+
+        /** The newest [limit] entries into [box], each with a ✕; below them "All" or "Clear all". */
+        private fun fillInbox(box: LinearLayout, items: List<Inbox.Item>, limit: Int) {
+            box.removeAllViews()
+            inboxTitle?.text = if (items.isEmpty()) "Notifications" else "Notifications · ${items.size}"
+            if (items.isEmpty()) {
+                box.addView(ctx.label("Nothing in the last 24 hours.", 11f, C.TEXT3).apply { setPadding(ctx.dp(2f), ctx.dp(6f), 0, 0) })
+                return
+            }
+            for (it in items.take(limit)) inboxRow(box, it)
+            if (items.size > limit) {
+                val r = RowView(ctx, "All notifications", "${items.size} items")
+                r.setOnClickListener { showInbox() }
+                box.addView(r, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(4f) })
+            } else if (items.size > 1) {
+                val r = RowView(ctx, "Clear all", "${items.size} items")
+                r.setOnClickListener { Inbox.clear(ctx) }
+                box.addView(r, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(4f) })
+            }
+        }
+
+        /** All of the last day's, on a page of their own. */
+        private fun showInbox() {
+            inSub = true
+            inboxAll = true
+            list.removeAllViews()
+            val items = Inbox.list(ctx)
+            inboxTitle = ctx.label("Notifications · ${items.size}", 11f, C.TEXT2, bold = true)
+            list.addView(inboxTitle, LinearLayout.LayoutParams(-2, -2).apply {
+                topMargin = ctx.dp(14f)
+                bottomMargin = ctx.dp(2f)
+                leftMargin = ctx.dp(2f)
+            })
+            if (items.size > 1) row("Clear all", "${items.size} items") { Inbox.clear(ctx); showMain() }
+            val box = LinearLayout(ctx).apply { orientation = LinearLayout.VERTICAL }
+            list.addView(box, LinearLayout.LayoutParams(-1, -2))
+            inboxBox = box
+            for (it in items) inboxRow(box, it)
+            note("OK on a camera alert plays its recording; ✕ dismisses one that no longer matters.")
+            post { firstInList()?.requestFocus() }
+        }
+
+        /** The list changed (a new alert came, one was dismissed): redrawn, the cursor kept near its place. */
+        private fun inboxChanged() {
+            val box = inboxBox ?: return
+            if (!isAttachedToWindow || box.parent == null) return
+            val focusAt = indexOfFocus(box)
+            val items = Inbox.list(ctx)
+            if (inboxAll) {
+                if (items.isEmpty()) { showMain(); return }
+                box.removeAllViews()
+                for (it in items) inboxRow(box, it)
+                inboxTitle?.text = "Notifications · ${items.size}"
+            } else {
+                fillInbox(box, items, INLINE)
+            }
+            if (focusAt >= 0) {
+                val lines = (0 until box.childCount).map { box.getChildAt(it) }.filter { it.isFocusable || it is LinearLayout }
+                val target = lines.getOrNull(focusAt) ?: lines.lastOrNull()
+                val v = if (target is InboxLine) target.row else target
+                if (v != null && v.isFocusable) v.requestFocus() else firstInList()?.requestFocus()
+            }
+        }
+
+        private fun indexOfFocus(box: LinearLayout): Int {
+            val f = box.findFocus() ?: return -1
+            for (i in 0 until box.childCount) {
+                val c = box.getChildAt(i)
+                if (c === f || (c is android.view.ViewGroup && f.parent === c)) return i
+            }
+            return -1
+        }
+
+        /** One entry: the row (OK plays an alert's recording) and a round ✕ that dismisses it. */
+        private fun inboxRow(box: LinearLayout, item: Inbox.Item) {
+            val line = InboxLine(item)
+            box.addView(line, LinearLayout.LayoutParams(-1, -2).apply { topMargin = ctx.dp(4f) })
+        }
+
+        private inner class InboxLine(val item: Inbox.Item) : LinearLayout(ctx) {
+            val row = InboxRow(item)
+
+            init {
+                orientation = HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                row.setOnClickListener {
+                    if (item.camera != null) {
+                        val i = cfg.cameras.indexOfFirst { it.entity == item.camera }
+                        val intent = Intent(ctx, CamerasActivity::class.java)
+                        if (i >= 0) intent.putExtra("index", i).putExtra("at", item.at)
+                        open(ctx, intent)
+                    } else {
+                        Inbox.dismiss(ctx, item.id)
+                    }
+                }
+                addView(row, LayoutParams(0, -2, 1f))
+                val x = ctx.label("✕", 14f, C.TEXT, bold = true).apply {
+                    gravity = Gravity.CENTER
+                    isFocusable = true
+                    isClickable = true
+                    contentDescription = "Dismiss"
+                }
+                val round = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL
+                    setColor(C.ROW)
+                }
+                x.background = round
+                FocusGlide.shape(x, -1f)
+                x.setOnFocusChangeListener { v, f ->
+                    (v as TextView).setTextColor(if (f) C.DARK else C.TEXT)
+                    round.setColor(if (f) C.TEXT else C.ROW)
+                }
+                x.setOnClickListener { Inbox.dismiss(ctx, item.id) }
+                addView(x, LayoutParams(ctx.dp(36f), ctx.dp(36f)).apply { leftMargin = ctx.dp(8f) })
+            }
+        }
+
+        /** An entry's row: its icon, title and time; the text under them, all of it while focused. */
+        private inner class InboxRow(item: Inbox.Item) : LinearLayout(ctx) {
+            private val accent = when (item.level) {
+                "alert" -> 0xFFF09595.toInt()
+                "warn" -> 0xFFFAC775.toInt()
+                else -> C.ON
+            }
+            private val icon = ImageView(ctx)
+            private val title = ctx.label(item.title.ifBlank { item.text }, 12f, C.TEXT).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
+            private val time = ctx.label(whenText(item.at), 10f, C.TEXT3).apply { maxLines = 1 }
+            private val text = ctx.label(if (item.title.isBlank()) "" else item.text, 10f, C.TEXT3).apply { maxLines = 2; ellipsize = TextUtils.TruncateAt.END }
+            private val r = ctx.dp(Look.R_SMALL).toFloat()
+
+            init {
+                orientation = HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                isFocusable = true
+                isClickable = true
+                setPadding(ctx.dp(10f), ctx.dp(8f), ctx.dp(12f), ctx.dp(8f))
+                val res = if (item.camera != null) R.drawable.ic_camera
+                    else ctx.resources.getIdentifier("ic_" + item.icon.lowercase().replace(Regex("[^a-z0-9_]"), ""), "drawable", ctx.packageName)
+                icon.setImageResource(if (res != 0) res else R.drawable.ic_bell)
+                addView(icon, LayoutParams(ctx.dp(18f), ctx.dp(18f)).apply { rightMargin = ctx.dp(10f) })
+                val texts = LinearLayout(ctx).apply { orientation = VERTICAL }
+                val top = LinearLayout(ctx).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+                top.addView(title, LayoutParams(0, -2, 1f))
+                top.addView(time, LayoutParams(-2, -2).apply { leftMargin = ctx.dp(8f) })
+                texts.addView(top)
+                if (text.text.isNotEmpty()) texts.addView(text, LayoutParams(-1, -2).apply { topMargin = ctx.dp(2f) })
+                addView(texts, LayoutParams(0, -2, 1f))
+                FocusGlide.shape(this, r)
+                paint(false)
+                setOnFocusChangeListener { _, f -> paint(f) }
+            }
+
+            private fun paint(f: Boolean) {
+                background = if (f) FocusGlide.fill(this, r) else rounded(C.ROW, r)
+                title.setTextColor(if (f) C.DARK else C.TEXT)
+                time.setTextColor(if (f) C.DARK2 else C.TEXT3)
+                text.setTextColor(if (f) C.DARK2 else C.TEXT3)
+                text.maxLines = if (f) 6 else 2
+                icon.setColorFilter(if (f) C.DARK else accent)
+            }
+        }
+
+        /** "14:32" today, "Yesterday 21:10" before. */
+        private fun whenText(at: Long): String {
+            val t = Lang.sdf("HH:mm").format(Date(at))
+            val day = java.util.Calendar.getInstance().apply {
+                set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
+                set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+            }.timeInMillis
+            return if (at >= day) t else "Yesterday $t"
         }
 
         // ---------- Home: cameras and the room's lights ----------
@@ -344,6 +550,14 @@ object QuickPanel {
                 box.removeAllViews()
                 val tiles = ArrayList<Tile>()
                 if (cfg.cameras.isNotEmpty()) tiles.add(Tile("Cameras", "${cfg.cameras.size} cameras") { open(ctx, Intent(ctx, CamerasActivity::class.java)) })
+                // the camera pop-ups on or off; the alerts still go into the list below
+                if (cfg.popupTriggers.isNotEmpty()) tiles.add(Tile("Camera alerts", if (popupsOn) "On" else "Off") { t ->
+                    popupsOn = !popupsOn
+                    val on = popupsOn
+                    ConfigStore.edit(ctx) { r -> ConfigStore.obj(r, "popups").put("enabled", on) }
+                    PopupService.sync(ctx)
+                    t.value(if (on) "On" else "Off")
+                })
                 if (o != null) {
                     val area = o.optString("area", "")
                     val total = o.optInt("total", 0)

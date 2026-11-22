@@ -587,6 +587,11 @@ object Lang {
         "loading…" to "betöltés…",
         "Language" to "Nyelv",
         "The launcher's language. The TV's own menus follow the TV's language." to "A launcher nyelve. A tévé saját menüi a tévé nyelvét követik.",
+        "Camera alerts" to "Kamera riasztások",
+        "Nothing in the last 24 hours." to "Az elmúlt 24 órában nem jött semmi.",
+        "All notifications" to "Összes értesítés",
+        "Dismiss" to "Elvetés",
+        "OK on a camera alert plays its recording; ✕ dismisses one that no longer matters." to "OK egy kamera riasztáson: lejátssza a felvételét; ✕: elveti, ha már nem fontos.",
     )
 
     private val labels = mapOf(
@@ -617,6 +622,7 @@ object Lang {
         Regex("(.+) does not open 🙈") to { g -> "${g[1]} nem nyílik meg 🙈" },
         Regex("(\\d+) cameras") to { g -> "${g[1]} kamera" },
         Regex("(\\d+) songs") to { g -> "${g[1]} dal" },
+        Regex("Notifications · (\\d+)") to { g -> "Értesítések · ${g[1]}" },
         Regex("(\\d+) items") to { g -> "${g[1]} elem" },
         Regex("(\\d+) changes") to { g -> "${g[1]} változás" },
         Regex("(\\d+) pictures") to { g -> "${g[1]} kép" },

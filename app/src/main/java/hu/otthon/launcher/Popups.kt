@@ -102,8 +102,11 @@ class PopupService : Service() {
             } catch (e: Exception) { }
         }
 
-        /** True when there is something to watch: camera pop-ups or notifications. */
-        fun needed(c: Config): Boolean = c.haEnabled && ((c.popups && c.popupTriggers.isNotEmpty()) || c.notify)
+        /**
+         * True when there is something to watch: camera sensors or notifications. The sensors are
+         * watched even with the pop-ups off, for the quick settings' list of the last day.
+         */
+        fun needed(c: Config): Boolean = c.haEnabled && (c.popupTriggers.isNotEmpty() || c.notify)
 
         fun allowed(ctx: Context): Boolean = Build.VERSION.SDK_INT < 23 || Settings.canDrawOverlays(ctx)
 
@@ -199,32 +202,70 @@ class PopupService : Service() {
 
     // ---------- watching ----------
 
+    private var wasOn = false
+    private var backfilledAt = 0L
+    @Volatile private var backfilling = false
+
     private val poll = object : Runnable {
         override fun run() {
             val c = cfg
             val api = client
             val screenOn = (getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive
-            if (c != null && api != null && c.notify && screenOn) checkNote(c, api)
-            if (c != null && api != null && c.popups && screenOn) {
+            if (c != null && api != null && c.notify) checkNote(c, api, screenOn)
+            if (c != null && api != null && c.popupTriggers.isNotEmpty()) {
                 for (t in c.popupTriggers) {
-                    val state = try { api.state(t.entity).optString("state") } catch (e: Exception) { null } ?: continue
+                    val s = try { api.state(t.entity) } catch (e: Exception) { null } ?: continue
+                    val state = s.optString("state")
                     val before = last.put(t.entity, state)
-                    // only a change to "on" counts, not a sensor that was already on when we started
-                    if (primed && state == "on" && before != null && before != "on") {
+                    // a sensor that turned on goes into the quick settings' list, even while the TV is off
+                    if (state == "on" && before != "on") changedAt(s)?.let { Inbox.add(this@PopupService, Inbox.alert(t, it)) }
+                    // only a change to "on" pops up, not a sensor that was already on when we started
+                    if (primed && screenOn && c.popups && state == "on" && before != null && before != "on") {
                         main.post { show(t.camera, t.title, false) }
                     } else if (state == "on" && showing == t.camera) {
                         main.post { until = maxOf(until, System.currentTimeMillis() + 5_000L) }
                     }
                 }
                 primed = true
-            } else if (!screenOn) {
-                // while the TV is off, start over: whatever happened meanwhile is old news
-                primed = false
-                last.clear()
-                lastNote = null
             }
-            bg.postDelayed(this, if (screenOn) 2000L else 10_000L)
+            // what happened while the TV slept (or before the launcher started): from the history
+            val now = System.currentTimeMillis()
+            if (c != null && api != null && screenOn && (!wasOn || now - backfilledAt > 15 * 60_000L)) backfill(c, api)
+            wasOn = screenOn
+            bg.postDelayed(this, if (screenOn) 2000L else 15_000L)
         }
+    }
+
+    private fun changedAt(s: org.json.JSONObject): Long? = try {
+        java.time.OffsetDateTime.parse(s.optString("last_changed")).toInstant().toEpochMilli()
+    } catch (e: Exception) { null }
+
+    /** The last day's notifications and alerts from Home Assistant's history, into the list. */
+    private fun backfill(c: Config, api: HaClient) {
+        if (backfilling) return
+        backfilling = true
+        backfilledAt = System.currentTimeMillis()
+        Thread {
+            try {
+                for (t in c.popupTriggers) {
+                    val h = try { api.history(t.entity, 24) } catch (e: Exception) { continue }
+                    var prev: String? = null
+                    for ((at, st) in h) {
+                        // the first entry is the state the day started with, not a change
+                        if (st == "on" && prev != null && prev != "on") Inbox.add(this, Inbox.alert(t, at))
+                        prev = st
+                    }
+                }
+                if (c.notify) {
+                    val h = try { api.history(c.notifyEntity, 24) } catch (e: Exception) { emptyList() }
+                    for ((_, st) in h) Inbox.note(st)?.let { Inbox.add(this, it) }
+                }
+            } catch (e: Throwable) {
+                CrashLog.note(e)
+            } finally {
+                backfilling = false
+            }
+        }.start()
     }
 
     // ---------- the pop-up ----------
@@ -386,18 +427,15 @@ class PopupService : Service() {
      * same text sent twice still counts as new. A notification older than two minutes is not shown
      * (the TV was just switched on, or the service just started).
      */
-    private fun checkNote(c: Config, api: HaClient) {
+    private fun checkNote(c: Config, api: HaClient, screenOn: Boolean) {
         val raw = try { api.state(c.notifyEntity).optString("state") } catch (e: Exception) { null } ?: return
         val before = lastNote
         lastNote = raw
         if (before == null || raw == before) return
-        val p = raw.split('|')
-        if (p.size < 5) return
-        val sent = p[0].trim().toLongOrNull() ?: return
-        if (Math.abs(System.currentTimeMillis() / 1000 - sent) > 120) return
-        val note = Note(p[1].trim(), p[2].trim(), p[3].trim(), p.drop(4).joinToString("|").trim())
-        if (note.title.isBlank() && note.text.isBlank()) return
-        main.post { showNote(note) }
+        val item = Inbox.note(raw) ?: return
+        Inbox.add(this, item)
+        if (!screenOn || Math.abs(System.currentTimeMillis() - item.at) > 120_000L) return
+        main.post { showNote(Note(item.icon, item.level, item.title, item.text)) }
     }
 
     private fun showNote(n: Note) {

@@ -129,7 +129,7 @@ class CritterLayer(ctx: Context, private val platforms: () -> List<View>) :
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         if (w <= 0 || h <= 0) return
-        val bw = minOf(w, if (LowRam.on) 960 else 1920)
+        val bw = minOf(w, if (LowRam.lite) 960 else 1920)
         scale = bw.toFloat() / w
         holder.setFixedSize(bw, maxOf(1, (h * scale).toInt()))
     }

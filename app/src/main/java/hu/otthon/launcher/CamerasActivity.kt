@@ -61,6 +61,8 @@ class CamerasActivity : PanelActivity() {
     private var stripGen = 0
     private var loadingMore = false
     private var noMore = false
+    /** Opened from an alert in the quick settings: its time (ms), to play the detection from then. */
+    private var alertAt = 0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -194,7 +196,13 @@ class CamerasActivity : PanelActivity() {
         animateIn(frame.panel)
 
         val start = intent.getIntExtra("index", -1)
-        if (start >= 0 && start < cams.size) showFull(start) else tiles[0].requestFocus()
+        alertAt = intent.getLongExtra("at", 0L)
+        if (start >= 0 && start < cams.size) {
+            showFull(start)
+            if (alertAt > 0) openStrip()
+        } else {
+            tiles[0].requestFocus()
+        }
     }
 
     override fun onResume() {
@@ -382,10 +390,13 @@ class CamerasActivity : PanelActivity() {
         }
         val client = ha ?: return
         val c = cfg
+        val at = alertAt
+        alertAt = 0L
         Bg.run({
             val fc = Frigate.cam(client, cam.entity) ?: return@run "This camera is not one of Frigate's: it has no detections"
             try {
-                fc to Frigate.detections(c, fc)
+                // from an alert: the detections from its time on, back
+                fc to Frigate.detections(c, fc, if (at > 0) at / 1000.0 + 120 else null)
             } catch (e: Exception) {
                 android.util.Log.w("OtthonClip", "detections of ${fc.name}: $e")
                 "Couldn't reach Frigate's detections"
@@ -406,6 +417,14 @@ class CamerasActivity : PanelActivity() {
             }
             noMore = r.second.size < 40
             addDetections(r.second)
+            if (at > 0) {
+                // the detection that set the alert off: the nearest one, within a few minutes
+                val best = r.second.indices.minByOrNull { Math.abs(r.second[it].start * 1000 - at) }
+                if (best != null && Math.abs(r.second[best].start * 1000 - at) < 5 * 60_000L) {
+                    playDetection(best)
+                    return@run
+                }
+            }
             focusCard(0)
         }
     }

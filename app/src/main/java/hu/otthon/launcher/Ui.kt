@@ -1082,7 +1082,7 @@ object Popup {
 class Backdrop(ctx: Context) : FrameLayout(ctx) {
     private val landscape = LandscapeView(ctx).apply {
         // only the home screen keeps the landscape's layer on a weak TV (see LandscapeView.useLayer)
-        useLayer = ctx is HomeActivity || !LowRam.on
+        useLayer = ctx is HomeActivity || !LowRam.lite
     }
     private val snow = SnowView(ctx)
     private val photoA = ImageView(ctx).apply { scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0f }
@@ -1097,7 +1097,7 @@ class Backdrop(ctx: Context) : FrameLayout(ctx) {
      * full-screen picture there sits in the graphics memory next to the home screen's, and the
      * Philips (2 GB) ran out of it (EGL_BAD_ALLOC, and Android stops the launcher).
      */
-    private val lite = ctx !is HomeActivity && LowRam.on
+    private val lite = ctx !is HomeActivity && LowRam.lite
 
     init {
         // no black underneath: the landscape or the photo always covers the whole screen, and
@@ -1432,11 +1432,21 @@ object LowRam {
     @Volatile var on = false
         private set
 
+    /**
+     * Plainer graphics (panels without the landscape, the home screen's photos let go while it is
+     * hidden, the critters drawn at quarter size), for a TV whose graphics memory runs out. Only
+     * when asked for ("lite_graphics": true in the settings file): a 2 GB TV like the Sony AG8
+     * copes with the full look.
+     */
+    @Volatile var lite = false
+        private set
+
     fun init(ctx: Context) {
         val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
         val mi = android.app.ActivityManager.MemoryInfo()
         am.getMemoryInfo(mi)
         on = am.isLowRamDevice || mi.totalMem < 3L * 1024 * 1024 * 1024
+        lite = ConfigStore.read(ctx).optBoolean("lite_graphics", false)
     }
 
     /** Called from onTrimMemory. */
