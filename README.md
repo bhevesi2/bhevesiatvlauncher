@@ -412,11 +412,12 @@ log) the launcher steps one tier down by itself, at most twice, and keeps it. Se
 Background › Performance overrides it (the launcher restarts); `"performance"` in the settings
 file does the same. The tier and why are in the Home Assistant sensor (`tier`, `tier_reason`).
 
-Pictures are let go while nobody sees them: at once when the TV sleeps, three minutes after the
-home screen went behind another app (on a low-tier TV at once), and when Android asks for memory
-back (graded by how hard it asks: first the pictures not on screen, then every cache). They load
-again as the home screen shows, the photo fading in. The banner and icon cache keeps at most 60
-apps.
+On the high and medium tiers the picture caches stay, also while the TV sleeps or another app
+is in front (loading again is what makes a screen slow); they go only when Android is about to
+stop the launcher or memory is critically short, since a stopped launcher loads everything from
+nothing. A low-tier TV lets its pictures go at once when it sleeps or goes behind another app,
+and gives back more, graded, on Android's memory warnings. The banner and icon cache keeps at
+most 60 apps.
 
 ## The TV's state in Home Assistant
 

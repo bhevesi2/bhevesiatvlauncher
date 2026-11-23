@@ -131,17 +131,17 @@ class HomeActivity : Activity() {
     override fun onDestroy() {
         Profile.listeners.remove(onProfile)
         try { unregisterReceiver(screen) } catch (e: Exception) { }
-        Bg.main.removeCallbacks(hiddenRelease)
         super.onDestroy()
     }
 
     // ---------- memory: the pictures let go of while nobody sees them ----------
 
     /**
-     * The photos, the recommendations' pictures and the kept banners go: at once when the TV
-     * sleeps, three minutes after the home screen went behind another app (a quick look at the
-     * settings and back finds everything still there), or when Android asks for memory back.
-     * They come back as the home screen shows again, the photo fading in.
+     * The photos, the recommendations' pictures and the kept banners go, on a low-tier TV: at
+     * once when it sleeps or the home screen goes behind another app. On the high and medium
+     * tiers they stay (loading them again is what would make the home screen slow), unless
+     * Android is about to stop the launcher. They come back as the home screen shows again,
+     * the photo fading in.
      */
     private fun releaseImages() {
         backdrop.release()
@@ -153,13 +153,11 @@ class HomeActivity : Activity() {
         FocusGlide.trim()
     }
 
-    private val hiddenRelease = Runnable { if (!resumed) releaseImages() }
-
     private val screen = object : android.content.BroadcastReceiver() {
         override fun onReceive(ctx: Context, intent: Intent) {
             if (intent.action == Intent.ACTION_SCREEN_OFF) {
-                releaseImages()
-            } else if (resumed) {
+                if (LowRam.releasesUnseen) releaseImages()
+            } else if (resumed && LowRam.releasesUnseen) {
                 // the screen back on with the home screen in front: the photo and the rows return
                 backdrop.show(cfg.background, Backgrounds.phase(this@HomeActivity, cfg), true)
                 loadReco()
@@ -911,8 +909,9 @@ class HomeActivity : Activity() {
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
         LowRam.trim(level)
-        // in the background and Android wants memory: the pictures go now, not in three minutes
-        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_BACKGROUND && !resumed) releaseImages()
+        // about to be stopped (or, on a low-tier TV, in the background and Android wants memory)
+        if (!resumed && (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_COMPLETE ||
+                (LowRam.releasesUnseen && level >= android.content.ComponentCallbacks2.TRIM_MEMORY_BACKGROUND))) releaseImages()
     }
 
     /** The language the screen was built in: a change in Settings builds it again. */
@@ -963,17 +962,10 @@ class HomeActivity : Activity() {
         }
     }
 
-    override fun onStart() {
-        super.onStart()
-        Bg.main.removeCallbacks(hiddenRelease)
-    }
-
     override fun onStop() {
         super.onStop()
-        // another screen in front: a low-tier TV makes room in the graphics memory at once, the
-        // others after three minutes (see releaseImages)
-        Bg.main.removeCallbacks(hiddenRelease)
-        if (LowRam.lite) releaseImages() else Bg.main.postDelayed(hiddenRelease, 3 * 60_000L)
+        // another screen in front: a low-tier TV makes room at once; the others keep everything
+        if (LowRam.releasesUnseen) releaseImages()
     }
 
     override fun onPause() {

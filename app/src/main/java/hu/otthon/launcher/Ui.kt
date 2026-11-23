@@ -816,25 +816,29 @@ object LowRam {
     }
 
     /**
-     * Android asks for memory back ([level] from onTrimMemory): what is not on screen goes first,
-     * more of it the harder Android asks. What is on screen stays.
+     * Android asks for memory back ([level] from onTrimMemory). On the high and medium tiers the
+     * caches stay (loading again is what makes a screen slow), except when Android is about to
+     * stop the launcher or memory is critically short: a launcher stopped has to load everything
+     * from nothing, which is slower still. A low-tier TV gives back more, and sooner: what is not
+     * on screen first, more of it the harder Android asks. What is on screen stays.
      */
     fun trim(level: Int) {
+        val critical = level == android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL ||
+            level >= android.content.ComponentCallbacks2.TRIM_MEMORY_COMPLETE
         when {
-            // in the background, or memory very short: every cache
-            level >= android.content.ComponentCallbacks2.TRIM_MEMORY_BACKGROUND ||
-                level == android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL -> {
+            critical || (lite && level >= android.content.ComponentCallbacks2.TRIM_MEMORY_BACKGROUND) -> {
                 Reco.trim()
                 Backgrounds.trim()
                 Apps.trim()
                 FocusGlide.trim()
             }
-            // memory getting short while in front: the pictures not on screen
-            level == android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW -> {
+            lite && level == android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW -> {
                 Reco.trim()
                 Apps.trim()
             }
-            level == android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_MODERATE && on -> Apps.trim()
         }
     }
+
+    /** Whether the pictures go while nobody sees them (the TV asleep, the home screen behind an app): only on the low tier. */
+    val releasesUnseen: Boolean get() = lite
 }
