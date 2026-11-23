@@ -116,6 +116,16 @@
             </intent-filter>
         </receiver>
 
+        <!-- the settings written out to carry them across a reinstall (Carry.kt); ADB only -->
+        <receiver
+            android:name=".CarryReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="hu.otthon.launcher.EXPORT" />
+            </intent-filter>
+        </receiver>
+
         <!-- after an update installed by the launcher itself (its own ADB ends with it): the
              button service is bound again and the home screen opened -->
         <receiver

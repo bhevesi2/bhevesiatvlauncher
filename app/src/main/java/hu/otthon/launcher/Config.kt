@@ -125,7 +125,11 @@ data class Config(
 
         fun load(ctx: Context): Config {
             ConfigStore.migrate(ctx)
-            val json = ConfigStore.read(ctx)
+            return parse(ConfigStore.read(ctx))
+        }
+
+        /** The settings from the settings file's JSON (with its secrets merged back in). */
+        fun parse(json: JSONObject): Config {
             val dash = json.optJSONObject("dashboard") ?: JSONObject()
             val names = HashMap<String, String>()
             json.optJSONObject("input_names")?.let { o -> o.keys().forEach { k -> names[k] = o.optString(k) } }
@@ -461,6 +465,8 @@ object ConfigStore {
 
     /** Older builds kept background and darkening in preferences; move them into the file once. */
     fun migrate(ctx: Context) {
+        // settings carried across a reinstall come first ([Carry])
+        try { Carry.importIfAny(ctx) } catch (e: Exception) { }
         val p = Prefs.of(ctx)
         if (!p.contains("background") && !p.contains("dim")) return
         edit(ctx) { j ->

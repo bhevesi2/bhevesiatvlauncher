@@ -389,6 +389,15 @@ Frigate's RTSP restream (`rtsp://{host}:8554/{camera}` by default, editable), wi
 player; the Frigate add-on has to publish its port 8554. A stream that does not start within ten
 seconds falls back to the still pictures.
 
+## Carrying a TV's settings across a reinstall
+
+When Android will not take a new launcher as an update (its signing key changed), the settings
+are carried over by hand: `am broadcast -n hu.otthon.launcher/.CarryReceiver -a
+hu.otthon.launcher.EXPORT` (ADB only) writes `carry.json` into the launcher's folder: the
+settings with their token and password, and the app's own stored values (the kids' profile, the
+music player…; not this install's ADB key). Copy it away, uninstall, install the new launcher,
+put the file back: the launcher takes it in the first time it reads its settings and deletes it.
+
 ## The TV's state in Home Assistant
 
 The launcher tells Home Assistant what the TV is doing, as a sensor of its own,

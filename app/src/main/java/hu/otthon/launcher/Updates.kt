@@ -17,7 +17,21 @@ import java.time.OffsetDateTime
 object Updates {
     private const val API = "https://api.github.com/repos/bhevesi2/bhevesiatvlauncher/releases/latest"
 
-    data class Release(val name: String, val minute: Long, val apk: String)
+    data class Release(val name: String, val minute: Long, val apk: String) {
+        companion object {
+            /** From GitHub's answer about a release; null when it has no APK. */
+            fun from(o: JSONObject): Release? {
+                val assets = o.optJSONArray("assets") ?: return null
+                var apk: String? = null
+                for (i in 0 until assets.length()) {
+                    val a = assets.optJSONObject(i) ?: continue
+                    if (a.optString("name").endsWith(".apk")) apk = a.optString("browser_download_url")
+                }
+                val published = OffsetDateTime.parse(o.optString("published_at")).toInstant().toEpochMilli() / 60_000L
+                return Release(o.optString("name").ifBlank { o.optString("tag_name") }, published, apk ?: return null)
+            }
+        }
+    }
 
     /** The newest release, or null if GitHub can't be reached. Background thread only. */
     fun latest(): Release? {
@@ -27,15 +41,7 @@ object Updates {
         c.setRequestProperty("Accept", "application/vnd.github+json")
         try {
             if (c.responseCode != 200) return null
-            val o = JSONObject(c.inputStream.bufferedReader().readText())
-            val assets = o.optJSONArray("assets") ?: return null
-            var apk: String? = null
-            for (i in 0 until assets.length()) {
-                val a = assets.optJSONObject(i) ?: continue
-                if (a.optString("name").endsWith(".apk")) apk = a.optString("browser_download_url")
-            }
-            val published = OffsetDateTime.parse(o.optString("published_at")).toInstant().toEpochMilli() / 60_000L
-            return Release(o.optString("name").ifBlank { o.optString("tag_name") }, published, apk ?: return null)
+            return Release.from(JSONObject(c.inputStream.bufferedReader().readText()))
         } finally {
             c.disconnect()
         }
@@ -49,7 +55,9 @@ object Updates {
     }
 
     /** Newer than what is installed: published more than 15 minutes after this build was made. */
-    fun isNewer(ctx: Context, r: Release): Boolean = r.minute > installedMinute(ctx) + 15
+    fun isNewer(ctx: Context, r: Release): Boolean = isNewer(installedMinute(ctx), r)
+
+    fun isNewer(installedMinute: Long, r: Release): Boolean = r.minute > installedMinute + 15
 
     /** Remembers the last check, so the home screen can mark the settings button. */
     fun remember(ctx: Context, r: Release?) {
