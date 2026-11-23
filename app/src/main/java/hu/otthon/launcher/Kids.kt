@@ -348,6 +348,7 @@ object KidsLook {
 /** A round avatar: the first letter on a candy gradient, or a person outline for the grown-ups' profile. */
 class AvatarDrawable(private val letter: String?, private val color: Int, private val color2: Int = 0) : Drawable() {
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val fillShader = CachedShader()
     private val path = Path()
 
     override fun draw(c: Canvas) {
@@ -357,7 +358,9 @@ class AvatarDrawable(private val letter: String?, private val color: Int, privat
         val cy = b.exactCenterY()
         if (letter != null) {
             val second = if (color2 != 0) color2 else KidsLook.CANDY[(KidsLook.CANDY.indexOf(color) + 2).coerceAtLeast(0) % KidsLook.CANDY.size]
-            p.shader = LinearGradient(cx - r, cy - r, cx + r, cy + r, color, second, Shader.TileMode.CLAMP)
+            p.shader = fillShader.get(mixKey(mixKey(mixKey(mixKey(0L, cx), cy), r), second)) {
+                LinearGradient(cx - r, cy - r, cx + r, cy + r, color, second, Shader.TileMode.CLAMP)
+            }
             c.drawCircle(cx, cy, r, p)
             p.shader = null
             p.color = Color.WHITE
@@ -648,6 +651,9 @@ class SleepView(ctx: Context) : FrameLayout(ctx) {
 
     private class SkyView(ctx: Context) : View(ctx) {
         private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        private val skyShader = CachedShader()
+        private val haloShader = CachedShader()
+        private val haloAt = android.graphics.Matrix()
         private val d = ctx.resources.displayMetrics.density
         private val stars = FloatArray(60 * 3).also { a ->
             for (i in 0 until 60) {
@@ -663,9 +669,11 @@ class SleepView(ctx: Context) : FrameLayout(ctx) {
             val w = width.toFloat()
             val h = height.toFloat()
             val t = (SystemClock.uptimeMillis() - start) / 1000f
-            p.shader = LinearGradient(0f, 0f, 0f, h,
-                if (morning) 0xF01B2550.toInt() else 0xF2070B1F.toInt(),
-                if (morning) 0xF06A5A9E.toInt() else 0xF2213063.toInt(), Shader.TileMode.CLAMP)
+            p.shader = skyShader.get(mixKey(mixKey(0L, h), if (morning) 1 else 0)) {
+                LinearGradient(0f, 0f, 0f, h,
+                    if (morning) 0xF01B2550.toInt() else 0xF2070B1F.toInt(),
+                    if (morning) 0xF06A5A9E.toInt() else 0xF2213063.toInt(), Shader.TileMode.CLAMP)
+            }
             c.drawRect(0f, 0f, w, h, p)
             p.shader = null
             for (i in 0 until 60) {
@@ -678,7 +686,11 @@ class SleepView(ctx: Context) : FrameLayout(ctx) {
             val mx = w * 0.5f
             val my = h * 0.27f + sin(t * 0.8f) * 6f * d
             val r = 46f * d
-            p.shader = RadialGradient(mx, my, r * 2.6f, 0x55FFF1B8, 0x00FFF1B8, Shader.TileMode.CLAMP)
+            // the halo is made once around (0, 0) and moved where the moon is
+            val halo = haloShader.get(mixKey(0L, r)) { RadialGradient(0f, 0f, r * 2.6f, 0x55FFF1B8, 0x00FFF1B8, Shader.TileMode.CLAMP) }
+            haloAt.setTranslate(mx, my)
+            halo.setLocalMatrix(haloAt)
+            p.shader = halo
             c.drawCircle(mx, my, r * 2.6f, p)
             p.shader = null
             p.color = 0xFFFFE9A8.toInt()

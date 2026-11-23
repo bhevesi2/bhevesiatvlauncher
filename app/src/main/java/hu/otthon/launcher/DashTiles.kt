@@ -91,6 +91,7 @@ class DashTile(ctx: Context, val item: HaItem, val hero: Boolean, val control: B
     private val text = TextPaint(Paint.ANTI_ALIAS_FLAG)
     private val p = Paint(Paint.ANTI_ALIAS_FLAG)
     private val path = Path()
+    private val areaPath = Path()
     private val oval = RectF()
     private val regular = Typeface.create("sans-serif", Typeface.NORMAL)
     private val medium = Typeface.create("sans-serif-medium", Typeface.NORMAL)
@@ -387,7 +388,7 @@ class DashTile(ctx: Context, val item: HaItem, val hero: Boolean, val control: B
         path.moveTo(px(0), py(0))
         for (i in 1 until v.size) path.lineTo(px(i), py(i))
         if (fill) {
-            val area = Path(path)
+            val area = areaPath.apply { set(path) }
             area.lineTo(right, bottom)
             area.lineTo(left, bottom)
             area.close()

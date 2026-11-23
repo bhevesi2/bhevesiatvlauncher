@@ -57,6 +57,7 @@ object QuickPanel {
         if (LowRam.on) try { PopupService.closePopup?.invoke() } catch (e: Exception) { }
         try {
             build(ctx)
+            LandscapeView.hold(true)
         } catch (e: Exception) {
             android.util.Log.w("OtthonQuick", "quick settings failed", e)
             root = null
@@ -104,6 +105,7 @@ object QuickPanel {
     fun hide() {
         val v = root ?: return
         root = null
+        LandscapeView.hold(false)
         main.removeCallbacks(timeout)
         val m = wm
         wm = null

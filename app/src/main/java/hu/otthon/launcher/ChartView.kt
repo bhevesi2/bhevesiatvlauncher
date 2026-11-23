@@ -83,6 +83,10 @@ class ChartView(ctx: Context) : View(ctx) {
         invalidate()
     }
 
+    private val linePath = Path()
+    private val areaPath = Path()
+    private val areaShader = CachedShader()
+
     override fun onDraw(c: Canvas) {
         if (buckets.isEmpty() || min.isNaN()) return
         val padL = context.dp(52f).toFloat()
@@ -111,8 +115,8 @@ class ChartView(ctx: Context) : View(ctx) {
         }
 
         // the line and the soft area under it
-        val path = Path()
-        val area = Path()
+        val path = linePath.apply { rewind() }
+        val area = areaPath.apply { rewind() }
         var started = false
         var lastX = padL
         val n = buckets.size
@@ -135,7 +139,7 @@ class ChartView(ctx: Context) : View(ctx) {
         if (started) {
             area.lineTo(lastX, padT + h)
             area.close()
-            fill.shader = LinearGradient(0f, padT, 0f, padT + h, 0x40F5F3EE, 0x00F5F3EE, Shader.TileMode.CLAMP)
+            fill.shader = areaShader.get(mixKey(mixKey(0L, padT), h)) { LinearGradient(0f, padT, 0f, padT + h, 0x40F5F3EE, 0x00F5F3EE, Shader.TileMode.CLAMP) }
             c.drawPath(area, fill)
             c.drawPath(path, line)
         }

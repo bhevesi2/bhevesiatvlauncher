@@ -97,6 +97,28 @@ object Look {
     }
 }
 
+/**
+ * One shader for one place in a drawing, made again only when what it depends on changes (its
+ * [key]): a view redrawn frame after frame then makes no new objects, which on a slower TV means
+ * fewer pauses for the garbage collector.
+ */
+class CachedShader {
+    @PublishedApi internal var key = Long.MIN_VALUE
+    @PublishedApi internal var shader: android.graphics.Shader? = null
+
+    inline fun get(k: Long, make: () -> android.graphics.Shader): android.graphics.Shader {
+        shader?.let { if (k == key) return it }
+        val s = make()
+        shader = s
+        key = k
+        return s
+    }
+}
+
+/** Folds a value into a shader's key (see [CachedShader]); allocates nothing. */
+fun mixKey(h: Long, v: Float): Long = (h * 1_000_003L) xor java.lang.Float.floatToRawIntBits(v).toLong()
+fun mixKey(h: Long, v: Int): Long = (h * 1_000_003L) xor v.toLong()
+
 fun rounded(color: Int, radius: Float, stroke: Int = 0, strokeColor: Int = 0): GradientDrawable =
     GradientDrawable().apply {
         setColor(color)

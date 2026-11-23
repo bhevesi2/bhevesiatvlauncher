@@ -58,12 +58,33 @@ class LandscapeView(context: Context) : View(context) {
 
     init {
         updateLayer()
+        live[this] = true
     }
 
     private fun updateLayer() {
         val wide = resources.displayMetrics.widthPixels > 1920
-        val want = if (useLayer && !wide && windowShown && visibility == VISIBLE) LAYER_TYPE_HARDWARE else LAYER_TYPE_NONE
+        val want = if (useLayer && !wide && windowShown && visibility == VISIBLE && !(held && LowRam.on)) LAYER_TYPE_HARDWARE else LAYER_TYPE_NONE
         if (layerType != want) setLayerType(want, null)
+    }
+
+    companion object {
+        /** The landscapes on screen, to give their layers back all at once. */
+        private val live = java.util.WeakHashMap<LandscapeView, Boolean>()
+
+        /** True while an overlay (the quick settings) is up over the home screen. */
+        private var held = false
+
+        /**
+         * The quick settings opened or closed: on a TV with little memory the landscape under them
+         * gives its layer back for that time (main thread). With the panel, a camera pop-up and the
+         * layer at once, a 2 GB TV ran out of graphics memory.
+         */
+        fun hold(on: Boolean) {
+            if (held == on) return
+            held = on
+            if (!LowRam.on) return
+            for (v in live.keys.toList()) v.updateLayer()
+        }
     }
 
     /** While a photo covers the landscape its layer is given back, which a 2 GB TV feels. */
@@ -83,6 +104,8 @@ class LandscapeView(context: Context) : View(context) {
         set(value) { field = value; invalidate() }
 
     private var palette = Palette.of(Phase.NAPPAL)
+    private val skyShader = CachedShader()
+    private val waterShader = CachedShader()
     private var animator: ValueAnimator? = null
     private var phase = Phase.NAPPAL
 
@@ -192,7 +215,7 @@ class LandscapeView(context: Context) : View(context) {
         }
         val p = palette
 
-        paint.shader = LinearGradient(0f, 0f, 0f, 1080f, p.s1, p.s2, Shader.TileMode.CLAMP)
+        paint.shader = skyShader.get(mixKey(mixKey(0L, p.s1), p.s2)) { LinearGradient(0f, 0f, 0f, 1080f, p.s1, p.s2, Shader.TileMode.CLAMP) }
         canvas.drawRect(0f, 0f, 1920f, 1080f, paint)
         paint.shader = null
 
@@ -221,7 +244,7 @@ class LandscapeView(context: Context) : View(context) {
         } else {
             fill(canvas, alpFar, p.far)
             fill(canvas, alpMid, p.mid)
-            paint.shader = LinearGradient(0f, 770f, 0f, 1080f, p.water, p.near, Shader.TileMode.CLAMP)
+            paint.shader = waterShader.get(mixKey(mixKey(0L, p.water), p.near)) { LinearGradient(0f, 770f, 0f, 1080f, p.water, p.near, Shader.TileMode.CLAMP) }
             canvas.drawRect(0f, 770f, 1920f, 1080f, paint)
             paint.shader = null
             paint.color = p.sun

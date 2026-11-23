@@ -48,8 +48,12 @@ object Winter {
     class Fill(val path: Path, role: String, a: Float, k: String?) : Item(role, a, k)
     class Stroke(val path: Path, val width: Float, role: String, a: Float, k: String?) : Item(role, a, k)
     class Dot(val x: Float, val y: Float, val r: Float, role: String, a: Float, k: String?) : Item(role, a, k)
-    class Glow(val x: Float, val y: Float, val r: Float, role: String, a: Float, k: String?) : Item(role, a, k)
-    class Grad(val path: Path, val y0: Float, val y1: Float, role: String, val role2: String, a: Float, k: String?) : Item(role, a, k)
+    class Glow(val x: Float, val y: Float, val r: Float, role: String, a: Float, k: String?) : Item(role, a, k) {
+        val shader = CachedShader()
+    }
+    class Grad(val path: Path, val y0: Float, val y1: Float, role: String, val role2: String, a: Float, k: String?) : Item(role, a, k) {
+        val shader = CachedShader()
+    }
 
     class Scene(val name: String, val sunX: Float, val items: List<Item>)
 
@@ -190,10 +194,15 @@ object Winter {
 
     private fun withAlpha(c: Int, a: Float): Int = (c and 0x00FFFFFF) or ((Color.alpha(c) * a.coerceIn(0f, 1f)).toInt() shl 24)
 
+    private val skyShader = CachedShader()
+    private val sunShader = CachedShader()
+
     /** Draws [scene] in the 1920x1080 design space (the caller scales). */
     fun draw(canvas: Canvas, scene: Scene, pal: Pal, paint: Paint) {
         paint.style = Paint.Style.FILL
-        paint.shader = LinearGradient(0f, 0f, 0f, 760f, pal.c("sky1"), pal.c("sky2"), Shader.TileMode.CLAMP)
+        val sky1 = pal.c("sky1")
+        val sky2 = pal.c("sky2")
+        paint.shader = skyShader.get(mixKey(mixKey(0L, sky1), sky2)) { LinearGradient(0f, 0f, 0f, 760f, sky1, sky2, Shader.TileMode.CLAMP) }
         canvas.drawRect(0f, 0f, 1920f, 1080f, paint)
         paint.shader = null
         val sk = pal.k("stars")
@@ -208,8 +217,10 @@ object Winter {
         }
         // the sun, or the moon at night, with a soft halo
         val sun = pal.c("sun")
-        paint.shader = RadialGradient(scene.sunX, pal.sunY, pal.sunR * 4f,
-            intArrayOf(withAlpha(sun, 0.35f), withAlpha(sun, 0.12f), withAlpha(sun, 0f)), floatArrayOf(0.2f, 0.5f, 1f), Shader.TileMode.CLAMP)
+        paint.shader = sunShader.get(mixKey(mixKey(mixKey(mixKey(0L, scene.sunX), pal.sunY), pal.sunR), sun)) {
+            RadialGradient(scene.sunX, pal.sunY, pal.sunR * 4f,
+                intArrayOf(withAlpha(sun, 0.35f), withAlpha(sun, 0.12f), withAlpha(sun, 0f)), floatArrayOf(0.2f, 0.5f, 1f), Shader.TileMode.CLAMP)
+        }
         canvas.drawCircle(scene.sunX, pal.sunY, pal.sunR * 4f, paint)
         paint.shader = null
         paint.color = sun
@@ -240,13 +251,14 @@ object Winter {
                 }
                 is Glow -> {
                     paint.color = Color.WHITE
-                    paint.shader = RadialGradient(it.x, it.y, it.r, withAlpha(color, a), withAlpha(color, 0f), Shader.TileMode.CLAMP)
+                    paint.shader = it.shader.get(mixKey(mixKey(0L, color), a)) { RadialGradient(it.x, it.y, it.r, withAlpha(color, a), withAlpha(color, 0f), Shader.TileMode.CLAMP) }
                     canvas.drawCircle(it.x, it.y, it.r, paint)
                     paint.shader = null
                 }
                 is Grad -> {
                     paint.color = Color.WHITE
-                    paint.shader = LinearGradient(0f, it.y0, 0f, it.y1, withAlpha(color, a), withAlpha(pal.c(it.role2), a), Shader.TileMode.CLAMP)
+                    val c2 = pal.c(it.role2)
+                    paint.shader = it.shader.get(mixKey(mixKey(mixKey(0L, color), c2), a)) { LinearGradient(0f, it.y0, 0f, it.y1, withAlpha(color, a), withAlpha(c2, a), Shader.TileMode.CLAMP) }
                     canvas.drawPath(it.path, paint)
                     paint.shader = null
                 }
