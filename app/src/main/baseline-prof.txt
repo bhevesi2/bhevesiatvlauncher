@@ -1,0 +1,5 @@
+# The whole launcher, compiled ahead of time: the first scrolls and animations after a start are
+# as smooth as the later ones (no waiting for the just-in-time compiler to warm up). Wildcards:
+# every class and every method of the app's own package.
+Lhu/otthon/launcher/**;
+HSPLhu/otthon/launcher/**;->**(**)**

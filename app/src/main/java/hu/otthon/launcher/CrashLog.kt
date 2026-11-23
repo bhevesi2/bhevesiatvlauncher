@@ -38,6 +38,11 @@ object CrashLog {
         if (front++ == 0) Prefs.of(ctx).edit().putBoolean("front", true).apply()
     }
 
+    /** An install that was to end the process did not: a launcher screen still in front is marked again. */
+    fun stillFront(ctx: Context) {
+        if (front > 0) Prefs.of(ctx).edit().putBoolean("front", true).apply()
+    }
+
     fun left(ctx: Context) {
         if (front > 0 && --front == 0) Prefs.of(ctx).edit().putBoolean("front", false).apply()
     }

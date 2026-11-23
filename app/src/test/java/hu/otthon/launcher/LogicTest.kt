@@ -76,4 +76,17 @@ class LogicTest {
         // Android's own low-RAM mark wins
         assertEquals(LowRam.LOW, LowRam.auto(3.0, true, 512))
     }
+
+    @Test
+    fun recoPictureSizes() {
+        // kept in steps of 128 pixels, never smaller than shown
+        assertEquals(128, RecoDisk.bucket(0))
+        assertEquals(128, RecoDisk.bucket(100))
+        assertEquals(128, RecoDisk.bucket(128))
+        assertEquals(256, RecoDisk.bucket(129))
+        assertEquals(512, RecoDisk.bucket(493))
+        // one file per address, the same each time
+        assertEquals(RecoDisk.hash("https://x/a.jpg"), RecoDisk.hash("https://x/a.jpg"))
+        assertEquals(40, RecoDisk.hash("https://x/a.jpg").length)
+    }
 }

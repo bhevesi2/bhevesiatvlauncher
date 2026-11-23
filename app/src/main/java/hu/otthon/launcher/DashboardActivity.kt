@@ -427,7 +427,7 @@ class DashboardActivity : PanelActivity() {
                         c.startsWith("image.") -> "/api/image_proxy/$c"
                         else -> null
                     } ?: continue
-                    found = try { client.bitmap(path, 520, 15000) } catch (e: Exception) { null }
+                    found = try { client.bitmap(path, 520, 15000) } catch (e: Throwable) { null }
                     if (found != null) break
                 }
                 val picture = found?.let { trimmed(it) }

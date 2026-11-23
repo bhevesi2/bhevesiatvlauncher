@@ -131,6 +131,47 @@ object Reco {
      */
     fun load(ctx: Context, order: List<String>, hidden: Set<String>, watchNext: Boolean = true, custom: List<String> = emptyList()): List<Row> {
         if (!allowed(ctx)) return emptyList()
+        RecoWatch.start(ctx)
+        // read again only when an app published something since (or, to be safe, half an hour passed)
+        val key = listOf(order.joinToString(","), hidden.sorted().joinToString(","), watchNext, custom.joinToString(",")).joinToString("|")
+        val gen = generation
+        synchronized(rowCache) {
+            rowCache[key]?.let { (g, at, rows) ->
+                if (g == gen && RecoWatch.listening && System.currentTimeMillis() - at < 30 * 60_000L) return rows
+            }
+        }
+        val rows = read(ctx, order, hidden, watchNext, custom)
+        noteChanges(rows)
+        synchronized(rowCache) {
+            if (rowCache.size > 6) rowCache.clear()
+            rowCache[key] = Triple(gen, System.currentTimeMillis(), rows)
+        }
+        return rows
+    }
+
+    /** Bumped when the listings change: the rows read before are not used again. */
+    @Volatile private var generation = 1
+    private val rowCache = HashMap<String, Triple<Int, Long, List<Row>>>()
+
+    fun invalidate() { generation++ }
+
+    /** What each programme was last time: one that changed has its picture asked about again. */
+    private val seen = HashMap<Long, Int>()
+
+    private fun noteChanges(rows: List<Row>) {
+        val now = HashMap<Long, Int>()
+        for (r in rows) for (p in r.programs) now[p.id] = listOf(p.image, p.title, p.subtitle, p.description).hashCode()
+        synchronized(seen) {
+            for ((id, fp) in now) {
+                val was = seen[id] ?: continue
+                if (was != fp) rows.asSequence().flatMap { it.programs.asSequence() }.firstOrNull { it.id == id }?.image?.let { stale(it) }
+            }
+            seen.clear()
+            seen.putAll(now)
+        }
+    }
+
+    private fun read(ctx: Context, order: List<String>, hidden: Set<String>, watchNext: Boolean, custom: List<String>): List<Row> {
         val rows = ArrayList<Row>()
 
         // Continue watching
@@ -230,15 +271,32 @@ object Reco {
 
     // ---------- pictures ----------
 
+    /** The width a card of this shape is shown at, in pixels. */
+    fun cardWidth(ctx: Context, aspect: Float): Int = (ctx.dp(112f) * aspect.coerceIn(0.6f, 1.8f)).toInt()
+
+    /** The width its picture is made at: a little more than the card, as a focused card grows. */
+    fun pictureWidth(ctx: Context, aspect: Float): Int = (cardWidth(ctx, aspect) * 1.1f).toInt()
+
+    /** The pictures in memory, by address and width (a small tile's picture is not a big card's). */
     private val pictures = object : LinkedHashMap<String, Bitmap>(64, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Bitmap>?) =
             size > (if (LowRam.on) 28 else 80)
     }
 
+    private fun key(uri: String, width: Int) = uri + "#" + RecoDisk.bucket(width)
+
     /** Lets go of the pictures not on screen, when the launcher is behind another app. */
     fun trim() = synchronized(pictures) { pictures.clear() }
 
-    fun cached(uri: String): Bitmap? = synchronized(pictures) { pictures[uri] }
+    fun cached(uri: String, width: Int): Bitmap? = synchronized(pictures) { pictures[key(uri, width)] }
+
+    /** Pictures whose programme changed: asked about again before they are shown next. */
+    private val staleUris = HashSet<String>()
+
+    private fun stale(uri: String) {
+        synchronized(staleUris) { staleUris.add(uri) }
+        synchronized(pictures) { pictures.keys.removeAll { it.startsWith("$uri#") } }
+    }
 
     /**
      * Pictures load on two low-priority threads of their own, so a screenful of them neither
@@ -251,39 +309,65 @@ object Reco {
         }
     }
 
-    fun loadPicture(ctx: Context, uri: String, width: Int, done: (Bitmap) -> Unit) {
+    fun loadPicture(ctx: Context, uri: String, width: Int, pkg: String = "", done: (Bitmap) -> Unit) {
         val app = ctx.applicationContext
         pictureThreads.execute {
-            val b = try { picture(app, uri, width) } catch (e: Exception) { null }
+            val b = try { picture(app, uri, width, pkg) } catch (e: Throwable) { if (e !is Exception) CrashLog.note(e); null }
             if (b != null) Bg.main.post { done(b) }
         }
     }
 
-    /** A programme's picture, made about [width] pixels wide. Background thread only. */
-    fun picture(ctx: Context, uri: String, width: Int): Bitmap? {
-        cached(uri)?.let { return it }
-        fun open(): InputStream? {
-            return if (uri.startsWith("http")) {
-                val c = URL(uri).openConnection() as HttpURLConnection
-                c.connectTimeout = 5000
-                c.readTimeout = 10000
-                if (c.responseCode != 200) { c.disconnect(); null } else c.inputStream
-            } else {
-                ctx.contentResolver.openInputStream(Uri.parse(uri))
+    /**
+     * A programme's picture, made about [width] pixels wide: from memory, from the TV's storage,
+     * or downloaded (and kept). Background thread only.
+     */
+    fun picture(ctx: Context, uri: String, width: Int, pkg: String = ""): Bitmap? {
+        val bucket = RecoDisk.bucket(width)
+        val k = key(uri, width)
+        val changed = synchronized(staleUris) { staleUris.remove(uri) }
+        if (!changed) synchronized(pictures) { pictures[k] }?.let { return it }
+        var b: Bitmap? = null
+        if (changed && RecoDisk.has(ctx, uri, bucket)) {
+            // the programme changed: a new picture if the server has one, else the kept one
+            b = try { RecoDisk.fetch(ctx, uri, bucket, pkg, ask = true) } catch (e: Exception) { null }
+        }
+        if (b == null) b = RecoDisk.read(ctx, uri, bucket)
+        if (b != null) {
+            if (!changed && RecoDisk.dueForCheck(ctx, uri)) recheck(ctx, uri, bucket, pkg)
+        } else {
+            b = try { RecoDisk.fetch(ctx, uri, bucket, pkg, ask = false) } catch (e: Exception) { null } ?: return null
+        }
+        synchronized(pictures) { pictures[k] = b }
+        return b
+    }
+
+    /** Asks the server, later and quietly, whether a kept picture changed; a new one is kept for next time. */
+    private fun recheck(ctx: Context, uri: String, bucket: Int, pkg: String) {
+        pictureThreads.execute {
+            try {
+                RecoDisk.fetch(ctx, uri, bucket, pkg, ask = true)?.let { nb ->
+                    synchronized(pictures) { pictures["$uri#$bucket"] = nb }
+                }
+            } catch (e: Exception) { }
+        }
+    }
+
+    /**
+     * Fetches the pictures of [rows] onto the TV's storage ahead of time (not into memory), so
+     * the cards show them at once. Only the first rows and cards, the ones seen first.
+     */
+    fun prefetch(ctx: Context, rows: List<Row>) {
+        val app = ctx.applicationContext
+        for (r in rows.take(8)) for (p in r.programs.take(10)) {
+            val uri = p.image ?: continue
+            val bucket = RecoDisk.bucket(pictureWidth(app, p.aspect))
+            if (RecoDisk.has(app, uri, bucket)) continue
+            pictureThreads.execute {
+                if (TvState.state(app) == "watching") return@execute
+                if (RecoDisk.has(app, uri, bucket)) return@execute
+                try { RecoDisk.fetch(app, uri, bucket, p.pkg, ask = false)?.recycle() } catch (e: Exception) { }
             }
         }
-        val bytes = try { open()?.use { it.readBytes() } } catch (e: Exception) { null } ?: return null
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-        var sample = 1
-        while (bounds.outWidth / (sample * 2) >= width) sample *= 2
-        // half the memory of full colour; posters have no transparency to lose
-        val b = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply {
-            inSampleSize = sample
-            inPreferredConfig = Bitmap.Config.RGB_565
-        }) ?: return null
-        synchronized(pictures) { pictures[uri] = b }
-        return b
     }
 }
 
@@ -371,6 +455,7 @@ class RecoPanel(private val act: android.app.Activity) : LinearLayout(act) {
     fun showAsk() {
         if (signature == "ask") return
         signature = "ask"
+        build++
         rows = emptyList()
         removeAllViews()
         addView(act.label("Recommendations", 13f, C.TEXT, bold = true), LayoutParams(-2, -2).apply { leftMargin = act.dp(48f) })
@@ -383,6 +468,7 @@ class RecoPanel(private val act: android.app.Activity) : LinearLayout(act) {
     fun showEmpty() {
         if (signature == "empty") return
         signature = "empty"
+        build++
         rows = emptyList()
         removeAllViews()
         addView(act.label("Your apps have not published any recommendations yet.", 12f, C.TEXT2),
@@ -392,70 +478,97 @@ class RecoPanel(private val act: android.app.Activity) : LinearLayout(act) {
     /** Lets go of the cards and their pictures while nobody sees them; the next [show] builds them again. */
     fun release() {
         if (signature.isEmpty()) return
+        build++
         signature = ""
         rows = emptyList()
         removeAllViews()
     }
 
+    /** Counts the builds: a build still adding rows stops when a newer one (or [release]) starts. */
+    private var build = 0
+
+    /**
+     * Shows [rows]. The first row is made at once; the others follow two per frame, so a long
+     * list of rows never holds up the frame the home screen is waiting to draw.
+     */
     fun show(rows: List<Reco.Row>, glowOf: (String) -> Int) {
         val sig = rows.joinToString("|") { r -> r.key + ":" + r.programs.joinToString(",") { it.id.toString() } }
         if (sig == signature) return
         signature = sig
         this.rows = rows
         val focusedKey = (act.currentFocus as? RecoCard)?.let { it.row.key + "/" + it.program.id }
+        val token = ++build
         removeAllViews()
+        var next = 0
+        fun some(n: Int) {
+            val end = minOf(rows.size, next + n)
+            while (next < end) addRow(rows[next++], glowOf)
+            if (focusedKey != null && act.currentFocus !is RecoCard) {
+                allCards().firstOrNull { it.row.key + "/" + it.program.id == focusedKey }?.requestFocus()
+            }
+        }
+        // at once: the first row, and every row up to the one that had the focus (so it can keep it)
+        val focusedRow = focusedKey?.let { k -> rows.indexOfFirst { r -> k.startsWith(r.key + "/") } } ?: -1
+        some(maxOf(1, focusedRow + 1))
+        val more = object : Runnable {
+            override fun run() {
+                if (token != build) return
+                some(2)
+                if (next < rows.size) postOnAnimation(this)
+            }
+        }
+        if (next < rows.size) postOnAnimation(more)
+    }
+
+    private fun addRow(row: Reco.Row, glowOf: (String) -> Int) {
         val side = act.dp(48f)
         val cardH = act.dp(112f)
-        for (row in rows) {
-            // one block per row, heading and cards together, so the row moves and dims as one
-            val block = LinearLayout(act).apply { orientation = VERTICAL; clipChildren = false; clipToPadding = false }
-            val head = LinearLayout(act).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-            if (row.pkg.isNotEmpty()) {
-                try {
-                    val icon = act.packageManager.getApplicationIcon(row.pkg)
-                    head.addView(ImageView(act).apply { setImageDrawable(icon) }, LayoutParams(act.dp(16f), act.dp(16f)).apply { rightMargin = act.dp(7f) })
-                } catch (e: Exception) { }
-            }
-            head.addView(act.label(row.title, 12f, C.TEXT, bold = true).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END })
-            block.addView(head, LayoutParams(-1, -2).apply {
-                leftMargin = side
-                rightMargin = side
-            })
-            val scroller = RowScroller(act)
-            scroller.setPadding(side, act.dp(12f), side, act.dp(12f))
-            val line = LinearLayout(act).apply { orientation = HORIZONTAL; clipChildren = false }
-            scroller.addView(line, FrameLayout.LayoutParams(-2, cardH))
-            for (p in row.programs) {
-                val glow = if (p.pkg.isNotEmpty()) glowOf(p.pkg) else 0xFFE9E7E2.toInt()
-                val card = RecoCard(act, p, row, glow)
-                card.setOnClickListener { if (!Reco.open(act, p, row)) android.widget.Toast.makeText(act, Lang.tr("Can't open this"), android.widget.Toast.LENGTH_SHORT).show() }
-                card.setOnLongClickListener { onHold?.invoke(card); true }
-                card.onFocusChangeListener.let { old ->
-                    card.setOnFocusChangeListener { v, f ->
-                        old?.onFocusChange(v, f)
-                        if (f) {
-                            emphasize(card)
-                            onCard?.invoke(card)
-                        }
-                    }
-                }
-                val w = (cardH * p.aspect.coerceIn(0.6f, 1.8f)).toInt()
-                line.addView(card, LayoutParams(w, cardH).apply { if (line.childCount > 0) leftMargin = act.dp(12f) })
-                p.image?.let { uri ->
-                    val cached = Reco.cached(uri)
-                    if (cached != null) {
-                        card.setPicture(cached)
-                    } else {
-                        Reco.loadPicture(act, uri, (w * 1.1f).toInt()) { b -> card.setPicture(b, fade = true) }
+        // one block per row, heading and cards together, so the row moves and dims as one
+        val block = LinearLayout(act).apply { orientation = VERTICAL; clipChildren = false; clipToPadding = false }
+        val head = LinearLayout(act).apply { orientation = HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        if (row.pkg.isNotEmpty()) {
+            try {
+                val icon = act.packageManager.getApplicationIcon(row.pkg)
+                head.addView(ImageView(act).apply { setImageDrawable(icon) }, LayoutParams(act.dp(16f), act.dp(16f)).apply { rightMargin = act.dp(7f) })
+            } catch (e: Exception) { }
+        }
+        head.addView(act.label(row.title, 12f, C.TEXT, bold = true).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END })
+        block.addView(head, LayoutParams(-1, -2).apply {
+            leftMargin = side
+            rightMargin = side
+        })
+        val scroller = RowScroller(act)
+        scroller.setPadding(side, act.dp(12f), side, act.dp(12f))
+        val line = LinearLayout(act).apply { orientation = HORIZONTAL; clipChildren = false }
+        scroller.addView(line, FrameLayout.LayoutParams(-2, cardH))
+        for (p in row.programs) {
+            val glow = if (p.pkg.isNotEmpty()) glowOf(p.pkg) else 0xFFE9E7E2.toInt()
+            val card = RecoCard(act, p, row, glow)
+            card.setOnClickListener { if (!Reco.open(act, p, row)) android.widget.Toast.makeText(act, Lang.tr("Can't open this"), android.widget.Toast.LENGTH_SHORT).show() }
+            card.setOnLongClickListener { onHold?.invoke(card); true }
+            card.onFocusChangeListener.let { old ->
+                card.setOnFocusChangeListener { v, f ->
+                    old?.onFocusChange(v, f)
+                    if (f) {
+                        emphasize(card)
+                        onCard?.invoke(card)
                     }
                 }
             }
-            block.addView(scroller, LayoutParams(-1, -2))
-            addView(block, LayoutParams(-1, -2).apply { topMargin = if (childCount > 0) act.dp(24f) else 0 })
+            val w = Reco.cardWidth(act, p.aspect)
+            line.addView(card, LayoutParams(w, cardH).apply { if (line.childCount > 0) leftMargin = act.dp(12f) })
+            p.image?.let { uri ->
+                val pw = Reco.pictureWidth(act, p.aspect)
+                val cached = Reco.cached(uri, pw)
+                if (cached != null) {
+                    card.setPicture(cached)
+                } else {
+                    Reco.loadPicture(act, uri, pw, p.pkg) { b -> if (card.isAttachedToWindow || card.parent != null) card.setPicture(b, fade = true) }
+                }
+            }
         }
-        if (focusedKey != null) {
-            allCards().firstOrNull { it.row.key + "/" + it.program.id == focusedKey }?.requestFocus()
-        }
+        block.addView(scroller, LayoutParams(-1, -2))
+        addView(block, LayoutParams(-1, -2).apply { topMargin = if (childCount > 0) act.dp(24f) else 0 })
     }
 
     /** The row (heading and cards) that [v] is in, as a direct child of this panel. */

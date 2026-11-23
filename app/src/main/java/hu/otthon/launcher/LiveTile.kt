@@ -132,14 +132,14 @@ class LiveTile(ctx: Context, val app: AppEntry) : FrameLayout(ctx) {
         }
         show(programs[0], fade = false)
         // the next one is read ahead, so the first change while focused is instant
-        if (programs.size > 1) programs[1].image?.let { Reco.loadPicture(context, it, pictureWidth()) { } }
+        if (programs.size > 1) programs[1].let { n -> n.image?.let { Reco.loadPicture(context, it, pictureWidth(), n.pkg) { } } }
     }
 
     private fun pictureWidth() = maxOf(width, context.dp(160f)) * 5 / 4
 
     private fun show(p: Reco.Program, fade: Boolean) {
         val uri = p.image ?: return
-        Reco.loadPicture(context, uri, pictureWidth()) { b ->
+        Reco.loadPicture(context, uri, pictureWidth(), p.pkg) { b ->
             if (programs.getOrNull(index)?.image != uri) return@loadPicture
             put(b, fade)
             shownUri = uri
@@ -173,7 +173,7 @@ class LiveTile(ctx: Context, val app: AppEntry) : FrameLayout(ctx) {
             index = (index + 1) % programs.size
             show(programs[index], fade = true)
             // and the one after that is read ahead
-            programs[(index + 1) % programs.size].image?.let { Reco.loadPicture(context, it, pictureWidth()) { } }
+            programs[(index + 1) % programs.size].let { n -> n.image?.let { Reco.loadPicture(context, it, pictureWidth(), n.pkg) { } } }
             postDelayed(this, if (LowRam.on) CYCLE_MS * 2 else CYCLE_MS)
         }
     }

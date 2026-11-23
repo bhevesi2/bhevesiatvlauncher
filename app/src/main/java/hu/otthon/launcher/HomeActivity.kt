@@ -120,6 +120,7 @@ class HomeActivity : Activity() {
         builtHu = Lang.hu
         buildUi()
         Profile.listeners.add(onProfile)
+        RecoWatch.onSettled = onRecoChanged
         try {
             registerReceiver(screen, IntentFilter().apply {
                 addAction(Intent.ACTION_SCREEN_OFF)
@@ -130,6 +131,7 @@ class HomeActivity : Activity() {
 
     override fun onDestroy() {
         Profile.listeners.remove(onProfile)
+        if (RecoWatch.onSettled === onRecoChanged) RecoWatch.onSettled = null
         try { unregisterReceiver(screen) } catch (e: Exception) { }
         super.onDestroy()
     }
@@ -467,6 +469,25 @@ class HomeActivity : Activity() {
         lastRows = rows
         for (t in liveTiles) {
             t.setPrograms(rows.flatMap { r -> r.programs.filter { it.pkg == t.app.pkg || (r.pkg == t.app.pkg && it.pkg.isBlank()) } })
+        }
+    }
+
+    /**
+     * An app published new recommendations: in front, the rows are read again; behind a menu or
+     * the screensaver, they are read and their pictures fetched ahead (never while watching).
+     */
+    private val onRecoChanged: () -> Unit = {
+        if (resumed) {
+            // not while someone is looking through the rows (they would be built again under them):
+            // the next time the rows are opened they are read again anyway
+            if (!expanded) loadReco()
+        } else if (cfg.recommendations && !kidsOn && Reco.allowed(this) && TvState.state(this) != "watching") {
+            val app = applicationContext
+            val order = FavStore.get(this, cfg)
+            val hidden = cfg.recoHidden
+            val watchNext = cfg.recoWatchNext
+            val custom = cfg.recoOrder
+            Bg.run({ Reco.prefetch(app, Reco.load(app, order, hidden, watchNext, custom)) }) { }
         }
     }
 
@@ -1120,7 +1141,12 @@ class HomeActivity : Activity() {
             val pic = a.optString("entity_picture", "")
             if (pic.isNotBlank() && pic != npPicture) {
                 npPicture = pic
-                Bg.run({ client.bitmap(pic) }) { b -> if (b != null) npCover.setImageBitmap(b) }
+                // a cover of a few thousand pixels for a 48 dp square: made small as it is read
+                val size = dp(96f)
+                Bg.run({ client.bitmap(pic, size) }) { b ->
+                    if (npPicture != pic) return@run          // a newer song's cover is on its way
+                    if (b != null) npCover.setImageBitmap(b) else npPicture = null   // tried again next time
+                }
             } else if (pic.isBlank()) {
                 npPicture = null
                 npCover.setImageResource(R.drawable.ic_disc)

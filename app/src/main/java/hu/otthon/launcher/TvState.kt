@@ -93,6 +93,7 @@ object TvState {
             .put("crashes_24h", crashes)
             .put("last_crash", lastCrash ?: "")
             .put("notifications", Inbox.list(ctx).size)
+            .put("reco_images", RecoDisk.sizeReport())
             .put("updated", java.time.OffsetDateTime.now().withNano(0).toString())
         try {
             client.setState(entity(ctx, cfg), st, a)

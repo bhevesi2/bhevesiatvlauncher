@@ -137,6 +137,17 @@ asks for the first time (Allow). OK opens a programme, Hold OK moves its row up 
 is something below. Settings › Home screen › Recommendations switches them off, chooses the apps
 and Continue watching, and resets the row order.
 
+The pictures are shrunk to the size they are shown at and kept on the TV (`cache/reco`, at most
+30 MB, the least recently used going first, anything unused for a week going): after the first
+time they come from storage, also after a restart. Once a day a kept picture is checked with its
+server (`If-None-Match` / `If-Modified-Since`, nothing downloaded when unchanged), and at once
+when its programme's title or description changed. The launcher listens to the listings provider:
+the rows are read again only after an app published something (gathered for 30 s; while the TV
+sleeps only noted). Behind a menu or the screensaver the new rows' pictures are fetched ahead,
+never while something is being watched. The first row is built at once, the rest two per frame.
+The size each app's pictures come in is in the log (`OtthonReco`) and in the TV's state
+(`reco_images`).
+
 ## Recommendations and the dashboard
 
 Down from the bottom row slides up the recommendations; OK on the status capsule in the top
@@ -471,6 +482,11 @@ TV's shell can send this (the receiver requires the `DUMP` permission). `--ez fo
 installs the latest release even when it is not newer. The Home Assistant script
 "Update TV launchers" sends it to every TV. The home screen checks every six hours and puts a dot on the
 settings button when there is something newer.
+
+After an update the launcher has the system compile it ahead of time
+(`cmd package compile -m speed -f`, over its own ADB or Home Assistant's; a baseline profile in
+the APK does the same on its own over time), and starts again with the compiled code the next
+time the TV goes to sleep.
 
 ## Making it the default home app
 

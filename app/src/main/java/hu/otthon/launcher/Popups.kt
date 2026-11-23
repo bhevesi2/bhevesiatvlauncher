@@ -182,6 +182,8 @@ class PopupService : Service() {
 
     private val dreams = object : android.content.BroadcastReceiver() {
         override fun onReceive(ctx: Context, intent: Intent) {
+            // asleep: a launcher compiled after an update starts again with the compiled code
+            if (intent.action == Intent.ACTION_SCREEN_OFF) Precompile.restartIfPending(this@PopupService)
             TvState.dreaming = intent.action == Intent.ACTION_DREAMING_STARTED
             val c = cfg
             val api = client
@@ -495,7 +497,7 @@ class PopupService : Service() {
         if (fetching || live?.playing == true) return
         fetching = true
         bg.post {
-            val b: Bitmap? = try { api.bitmap("/api/camera_proxy/$cam", 720) } catch (e: Exception) { null }
+            val b: Bitmap? = try { api.bitmap("/api/camera_proxy/$cam", 720) } catch (e: Throwable) { null }
             main.post {
                 fetching = false
                 if (b != null && showing == cam) image?.setImageBitmap(b)

@@ -1239,7 +1239,7 @@ class MaActivity : PanelActivity() {
         val client = ha ?: return
         try {
             exec.execute {
-                val b = try { client.bitmap(sized, width) } catch (e: Exception) { null }
+                val b = try { client.bitmap(sized, width) } catch (e: Throwable) { null }
                 main.post {
                     if (b != null) covers[key] = b
                     if (!isFinishing) done(b)

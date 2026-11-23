@@ -119,7 +119,19 @@ object Updates {
      * Checks GitHub and, when there is a newer build, downloads it and has Home Assistant
      * install it. For a start from outside ([UpdateReceiver]); background thread only.
      */
+    private val updating = java.util.concurrent.atomic.AtomicBoolean(false)
+
     fun updateNow(ctx: Context, force: Boolean = false): String {
+        // one at a time: two downloads into the same file would spoil it
+        if (!updating.compareAndSet(false, true)) return "already updating"
+        try {
+            return update(ctx, force)
+        } finally {
+            updating.set(false)
+        }
+    }
+
+    private fun update(ctx: Context, force: Boolean): String {
         val r = latest() ?: return "GitHub not reachable"
         remember(ctx, r)
         if (!force && !isNewer(ctx, r)) return "up to date"
@@ -137,6 +149,8 @@ object Updates {
             res = Adb.runHere(Config.load(ctx), installCommand(ctx, apk), 90000, ownAdb = attempt == 1)
             try { Thread.sleep(25_000) } catch (e: InterruptedException) { break }
         }
+        // still alive: the install did not happen
+        CrashLog.stillFront(ctx)
         return Adb.explain(res)
     }
 }
@@ -172,6 +186,38 @@ class UpdateReceiver : BroadcastReceiver() {
 }
 
 /**
+ * After an update the launcher has the system compile all of it ahead of time (over the TV's own
+ * ADB, or Home Assistant's): a TV that only compiles while running stutters in the first scrolls
+ * after every start. The compiled code is used from the next start of the process, which comes
+ * the next time the TV goes to sleep (nobody sees it).
+ */
+object Precompile {
+    fun afterUpdate(ctx: Context) {
+        val app = ctx.applicationContext
+        Bg.slow({
+            val cmd = "cmd package compile -m speed -f ${app.packageName}"
+            val ok = if (LocalAdb.ready()) {
+                LocalAdb.shell(cmd, readMs = 240_000)?.contains("Success") == true
+            } else {
+                val cfg = Config.load(app)
+                Adb.runHere(cfg, cmd, timeoutMs = 240_000, ownAdb = false) == Adb.Result.OK
+            }
+            if (ok) Prefs.of(app).edit().putBoolean("precompiled_restart", true).commit()
+            ok
+        }) { ok -> android.util.Log.i("OtthonUpdate", "compiled ahead of time: $ok") }
+    }
+
+    /** The TV went to sleep: a process still running the old code ends, to start again compiled. */
+    fun restartIfPending(ctx: Context) {
+        val p = Prefs.of(ctx)
+        if (!p.getBoolean("precompiled_restart", false)) return
+        p.edit().putBoolean("precompiled_restart", false).putBoolean("front", false).commit()
+        android.util.Log.i("OtthonUpdate", "starting again with the compiled code")
+        android.os.Process.killProcess(android.os.Process.myPid())
+    }
+}
+
+/**
  * The launcher was just replaced by a newer one. When the launcher installed itself over its own
  * ADB, the steps after the install did not run (the connection ended with the old launcher):
  * Android leaves the button service unbound after an update, so it is switched off and on again,
@@ -196,5 +242,6 @@ class ReplacedReceiver : BroadcastReceiver() {
         } catch (e: Exception) {
             android.util.Log.w("OtthonUpdate", "home screen not reopened after the update: $e")
         }
+        Precompile.afterUpdate(app)
     }
 }

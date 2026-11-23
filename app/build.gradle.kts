@@ -76,6 +76,9 @@ dependencies {
     // Windows (SMB) shares, for the wallpapers on the NAS; Bouncy Castle gives it MD4 for NTLM
     implementation("com.hierynomus:smbj:0.13.0")
     implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
+    // installs the baseline profile (src/main/baseline-prof.txt) on the TV, so the system compiles
+    // the launcher ahead of time instead of while it runs
+    implementation("androidx.profileinstaller:profileinstaller:1.4.1")
 
     testImplementation("junit:junit:4.13.2")
     // the real org.json: Android's own is only there on a device

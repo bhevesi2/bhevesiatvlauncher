@@ -327,7 +327,7 @@ class CamerasActivity : PanelActivity() {
         pending[i] = true
         val path = "/api/camera_proxy/" + cfg.cameras[i].entity
         exec.execute {
-            val b: Bitmap? = try { client.bitmap(path, maxW) } catch (e: Exception) { null }
+            val b: Bitmap? = try { client.bitmap(path, maxW) } catch (e: Throwable) { null }
             main.post {
                 pending[i] = false
                 done(b)
@@ -456,7 +456,7 @@ class CamerasActivity : PanelActivity() {
             cards.add(card)
             val gen = stripGen
             exec.execute {
-                val b = try { client.bitmap(Frigate.thumbnail(cam, d), 400) } catch (e: Exception) { null }
+                val b = try { client.bitmap(Frigate.thumbnail(cam, d), 400) } catch (e: Throwable) { null }
                 main.post { if (gen == stripGen && b != null) card.image.setImageBitmap(b) }
             }
         }

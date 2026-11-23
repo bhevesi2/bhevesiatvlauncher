@@ -1258,7 +1258,7 @@ class SettingsActivity : PanelActivity() {
     }
 
     private fun install(r: Updates.Release) {
-        if (!cfg.haEnabled) {
+        if (!cfg.haEnabled && !LocalAdb.ready()) {
             toast("Set up or switch on Home Assistant first, or run update.bat on the PC")
             return
         }
@@ -1273,8 +1273,11 @@ class SettingsActivity : PanelActivity() {
                 return@slow
             }
             toast("Installing…")
+            // the install ends this process on purpose: not a crash to recover from
+            Prefs.of(this).edit().putBoolean("front", false).commit()
             Adb.run(this, cfg, Updates.installCommand(this, apk), 90000) { res ->
                 // if this runs at all, the install did not replace the running launcher
+                CrashLog.stillFront(this)
                 updating = false
                 if (res != Adb.Result.OK) toast(Adb.explain(res))
                 change { }
