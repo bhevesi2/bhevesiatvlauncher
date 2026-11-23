@@ -22,7 +22,7 @@ object Carry {
     const val FILE = "carry.json"
 
     /** Stored values that belong to this one install and must not be carried. */
-    private val SKIP = setOf("local_adb", "front", "front_app", "restarts", "restarts_at", "update_checked", "update_name")
+    private val SKIP = setOf("local_adb", "local_adb_asked", "front", "front_app", "restarts", "restarts_at", "update_checked", "update_name")
 
     /** The settings and the stored values as one JSON object. */
     fun pack(config: JSONObject, prefs: Map<String, *>): JSONObject {

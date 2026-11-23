@@ -24,19 +24,26 @@ android {
         versionName = buildName
     }
 
+    // The release key is never in the repository: the build takes it from the environment
+    // (in GitHub Actions from the repository's secrets SIGNING_KEYSTORE_B64 and SIGNING_PASSWORD).
+    // Without it the release is not signed, and the build stops before publishing anything.
+    val signingFile = System.getenv("SIGNING_STORE_FILE")
     signingConfigs {
         create("release") {
-            storeFile = file("launcher.keystore")
-            storePassword = "launcher"
-            keyAlias = "launcher"
-            keyPassword = "launcher"
+            if (signingFile != null) {
+                storeFile = file(signingFile)
+                storeType = "pkcs12"
+                storePassword = System.getenv("SIGNING_PASSWORD")
+                keyAlias = System.getenv("SIGNING_ALIAS") ?: "otthon"
+                keyPassword = System.getenv("SIGNING_PASSWORD")
+            }
         }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("release")
+            signingConfig = if (signingFile != null) signingConfigs.getByName("release") else null
         }
     }
 

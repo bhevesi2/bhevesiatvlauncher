@@ -4,3 +4,8 @@ app/build/
 local.properties
 *.iml
 .idea/
+
+# signing keys never go into the repository
+*.keystore
+*.jks
+*.p12

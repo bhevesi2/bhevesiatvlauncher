@@ -13,8 +13,9 @@ Letisztult, gyors kezdőképernyő (launcher) Android TV-re, a Sony AG8-ra (Andr
 A GitHub Actions minden `main`-re küldött commitnál lefordítja és kiadja az APK-t:
 `https://github.com/bhevesi2/bhevesiatvlauncher/releases/latest/download/launcher.apk`
 
-Az aláíró kulcs (`app/launcher.keystore`) szándékosan a repóban van, hogy a frissítések felülírhassák egymást.
-Csak saját telepítésre szolgál.
+Az aláíró kulcs nincs a repóban: a GitHub-build a repó titkaiból veszi (`SIGNING_KEYSTORE_B64`,
+`SIGNING_PASSWORD`). A kulcs biztonsági másolatát a tulajdonos őrzi; nélküle a tévék csak
+újratelepítéssel kapnának új verziót. Csak saját telepítésre szolgál.
 
 ## Settings
 
@@ -482,5 +483,9 @@ After that, `update.bat` in the project folder pulls the newest source, builds t
 installs it on the TV over ADB (`update.bat <address>` for another TV, `update.bat build` to only
 build). The first time, the TV asks whether to allow debugging from the PC.
 
-Every build is signed with the key in `app/launcher.keystore` and gets a time-based version
-code, so PC builds and GitHub builds install over each other.
+Every release is signed with the release key, which is kept out of the repository: GitHub
+Actions takes it from the repository's secrets `SIGNING_KEYSTORE_B64` (the PKCS12 key store,
+base64) and `SIGNING_PASSWORD`; a build without them publishes nothing. A build on a PC signs
+with the same key only when `SIGNING_STORE_FILE` and `SIGNING_PASSWORD` point to it. Every build
+gets a time-based version code. (Until November 2026 the key was in the repository; it was
+replaced, which meant reinstalling each TV once: see "Carrying a TV's settings".)
