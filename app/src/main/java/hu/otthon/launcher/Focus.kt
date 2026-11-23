@@ -146,6 +146,9 @@ class FocusGlide private constructor(private val host: View) {
 
         private val glows = LinkedHashMap<String, Bitmap>()
 
+        /** Lets go of the glow masks (made again when a tile is focused). Main thread. */
+        fun trim() = glows.clear()
+
         /**
          * A blurred rounded rectangle as a mask, drawn at a quarter of the size: the blur hides
          * the scaling, and it is made once per tile size instead of being blurred every frame.

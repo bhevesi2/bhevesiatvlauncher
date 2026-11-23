@@ -389,6 +389,14 @@ class RecoPanel(private val act: android.app.Activity) : LinearLayout(act) {
             LayoutParams(-2, -2).apply { leftMargin = act.dp(48f) })
     }
 
+    /** Lets go of the cards and their pictures while nobody sees them; the next [show] builds them again. */
+    fun release() {
+        if (signature.isEmpty()) return
+        signature = ""
+        rows = emptyList()
+        removeAllViews()
+    }
+
     fun show(rows: List<Reco.Row>, glowOf: (String) -> Int) {
         val sig = rows.joinToString("|") { r -> r.key + ":" + r.programs.joinToString(",") { it.id.toString() } }
         if (sig == signature) return

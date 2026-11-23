@@ -175,7 +175,13 @@ object Apps {
         }
     }
 
-    private val oneCache = HashMap<String, Pair<Long, AppEntry>>()
+    /** At most 60 apps kept, the least recently asked for going first. */
+    private val oneCache = object : LinkedHashMap<String, Pair<Long, AppEntry>>(32, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Pair<Long, AppEntry>>?) = size > 60
+    }
+
+    /** Lets go of the kept banners and icons (they load again when asked for). */
+    fun trim() = synchronized(oneCache) { oneCache.clear() }
 
     private fun copy(ctx: Context, e: AppEntry): AppEntry {
         fun d(x: Drawable?): Drawable? = x?.constantState?.newDrawable(ctx.resources) ?: x

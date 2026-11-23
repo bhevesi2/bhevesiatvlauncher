@@ -399,6 +399,25 @@ settings with their token and password, and the app's own stored values (the kid
 music player…; not this install's ADB key). Copy it away, uninstall, install the new launcher,
 put the file back: the launcher takes it in the first time it reads its settings and deletes it.
 
+## Memory
+
+Each TV gets a memory tier, from the RAM Android reports (less than the label says: the picture
+and video hardware keep their share): from about 2.2 GB **high** (the TCL), from about 1.5 GB
+**medium** (the 2 GB Sony), below that, or on a TV Android itself calls low-RAM, **low**. Near a
+boundary the per-app limit the maker set decides. Medium has the tighter budget (smaller picture
+caches, the settings building their pages a moment after the cursor stops, no camera pop-up over
+the open quick settings); low has plainer graphics as well. After a crash for want of memory (a
+Java OutOfMemoryError, or the graphics driver reporting GL_OUT_OF_MEMORY / EGL_BAD_ALLOC in the
+log) the launcher steps one tier down by itself, at most twice, and keeps it. Settings ›
+Background › Performance overrides it (the launcher restarts); `"performance"` in the settings
+file does the same. The tier and why are in the Home Assistant sensor (`tier`, `tier_reason`).
+
+Pictures are let go while nobody sees them: at once when the TV sleeps, three minutes after the
+home screen went behind another app (on a low-tier TV at once), and when Android asks for memory
+back (graded by how hard it asks: first the pictures not on screen, then every cache). They load
+again as the home screen shows, the photo fading in. The banner and icon cache keeps at most 60
+apps.
+
 ## The TV's state in Home Assistant
 
 The launcher tells Home Assistant what the TV is doing, as a sensor of its own,

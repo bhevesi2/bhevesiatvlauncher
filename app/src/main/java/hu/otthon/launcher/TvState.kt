@@ -88,6 +88,8 @@ object TvState {
             .put("model", "${Build.MANUFACTURER} ${Build.MODEL}")
             .put("android", Build.VERSION.RELEASE)
             .put("low_memory", LowRam.on)
+            .put("tier", LowRam.name())
+            .put("tier_reason", LowRam.reason)
             .put("crashes_24h", crashes)
             .put("last_crash", lastCrash ?: "")
             .put("notifications", Inbox.list(ctx).size)

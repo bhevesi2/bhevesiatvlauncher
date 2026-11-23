@@ -734,32 +734,107 @@ class PanelFrame(private val act: Activity, title: String, hint: String? = null)
  * A TV with little memory (the 2 GB Sony): fewer pictures kept, and what the launcher holds is
  * handed back while another app is in front, so that app need not be squeezed.
  */
+/**
+ * How much the TV can take: three tiers, each with its own memory budget.
+ *
+ *  - high (the TCL: 2.4 GB reported): everything at full size, the camera pop-up over the quick
+ *    settings too;
+ *  - medium (the Sony AG8: 2 GB): the full look, with the tighter budget [on] brings (smaller
+ *    picture caches, the settings building their pages a moment after the cursor stops, no
+ *    camera pop-up over the open quick settings);
+ *  - low (a TV like the Philips 50PUS8007): plainer graphics as well ([lite]).
+ *
+ * The tier comes from the RAM Android reports (less than the label says: the picture and video
+ * hardware keep their share): from about 2.2 GB high, from about 1.5 GB medium, below that, or on
+ * a TV Android itself calls low-RAM, low. Near a boundary the per-app limit the maker set decides
+ * (192 MB or more: the upper tier). After a crash for want of memory the launcher steps one tier
+ * down by itself and keeps it ([stepDown]); "performance" in the settings ("high", "medium",
+ * "low") overrides it all.
+ */
 object LowRam {
+    const val LOW = 0
+    const val MEDIUM = 1
+    const val HIGH = 2
+
+    @Volatile var tier = HIGH
+        private set
+
+    /** Why this tier, for the settings and Home Assistant. */
+    @Volatile var reason = ""
+        private set
+
+    /** Below the high tier: the tighter budget. */
     @Volatile var on = false
         private set
 
-    /**
-     * Plainer graphics (panels without the landscape, the home screen's photos let go while it is
-     * hidden, the critters drawn at quarter size), for a TV whose graphics memory runs out. Only
-     * when asked for ("lite_graphics": true in the settings file): a 2 GB TV like the Sony AG8
-     * copes with the full look.
-     */
+    /** The low tier, or "lite_graphics": true: plainer graphics. */
     @Volatile var lite = false
         private set
+
+    fun name(t: Int = tier) = when (t) { HIGH -> "high"; MEDIUM -> "medium"; else -> "low" }
+
+    /** The tier from the hardware alone: RAM in GB, Android's low-RAM flag, the maker's per-app limit (MB). */
+    fun auto(gb: Double, lowRamDevice: Boolean, heapMb: Int): Int = when {
+        lowRamDevice -> LOW
+        gb >= 2.3 -> HIGH
+        gb >= 2.1 -> if (heapMb >= 192) HIGH else MEDIUM
+        gb >= 1.6 -> MEDIUM
+        gb >= 1.4 -> if (heapMb >= 192) MEDIUM else LOW
+        else -> LOW
+    }
 
     fun init(ctx: Context) {
         val am = ctx.getSystemService(Context.ACTIVITY_SERVICE) as android.app.ActivityManager
         val mi = android.app.ActivityManager.MemoryInfo()
         am.getMemoryInfo(mi)
-        on = am.isLowRamDevice || mi.totalMem < 3L * 1024 * 1024 * 1024
-        lite = ConfigStore.read(ctx).optBoolean("lite_graphics", false)
+        val gb = mi.totalMem / (1024.0 * 1024 * 1024)
+        val json = ConfigStore.read(ctx)
+        val p = Prefs.of(ctx)
+        val base = auto(gb, am.isLowRamDevice, am.memoryClass)
+        val down = p.getInt("tier_down", 0).coerceIn(0, 2)
+        val set = when (json.optString("performance", "auto")) { "high" -> HIGH; "medium" -> MEDIUM; "low" -> LOW; else -> -1 }
+        tier = if (set >= 0) set else (base - down).coerceAtLeast(LOW)
+        reason = when {
+            set >= 0 -> "set in the settings"
+            am.isLowRamDevice -> "Android calls it a low-RAM TV"
+            else -> String.format(java.util.Locale.ROOT, "%.1f GB RAM", gb)
+        } + if (set < 0 && down > 0) " · ${down} step${if (down > 1) "s" else ""} lower after ${p.getString("tier_down_why", "a crash")}" else ""
+        on = tier < HIGH
+        lite = tier == LOW || json.optBoolean("lite_graphics", false)
     }
 
-    /** Called from onTrimMemory. */
+    /**
+     * A crash for want of memory: one tier lower from now on (at most two steps), written down
+     * with [why]. Takes effect when the launcher next starts.
+     */
+    fun stepDown(ctx: Context, why: String) {
+        val p = Prefs.of(ctx)
+        val down = p.getInt("tier_down", 0)
+        if (down >= 2) return
+        val day = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.ROOT).format(java.util.Date())
+        p.edit().putInt("tier_down", down + 1).putString("tier_down_why", "$why ($day)").commit()
+    }
+
+    /**
+     * Android asks for memory back ([level] from onTrimMemory): what is not on screen goes first,
+     * more of it the harder Android asks. What is on screen stays.
+     */
     fun trim(level: Int) {
-        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN && (on || level >= android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW)) {
-            Reco.trim()
-            Backgrounds.trim()
+        when {
+            // in the background, or memory very short: every cache
+            level >= android.content.ComponentCallbacks2.TRIM_MEMORY_BACKGROUND ||
+                level == android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL -> {
+                Reco.trim()
+                Backgrounds.trim()
+                Apps.trim()
+                FocusGlide.trim()
+            }
+            // memory getting short while in front: the pictures not on screen
+            level == android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW -> {
+                Reco.trim()
+                Apps.trim()
+            }
+            level == android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_MODERATE && on -> Apps.trim()
         }
     }
 }

@@ -441,6 +441,15 @@ class SettingsActivity : PanelActivity() {
 
     // ---------- pages ----------
 
+    /** The tier's reason in Hungarian (LowRam.reason is English, for logs and Home Assistant). */
+    private fun tierReasonHu(): String = LowRam.reason
+        .replace("set in the settings", "kézzel beállítva")
+        .replace("Android calls it a low-RAM TV", "az Android kevés RAM-os tévének jelöli")
+        .replace(" GB RAM", " GB RAM").replace(Regex("(\\d)\\.(\\d) GB"), "$1,$2 GB")
+        .replace(Regex(" · (\\d) steps? lower after "), " · $1 szinttel lejjebb ezért: ")
+        .replace("running out of memory", "elfogyott a memória")
+        .replace("the graphics memory running out", "elfogyott a grafikus memória")
+
     private fun backgroundPage() {
         section("Language")
         add(SegmentRow(this, "Language", listOf("English", "Magyar"), if (Lang.hu) 1 else 0) { i ->
@@ -452,6 +461,17 @@ class SettingsActivity : PanelActivity() {
             }
         })
         note("The launcher's language. The TV's own menus follow the TV's language.")
+        section("Performance")
+        val perf = listOf("auto", "high", "medium", "low")
+        val chosen = perf.indexOf(ConfigStore.read(this).optString("performance", "auto")).coerceAtLeast(0)
+        add(SegmentRow(this, "Memory tier", listOf("Auto", "High", "Medium", "Low"), chosen) { i ->
+            if (i == chosen) return@SegmentRow
+            ConfigStore.edit(this) { it.put("performance", perf[i]) }
+            // the tier is read when the launcher starts: it starts again
+            Bg.main.postDelayed({ CrashLog.restartNow(this) }, 300)
+        })
+        note(if (Lang.hu) "Most: ${mapOf("high" to "erős", "medium" to "közepes", "low" to "gyenge")[LowRam.name()]} (${tierReasonHu()}). Automatikusan a tévé memóriájából; egy memóriahiba miatti összeomlás után a launcher magától lejjebb lép. Váltáskor újraindul."
+            else "Now: ${LowRam.name()} (${LowRam.reason}). Automatic from the TV's memory; after a crash for want of memory the launcher steps down by itself. It restarts when this is changed.")
         section("Design")
         add(SegmentRow(this, "Home screen", listOf("Standard", "Live"), if (cfg.design == "live") 1 else 0) { i ->
             ConfigStore.edit(this) { it.put("design", if (i == 1) "live" else "standard") }

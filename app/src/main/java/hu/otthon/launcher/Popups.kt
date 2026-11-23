@@ -162,6 +162,7 @@ class PopupService : Service() {
         super.onCreate()
         CrashLog.install(this)
         CrashLog.recover(this)
+        CrashLog.checkMemoryCrash(this)
         LowRam.init(this)
         closePopup = { main.post { hide(false) } }
         worker = HandlerThread("popups").apply { start() }

@@ -113,17 +113,58 @@ class HomeActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         CrashLog.install(this)
+        CrashLog.checkMemoryCrash(this)
         LowRam.init(this)
         LocalAdb.init(this)
         Config.load(this)
         builtHu = Lang.hu
         buildUi()
         Profile.listeners.add(onProfile)
+        try {
+            registerReceiver(screen, IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_SCREEN_ON)
+            })
+        } catch (e: Exception) { CrashLog.note(e) }
     }
 
     override fun onDestroy() {
         Profile.listeners.remove(onProfile)
+        try { unregisterReceiver(screen) } catch (e: Exception) { }
+        Bg.main.removeCallbacks(hiddenRelease)
         super.onDestroy()
+    }
+
+    // ---------- memory: the pictures let go of while nobody sees them ----------
+
+    /**
+     * The photos, the recommendations' pictures and the kept banners go: at once when the TV
+     * sleeps, three minutes after the home screen went behind another app (a quick look at the
+     * settings and back finds everything still there), or when Android asks for memory back.
+     * They come back as the home screen shows again, the photo fading in.
+     */
+    private fun releaseImages() {
+        backdrop.release()
+        reco.release()
+        if (kidsOn) kidsHome.reco.release()
+        Reco.trim()
+        Backgrounds.trim()
+        Apps.trim()
+        FocusGlide.trim()
+    }
+
+    private val hiddenRelease = Runnable { if (!resumed) releaseImages() }
+
+    private val screen = object : android.content.BroadcastReceiver() {
+        override fun onReceive(ctx: Context, intent: Intent) {
+            if (intent.action == Intent.ACTION_SCREEN_OFF) {
+                releaseImages()
+            } else if (resumed) {
+                // the screen back on with the home screen in front: the photo and the rows return
+                backdrop.show(cfg.background, Backgrounds.phase(this@HomeActivity, cfg), true)
+                loadReco()
+            }
+        }
     }
 
     // ---------- UI ----------
@@ -870,6 +911,8 @@ class HomeActivity : Activity() {
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
         LowRam.trim(level)
+        // in the background and Android wants memory: the pictures go now, not in three minutes
+        if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_BACKGROUND && !resumed) releaseImages()
     }
 
     /** The language the screen was built in: a change in Settings builds it again. */
@@ -920,10 +963,17 @@ class HomeActivity : Activity() {
         }
     }
 
+    override fun onStart() {
+        super.onStart()
+        Bg.main.removeCallbacks(hiddenRelease)
+    }
+
     override fun onStop() {
         super.onStop()
-        // another screen in front: on a weak TV the photos make room in the graphics memory
-        if (LowRam.lite) backdrop.release()
+        // another screen in front: a low-tier TV makes room in the graphics memory at once, the
+        // others after three minutes (see releaseImages)
+        Bg.main.removeCallbacks(hiddenRelease)
+        if (LowRam.lite) releaseImages() else Bg.main.postDelayed(hiddenRelease, 3 * 60_000L)
     }
 
     override fun onPause() {

@@ -60,4 +60,20 @@ class LogicTest {
         }
         assertEquals("Notifications", Lang.tr("Notifications"))
     }
+
+    @Test
+    fun memoryTiers() {
+        // the TCL reports 2.4 GB
+        assertEquals(LowRam.HIGH, LowRam.auto(2.34, false, 192))
+        // near a boundary the maker's per-app limit decides
+        assertEquals(LowRam.HIGH, LowRam.auto(2.15, false, 192))
+        assertEquals(LowRam.MEDIUM, LowRam.auto(2.15, false, 128))
+        // a 2 GB TV like the Sony
+        assertEquals(LowRam.MEDIUM, LowRam.auto(1.8, false, 192))
+        assertEquals(LowRam.MEDIUM, LowRam.auto(1.45, false, 256))
+        assertEquals(LowRam.LOW, LowRam.auto(1.45, false, 128))
+        assertEquals(LowRam.LOW, LowRam.auto(1.2, false, 256))
+        // Android's own low-RAM mark wins
+        assertEquals(LowRam.LOW, LowRam.auto(3.0, true, 512))
+    }
 }

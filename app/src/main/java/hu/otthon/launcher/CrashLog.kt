@@ -57,6 +57,49 @@ object CrashLog {
         restartLater()
     }
 
+    private val OOM = Regex("GL_OUT_OF_MEMORY|EGL_BAD_ALLOC|GL error: +Out of memory|java\\.lang\\.OutOfMemoryError")
+
+    /**
+     * Once per start of the main process (in the background): did the last one end for want of
+     * graphics memory (the driver ends the process outright, so only the system log tells)? Then
+     * the launcher steps one tier down. Each such crash counts once.
+     */
+    private var memoryChecked = false
+
+    fun checkMemoryCrash(ctx: Context) {
+        if (processName().contains(':')) return
+        synchronized(this) {
+            if (memoryChecked) return
+            memoryChecked = true
+        }
+        val app = ctx.applicationContext
+        Thread {
+            try {
+                val p = Prefs.of(app)
+                val seen = p.getLong("oom_seen_at", 0L)
+                val now = System.currentTimeMillis()
+                val proc = Runtime.getRuntime().exec(arrayOf("logcat", "-d", "-v", "time", "-t", "4000", "*:E"))
+                val lines = proc.inputStream.bufferedReader().readLines()
+                proc.waitFor()
+                val fmt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", java.util.Locale.ROOT)
+                val year = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+                var latest = 0L
+                for (l in lines) {
+                    if (!OOM.containsMatchIn(l)) continue
+                    var at = try { fmt.parse("$year-" + l.take(18))?.time ?: 0L } catch (e: Exception) { 0L }
+                    if (at > now + 86_400_000L) at = try { fmt.parse("${year - 1}-" + l.take(18))?.time ?: 0L } catch (e: Exception) { 0L }
+                    if (at > latest) latest = at
+                }
+                // a crash in the last half hour, not counted yet
+                if (latest > seen && now - latest < 30 * 60_000L) {
+                    p.edit().putLong("oom_seen_at", latest).commit()
+                    LowRam.stepDown(app, "the graphics memory running out")
+                    append("caught", "${stamp()}  ·  the last run ended for want of graphics memory: one memory tier lower from the next start (${LowRam.name()} now)")
+                }
+            } catch (e: Throwable) { }
+        }.start()
+    }
+
     /** Main-thread errors let through recently: too many in a row means the screen is broken. */
     private val recent = ArrayDeque<Long>()
 
@@ -70,6 +113,11 @@ object CrashLog {
                 val text = describe(t, e)
                 File(app.filesDir, "crash.txt").writeText(text)
                 append("CRASH", text)
+                // out of memory: one tier lower from the next start on
+                if (generateSequence(e) { it.cause }.any { it is OutOfMemoryError }) {
+                    LowRam.stepDown(app, "running out of memory")
+                    Prefs.of(app).edit().putLong("oom_seen_at", System.currentTimeMillis()).commit()
+                }
                 // the button service's process comes back by itself; the screens only when they were in front
                 if (front > 0 && !processName().contains(':')) {
                     // handled here: [recover] must not bring it back a second time
@@ -175,6 +223,21 @@ object CrashLog {
      * Starts the launcher again a moment after the crash: at most three times in ten minutes.
      * (On the TV whose home screen it is, Android also brings it back by itself.)
      */
+    /**
+     * Starts the launcher again on purpose (a setting that is read at start changed): not counted
+     * as a crash, and not against the restart allowance.
+     */
+    fun restartNow(ctx: Context) {
+        val a = ctx.applicationContext
+        Prefs.of(a).edit().putBoolean("front", false).commit()
+        val intent = android.content.Intent(a, HomeActivity::class.java)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        val pi = android.app.PendingIntent.getActivity(a, 8, intent, android.app.PendingIntent.FLAG_IMMUTABLE or android.app.PendingIntent.FLAG_UPDATE_CURRENT)
+        val am = a.getSystemService(Context.ALARM_SERVICE) as android.app.AlarmManager
+        am.set(android.app.AlarmManager.RTC, System.currentTimeMillis() + 800, pi)
+        android.os.Process.killProcess(android.os.Process.myPid())
+    }
+
     private fun restartLater() {
         val p = Prefs.of(app)
         val now = System.currentTimeMillis()
@@ -275,7 +338,7 @@ object CrashLog {
         val mi = android.app.ActivityManager.MemoryInfo().also { am.getMemoryInfo(it) }
         return "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL} · Android ${android.os.Build.VERSION.RELEASE} · " +
             "${m.widthPixels}x${m.heightPixels} ${m.densityDpi} dpi · RAM ${mi.totalMem / 1048576} MB, free ${mi.availMem / 1048576} MB · " +
-            "weak: ${LowRam.on}${if (LowRam.lite) " (lite)" else ""} · ${try { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName } catch (e: Exception) { "?" }}"
+            "tier: ${LowRam.name()} (${LowRam.reason})${if (LowRam.lite) " · lite" else ""} · ${try { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName } catch (e: Exception) { "?" }}"
     }
 
     private fun dialog(act: Activity, title: String, text: String) {
