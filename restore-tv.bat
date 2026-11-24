@@ -1,6 +1,7 @@
 @echo off
 rem Undoes everything that was switched off on the TV: the TCL / Google background apps,
-rem the TCL usage-data service (com.tcl.ttvs, also T-Cast), AirPlay, and Google TV home.
+rem the TCL usage-data service (com.tcl.ttvs, also T-Cast), AirPlay, the Sony Discover bar,
+rem Google Duo and Play Movies (Sony), and Google TV home.
 rem Afterwards the Home button opens Google TV home again.
 rem Nothing was uninstalled, so this only switches things back on.
 rem   restore-tv.bat                 -> TV at 192.168.2.175 (living room TCL)
@@ -65,6 +66,9 @@ for %%P in (
     com.mediatek.AirplayAPK
     com.mediatek.airplaydaemon
     com.tcl.ttvs
+    com.sony.dtv.discovery
+    com.google.android.apps.tachyon
+    com.google.android.videos
 ) do (
     "%ADB%" -s %TV% shell pm enable %%P 2>nul | findstr /c:"new state" >nul && echo   on: %%P
 )
