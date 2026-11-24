@@ -1,6 +1,7 @@
 @echo off
 rem Undoes everything that was switched off on the TV: the TCL / Google background apps,
-rem AirPlay, and Google TV home. Afterwards the Home button opens Google TV home again.
+rem the TCL usage-data service (com.tcl.ttvs, also T-Cast), AirPlay, and Google TV home.
+rem Afterwards the Home button opens Google TV home again.
 rem Nothing was uninstalled, so this only switches things back on.
 rem   restore-tv.bat                 -> TV at 192.168.2.175 (living room TCL)
 rem   restore-tv.bat 192.168.2.38    -> another TV
@@ -63,6 +64,7 @@ for %%P in (
     com.tcl.airplay2
     com.mediatek.AirplayAPK
     com.mediatek.airplaydaemon
+    com.tcl.ttvs
 ) do (
     "%ADB%" -s %TV% shell pm enable %%P 2>nul | findstr /c:"new state" >nul && echo   on: %%P
 )
