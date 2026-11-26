@@ -1220,7 +1220,15 @@ class SettingsActivity : PanelActivity() {
         section("Updates")
         updateRow()
         section("About")
-        row("Version", version)
+        // seven presses on the version: Répakaland, the bunny's game
+        var presses = 0
+        row("Version", version) {
+            presses++
+            when {
+                presses >= 7 -> { presses = 0; startActivity(Intent(this, BunnyGameActivity::class.java)) }
+                presses >= 4 -> toast("${7 - presses} more…")
+            }
+        }
         row("Source", "github.com/bhevesi2/bhevesiatvlauncher")
         row("Photos", "Unsplash")
         row("Settings file", "Android/data/$packageName/files/config.json")

@@ -169,7 +169,7 @@
             android:screenOrientation="landscape" />
 
         <activity
-            android:name=".CaveGameActivity"
+            android:name=".BunnyGameActivity"
             android:exported="false"
             android:screenOrientation="landscape" />
     </application>

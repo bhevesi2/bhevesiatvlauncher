@@ -606,10 +606,6 @@ class HomeActivity : Activity() {
             if (event.action == KeyEvent.ACTION_UP) closeFolder(true)
             return true
         }
-        // ▲ ▲ ▼ ▼ ◀ ▶ ◀ ▶: Kavics kalandja (the keys still move the focus as usual)
-        if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0 && secret(event.keyCode)) {
-            startActivity(android.content.Intent(this, CaveGameActivity::class.java))
-        }
         // the remote's colour buttons; when they work everywhere, KeyService has them already
         if (!(cfg.colorKeysEverywhere && KeyService.isOn(this)) && ColorKeys.handle(this, cfg, event)) return true
         // the gear button; KeyService has it when it runs
@@ -1391,23 +1387,6 @@ class HomeActivity : Activity() {
     }
 
     // ---------- moving a favourite (as on Google TV home) ----------
-
-    private val secretCode = intArrayOf(
-        KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_DPAD_DOWN,
-        KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT
-    )
-    private var secretAt = 0
-    private var secretTime = 0L
-
-    /** True when [code] finishes the secret sequence (each key within 1.5 s of the one before). */
-    private fun secret(code: Int): Boolean {
-        val now = android.os.SystemClock.uptimeMillis()
-        if (now - secretTime > 1500) secretAt = 0
-        secretTime = now
-        secretAt = if (code == secretCode[secretAt]) secretAt + 1 else if (code == secretCode[0]) 1 else 0
-        if (secretAt == secretCode.size) { secretAt = 0; return true }
-        return false
-    }
 
     private val moveArrows by lazy { MoveArrows(dp(10f).toFloat()) }
 

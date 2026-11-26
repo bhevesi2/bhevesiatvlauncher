@@ -138,13 +138,15 @@ launcher's preferences (`folders`) and move with the settings ([Carry]).
 Hold OK on a favourite › Move works as on Google TV home: the tile lifts and shows ◀ ▶, the arrows
 move it along the row, OK (or Back) puts it down and keeps the order.
 
-## Kavics kalandja (easter egg)
+## Répakaland (easter egg)
 
-▲ ▲ ▼ ▼ ◀ ▶ ◀ ▶ on the home screen opens a small platform game of the launcher's own: Kavics, a cave
-girl with a red ponytail, runs through three stone-age levels to the cave at their end, picks up
-amber, jumps on the lizards and throws pebbles at the hedgehogs. ◀ ▶ run, OK or ▲ jump (held:
-higher), ▼ throws, Back pauses. Drawn with shapes only (no pictures); the best score is kept
-(`cave_best`).
+Settings › About: press OK on the version number seven times. A small platform game of the
+launcher's own: the bunny of the home screen's little visitors hops through three levels to its
+burrow, throwing carrots (picked up on the way) at the foxes, the wolves and the bears. The bears
+carry a rifle and climb up and down their ladders; a fox or a wolf goes with one carrot or a jump
+on its head, a bear needs two. ◀ ▶ hop, OK or ▲ jump (held: higher), ▼ throws, Back pauses. The
+bunny and the bears are drawn by the same code as the visitors; the fox and the wolf in the same
+style. The best score is kept (`bunny_best`).
 
 ## Recommendations
 
