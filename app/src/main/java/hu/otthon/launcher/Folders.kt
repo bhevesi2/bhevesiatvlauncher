@@ -206,12 +206,7 @@ class FolderCallout(private val radius: Float, private val tail: Float, private 
     var left = 0f
     var right = 0f
     var tipX = 0f
-    private val fill = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = 0xE6111216.toInt() }
-    private val edge = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
-        color = 0x33FFFFFF
-        style = android.graphics.Paint.Style.STROKE
-        strokeWidth = 1.5f
-    }
+    private val fill = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = 0xA6111216.toInt() }
     private val soft = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
     private val path = android.graphics.Path()
 
@@ -237,7 +232,6 @@ class FolderCallout(private val radius: Float, private val tail: Float, private 
         }
         path.op(point, android.graphics.Path.Op.UNION)
         c.drawPath(path, fill)
-        c.drawPath(path, edge)
     }
 
     override fun setAlpha(alpha: Int) {}

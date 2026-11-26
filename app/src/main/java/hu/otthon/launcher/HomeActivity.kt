@@ -1363,8 +1363,8 @@ class HomeActivity : Activity() {
         val token = tile.tag as? String ?: return
         val folder = (tile as? FolderTile)?.folder
         val title = folder?.name ?: Apps.one(this, token)?.label ?: token
-        val items = if (folder != null) listOf("Open", "Move", "Rename", "Remove from favorites")
-            else listOf("Open", "Move", "Remove from favorites")
+        val items = if (folder != null) listOf("Move", "Rename", "Remove from favorites")
+            else listOf("Move", "Remove from favorites")
         Popup.menu(this, title, items) { which ->
             when (items[which]) {
                 "Open" -> tile.performClick()
