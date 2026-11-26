@@ -194,3 +194,53 @@ class MoveArrows(private val size: Float) : android.graphics.drawable.Drawable()
     @Deprecated("Deprecated in Java")
     override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
 }
+
+/**
+ * Behind a folder's row opened from the favourites: a dark panel with a soft shadow, and a point at
+ * its bottom edge over the folder's tile, so it is clear which tile the row came from.
+ * [left]/[right] are the panel's sides and [tipX] the middle of the folder's tile, in the view's
+ * own pixels; [tail] is the height of the point, kept free under the panel by the view's padding.
+ */
+class FolderCallout(private val radius: Float, private val tail: Float, private val shadow: Float) : android.graphics.drawable.Drawable() {
+    var left = 0f
+    var right = 0f
+    var tipX = 0f
+    private val fill = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = 0xE6111216.toInt() }
+    private val edge = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        color = 0x33FFFFFF
+        style = android.graphics.Paint.Style.STROKE
+        strokeWidth = 1.5f
+    }
+    private val soft = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+    private val path = android.graphics.Path()
+
+    override fun draw(c: android.graphics.Canvas) {
+        val b = bounds
+        if (right <= left) return
+        val top = b.top.toFloat() + shadow
+        val bottom = b.bottom - tail
+        // the shadow: a few wider, fainter outlines under the panel (no blur: cheap on a TV)
+        for (k in 3 downTo 1) {
+            val g = shadow * k / 3f
+            soft.color = android.graphics.Color.argb(26, 0, 0, 0)
+            c.drawRoundRect(left - g, top - g + shadow / 2, right + g, bottom + g + shadow / 2, radius + g, radius + g, soft)
+        }
+        val tip = tipX.coerceIn(left + radius + tail, right - radius - tail)
+        path.reset()
+        path.addRoundRect(left, top, right, bottom, radius, radius, android.graphics.Path.Direction.CW)
+        val point = android.graphics.Path().apply {
+            moveTo(tip - tail, bottom - 1f)
+            lineTo(tip, bottom + tail)
+            lineTo(tip + tail, bottom - 1f)
+            close()
+        }
+        path.op(point, android.graphics.Path.Op.UNION)
+        c.drawPath(path, fill)
+        c.drawPath(path, edge)
+    }
+
+    override fun setAlpha(alpha: Int) {}
+    override fun setColorFilter(colorFilter: android.graphics.ColorFilter?) {}
+    @Deprecated("Deprecated in Java")
+    override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
+}

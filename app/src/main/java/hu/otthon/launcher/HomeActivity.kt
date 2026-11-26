@@ -232,9 +232,13 @@ class HomeActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             clipChildren = false
             visibility = View.GONE
+            // the panel behind the row, its point over the folder's tile
+            background = folderCallout
+            setPadding(0, dp(14f), 0, dp(12f))
+            addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> placeCallout() }
         }
         folderTitle = label("", 12f, C.TEXT, bold = true)
-        folderBox.addView(folderTitle, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = side })
+        folderBox.addView(folderTitle, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = side; topMargin = dp(4f) })
         val folderScroll = RowScroller(this)
         folderScroll.setPadding(side, dp(9f), side, dp(4f))
         folderRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; clipChildren = false }
@@ -1463,6 +1467,7 @@ class HomeActivity : Activity() {
         }
         folderOpen = tile
         folderBox.visibility = View.VISIBLE
+        folderBox.post { placeCallout() }
         if (Motion.level != Motion.OFF) {
             folderBox.alpha = 0f
             folderBox.translationY = dp(12f).toFloat()
@@ -1470,6 +1475,27 @@ class HomeActivity : Activity() {
                 .setInterpolator(android.view.animation.DecelerateInterpolator(2f)).start()
         }
         folderRow.getChildAt(0)?.takeIf { it.isFocusable }?.requestFocus()
+    }
+
+    private val folderCallout by lazy { FolderCallout(dp(Look.R_PANEL).toFloat(), dp(9f).toFloat(), dp(5f).toFloat()) }
+
+    /** The panel as wide as the folder's apps (within the screen), its point over the folder's tile. */
+    private fun placeCallout() {
+        val tile = folderOpen ?: return
+        val side = dp(48f).toFloat()
+        val pad = dp(14f).toFloat()
+        val rowW = folderRow.width.toFloat().coerceAtLeast(folderTitle.width.toFloat())
+        val c = folderCallout
+        c.left = side - pad
+        c.right = minOf(folderBox.width - side + pad, side + rowW + pad)
+        val at = IntArray(2)
+        val box = IntArray(2)
+        tile.getLocationInWindow(at)
+        folderBox.getLocationInWindow(box)
+        c.tipX = (at[0] - box[0]) + tile.width / 2f
+        // a point past the panel's end: the panel reaches over to the tile instead
+        if (c.tipX > c.right - dp(24f)) c.right = minOf(folderBox.width - side + pad, c.tipX + dp(40f))
+        folderBox.invalidate()
     }
 
     /** The folder's row goes; with [refocus] the folder's own tile gets the focus back. */
