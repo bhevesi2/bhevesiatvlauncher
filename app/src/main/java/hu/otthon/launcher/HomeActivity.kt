@@ -1477,24 +1477,19 @@ class HomeActivity : Activity() {
         folderRow.getChildAt(0)?.takeIf { it.isFocusable }?.requestFocus()
     }
 
-    private val folderCallout by lazy { FolderCallout(dp(Look.R_PANEL).toFloat(), dp(9f).toFloat(), dp(5f).toFloat()) }
+    private val folderCallout by lazy { FolderCallout(0f, dp(9f).toFloat(), dp(5f).toFloat()) }
 
-    /** The panel as wide as the folder's apps (within the screen), its point over the folder's tile. */
+    /** A band across the whole screen, its point over the folder's tile. */
     private fun placeCallout() {
         val tile = folderOpen ?: return
-        val side = dp(48f).toFloat()
-        val pad = dp(14f).toFloat()
-        val rowW = folderRow.width.toFloat().coerceAtLeast(folderTitle.width.toFloat())
         val c = folderCallout
-        c.left = side - pad
-        c.right = minOf(folderBox.width - side + pad, side + rowW + pad)
+        c.left = 0f
+        c.right = folderBox.width.toFloat()
         val at = IntArray(2)
         val box = IntArray(2)
         tile.getLocationInWindow(at)
         folderBox.getLocationInWindow(box)
         c.tipX = (at[0] - box[0]) + tile.width / 2f
-        // a point past the panel's end: the panel reaches over to the tile instead
-        if (c.tipX > c.right - dp(24f)) c.right = minOf(folderBox.width - side + pad, c.tipX + dp(40f))
         folderBox.invalidate()
     }
 

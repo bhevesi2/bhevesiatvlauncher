@@ -196,8 +196,9 @@ class MoveArrows(private val size: Float) : android.graphics.drawable.Drawable()
 }
 
 /**
- * Behind a folder's row opened from the favourites: a dark panel with a soft shadow, and a point at
- * its bottom edge over the folder's tile, so it is clear which tile the row came from.
+ * Behind a folder's row opened from the favourites: a dark band across the screen with a soft
+ * shadow, and a point at its bottom edge over the folder's tile, so it is clear which tile the row
+ * came from.
  * [left]/[right] are the panel's sides and [tipX] the middle of the folder's tile, in the view's
  * own pixels; [tail] is the height of the point, kept free under the panel by the view's padding.
  */
