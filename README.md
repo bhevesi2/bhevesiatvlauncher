@@ -126,6 +126,18 @@ zone shows it large on the left with previous / play-pause / next, which the rem
 keys also control; OK on a zone puts it on the home screen card. The card only shows while its
 zone is playing or paused; the panel is also under Settings › Home screen › Music zones.
 
+## Folders and moving favourites
+
+On the All apps screen, Hold OK on an app › Add to folder puts it into a folder (an existing one or
+a new one, named on the TV's keyboard). Folders come first on that screen; an app in a folder is
+listed only inside it (OK on the folder opens it, Back returns). Hold OK on a folder: add it to the
+favourites, rename it, delete it (its apps stay). On the favourites row a folder opens its apps in a
+row just above the favourites; Back, or leaving that row, closes it. Folders are kept in the
+launcher's preferences (`folders`) and move with the settings ([Carry]).
+
+Hold OK on a favourite › Move works as on Google TV home: the tile lifts and shows ◀ ▶, the arrows
+move it along the row, OK (or Back) puts it down and keeps the order.
+
 ## Recommendations
 
 Down on the bottom row of the home screen slides the page up: the bottom row stays at the top and

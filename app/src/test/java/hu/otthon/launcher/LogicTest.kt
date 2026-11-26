@@ -104,4 +104,26 @@ class LogicTest {
         assertNull(AutoOff.parse("unknown"))
         assertNull(AutoOff.parse("x|sensor.x|auto_off"))
     }
+
+    @Test
+    fun folders() {
+        var list = listOf(Folders.Folder("a", "Sport", listOf("p1")), Folders.Folder("b", "Kids", emptyList()))
+        // an app is in one folder at most
+        list = Folders.withApp(list, "b", "p1")
+        assertEquals(emptyList<String>(), list[0].apps)
+        assertEquals(listOf("p1"), list[1].apps)
+        assertEquals("b", Folders.folderOf(list, "p1")!!.id)
+        list = Folders.without(list, "p1")
+        assertNull(Folders.folderOf(list, "p1"))
+        // stored and read back
+        val back = Folders.parse(Folders.toJson(Folders.withApp(list, "a", "p2")))
+        assertEquals(listOf("p2"), back[0].apps)
+        assertEquals("Kids", back[1].name)
+        assertEquals(emptyList<Folders.Folder>(), Folders.parse("not json"))
+        // names and ids that are not taken
+        assertEquals("Folder 1", Folders.nextName(emptyList(), "Folder"))
+        assertEquals("Folder 2", Folders.nextName(listOf(Folders.Folder("x", "Folder 1", emptyList())), "Folder"))
+        assertEquals("folder:a", Folders.token("a"))
+        assertEquals("a", Folders.idOf("folder:a"))
+    }
 }

@@ -34,6 +34,14 @@ class HomeActivity : Activity() {
     private lateinit var chipsRow: LinearLayout
     private lateinit var favScroll: RowScroller
     private lateinit var favRow: LinearLayout
+    /** A folder from the favourites, opened: its apps in a row just above the favourites. */
+    private lateinit var folderBox: LinearLayout
+    private lateinit var folderTitle: android.widget.TextView
+    private lateinit var folderRow: LinearLayout
+    private var folderOpen: View? = null
+    /** The favourite being moved (Hold OK › Move), as on Google TV home: ◀ ▶ moves it, OK puts it down. */
+    private var moving: View? = null
+    private var swallowUp = -1
     private lateinit var bottom: LinearLayout
     private lateinit var rootView: FrameLayout
 
@@ -220,6 +228,20 @@ class HomeActivity : Activity() {
 
         content.addView(View(this), LinearLayout.LayoutParams(1, 0, 1f))
 
+        folderBox = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            clipChildren = false
+            visibility = View.GONE
+        }
+        folderTitle = label("", 12f, C.TEXT, bold = true)
+        folderBox.addView(folderTitle, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = side })
+        val folderScroll = RowScroller(this)
+        folderScroll.setPadding(side, dp(9f), side, dp(4f))
+        folderRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; clipChildren = false }
+        folderScroll.addView(folderRow, FrameLayout.LayoutParams(-2, dp(76f)))
+        folderBox.addView(folderScroll, LinearLayout.LayoutParams(-1, -2))
+        content.addView(folderBox, LinearLayout.LayoutParams(-1, -2))
+
         favScroll = RowScroller(this)
         favScroll.setPadding(side, dp(9f), side, dp(9f))
         favRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; clipChildren = false }
@@ -309,6 +331,8 @@ class HomeActivity : Activity() {
         page.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> placeReco() }
         window.decorView.viewTreeObserver.addOnGlobalFocusChangeListener { _, now ->
             if (now == null) return@addOnGlobalFocusChangeListener
+            // an open folder closes when the focus leaves its row (Down to the favourites, Up)
+            if (folderOpen != null && !isInside(now, folderBox)) closeFolder(false)
             if (expanded && isInside(now, content)) collapse(false)
             if (!expanded && isInside(now, bottom)) lastBottomFocus = now
             if (!expanded) showMoreHint()
@@ -483,7 +507,7 @@ class HomeActivity : Activity() {
             if (!expanded) loadReco()
         } else if (cfg.recommendations && !kidsOn && Reco.allowed(this) && TvState.state(this) != "watching") {
             val app = applicationContext
-            val order = FavStore.get(this, cfg)
+            val order = FavStore.apps(this, cfg)
             val hidden = cfg.recoHidden
             val watchNext = cfg.recoWatchNext
             val custom = cfg.recoOrder
@@ -504,7 +528,7 @@ class HomeActivity : Activity() {
             if (liveTiles.isNotEmpty() && Reco.allowed(this) && !recoLoading) {
                 recoLoading = true
                 val app = applicationContext
-                val order = FavStore.get(this, cfg)
+                val order = FavStore.apps(this, cfg)
                 Bg.run({ Reco.load(app, order, cfg.recoHidden, true, emptyList()) }) { rows ->
                     recoLoading = false
                     if (!rows.isNullOrEmpty()) feedLive(rows)
@@ -521,7 +545,7 @@ class HomeActivity : Activity() {
         if (recoLoading) return
         recoLoading = true
         val app = applicationContext
-        val order = FavStore.get(this, cfg)
+        val order = FavStore.apps(this, cfg)
         val hidden = cfg.recoHidden
         val watchNext = cfg.recoWatchNext
         val custom = cfg.recoOrder
@@ -551,6 +575,32 @@ class HomeActivity : Activity() {
         if (kidsOn) {
             // the kids screen: no colour buttons, no recommendations page, Back does nothing
             return super.dispatchKeyEvent(event)
+        }
+        // the release of the button that put a favourite down: not a click on it
+        if (swallowUp >= 0 && event.keyCode == swallowUp) {
+            if (event.action == KeyEvent.ACTION_UP) swallowUp = -1
+            return true
+        }
+        // moving a favourite: ◀ ▶ move it, OK / Back put it down, nothing else
+        if (moving != null) {
+            val k = event.keyCode
+            if (k == KeyEvent.KEYCODE_DPAD_LEFT || k == KeyEvent.KEYCODE_DPAD_RIGHT || k == KeyEvent.KEYCODE_DPAD_UP ||
+                k == KeyEvent.KEYCODE_DPAD_DOWN || k == KeyEvent.KEYCODE_DPAD_CENTER || k == KeyEvent.KEYCODE_ENTER ||
+                k == KeyEvent.KEYCODE_BACK || k == KeyEvent.KEYCODE_NUMPAD_ENTER
+            ) {
+                if (event.action == KeyEvent.ACTION_DOWN) when (k) {
+                    KeyEvent.KEYCODE_DPAD_LEFT -> shift(-1)
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> shift(1)
+                    KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> { }
+                    else -> if (event.repeatCount == 0) { endMove(); swallowUp = k }
+                }
+                return true
+            }
+        }
+        // an open folder: Back closes it
+        if (folderOpen != null && event.keyCode == KeyEvent.KEYCODE_BACK) {
+            if (event.action == KeyEvent.ACTION_UP) closeFolder(true)
+            return true
         }
         // the remote's colour buttons; when they work everywhere, KeyService has them already
         if (!(cfg.colorKeysEverywhere && KeyService.isOn(this)) && ColorKeys.handle(this, cfg, event)) return true
@@ -713,11 +763,24 @@ class HomeActivity : Activity() {
         val tileW = (resources.displayMetrics.widthPixels - 2 * dp(48f) - 5 * dp(12f)) / 6
         // Live: taller tiles (about 4:3), so a recommendation's picture has room
         favRow.layoutParams = favRow.layoutParams.apply { height = if (live) tileW * 3 / 4 else dp(76f) }
-        val entries = FavStore.get(this, cfg).mapNotNull { Apps.one(this, it) }
-        entries.forEachIndexed { i, app ->
-            val tile: View = if (live) LiveTile(this, app).also { liveTiles.add(it) } else AppTile(this, app)
-            tile.setOnClickListener { if (!Apps.launch(this, app.pkg)) toast("Can't open ${app.label}") }
-            tile.setOnLongClickListener { favMenu(app); true }
+        closeFolder(false)
+        moving = null
+        // apps and folders, in the favourites' order; an app no longer installed is left out
+        val entries: List<View> = FavStore.get(this, cfg).mapNotNull { token ->
+            if (Folders.isToken(token)) {
+                val f = Folders.get(this, Folders.idOf(token)) ?: return@mapNotNull null
+                FolderTile(this, f, Folders.apps(this, f)).apply {
+                    setOnClickListener { openFolder(this) }
+                }
+            } else {
+                val app = Apps.one(this, token) ?: return@mapNotNull null
+                val tile: View = if (live) LiveTile(this, app).also { liveTiles.add(it) } else AppTile(this, app)
+                tile.setOnClickListener { if (!Apps.launch(this, app.pkg)) toast("Can't open ${app.label}") }
+                tile
+            }.also { it.tag = token }
+        }
+        entries.forEachIndexed { i, tile ->
+            tile.setOnLongClickListener { favMenu(tile); true }
             val lp = LinearLayout.LayoutParams(tileW, ViewGroup.LayoutParams.MATCH_PARENT)
             if (i > 0) lp.leftMargin = dp(12f)
             favRow.addView(tile, lp)
@@ -920,7 +983,8 @@ class HomeActivity : Activity() {
             if (kids) collapse(false)
             hint.visibility = View.INVISIBLE
         }
-        val sig = kids.toString() + cfg.toString() + FavStore.get(this, cfg).joinToString() + Inputs.all(this).size
+        val sig = kids.toString() + cfg.toString() + FavStore.get(this, cfg).joinToString() + Inputs.all(this).size +
+            (Prefs.of(this).getString("folders", "") ?: "")
         if (sig != signature) {
             signature = sig
             rebuildDynamic(focusFav)
@@ -991,6 +1055,9 @@ class HomeActivity : Activity() {
 
     override fun onPause() {
         super.onPause()
+        // another app in front: a favourite being moved is put down where it is, a folder closes
+        endMove()
+        closeFolder(false)
         CrashLog.left(this)
         resumed = false
         critters?.paused = true
@@ -1029,8 +1096,7 @@ class HomeActivity : Activity() {
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
         if (keyCode == KeyEvent.KEYCODE_MENU && !kidsOn) {
-            (currentFocus as? AppTile)?.let { favMenu(it.app); return true }
-            (currentFocus as? LiveTile)?.let { favMenu(it.app); return true }
+            currentFocus?.takeIf { it.parent === favRow && it.tag is String }?.let { favMenu(it); return true }
         }
         return super.onKeyDown(keyCode, event)
     }
@@ -1289,21 +1355,131 @@ class HomeActivity : Activity() {
 
     // ---------- favourites ----------
 
-    private fun favMenu(app: AppEntry) {
-        val favs = FavStore.get(this, cfg)
-        val idx = favs.indexOf(app.pkg)
-        if (idx < 0) return
-        Popup.menu(this, app.label, listOf("Move left", "Move right", "Remove from favorites")) { which ->
-            when (which) {
-                0 -> if (idx > 0) { favs.removeAt(idx); favs.add(idx - 1, app.pkg) }
-                1 -> if (idx < favs.size - 1) { favs.removeAt(idx); favs.add(idx + 1, app.pkg) }
-                2 -> favs.removeAt(idx)
+    private fun favMenu(tile: View) {
+        val token = tile.tag as? String ?: return
+        val folder = (tile as? FolderTile)?.folder
+        val title = folder?.name ?: Apps.one(this, token)?.label ?: token
+        val items = if (folder != null) listOf("Open", "Move", "Rename", "Remove from favorites")
+            else listOf("Open", "Move", "Remove from favorites")
+        Popup.menu(this, title, items) { which ->
+            when (items[which]) {
+                "Open" -> tile.performClick()
+                "Move" -> startMove(tile)
+                "Rename" -> Popup.text(this, "Rename", folder!!.name, "Name of the folder") { name ->
+                    Folders.rename(this, folder.id, name)
+                    signature = ""
+                    reload(favRow.indexOfChild(tile).coerceAtLeast(0))
+                }
+                "Remove from favorites" -> {
+                    val favs = FavStore.get(this, cfg)
+                    val at = favRow.indexOfChild(tile)
+                    favs.remove(token)
+                    FavStore.set(this, favs)
+                    signature = ""
+                    reload((at - 1).coerceAtLeast(0))
+                }
             }
-            FavStore.set(this, favs)
-            signature = ""
-            val shown = favs.mapNotNull { Apps.one(this, it) }.map { it.pkg }
-            reload(shown.indexOf(app.pkg).coerceAtLeast(0))
         }
+    }
+
+    // ---------- moving a favourite (as on Google TV home) ----------
+
+    private val moveArrows by lazy { MoveArrows(dp(10f).toFloat()) }
+
+    private fun startMove(tile: View) {
+        if (favRow.childCount < 2) return
+        moving = tile
+        tile.requestFocus()
+        tile.foreground = moveArrows
+        tile.animate().translationY(-dp(6f).toFloat()).setDuration(150).start()
+        toast("◀ ▶ to move, OK when done")
+    }
+
+    /** One step to the left or the right: the neighbour slides over to the other side. */
+    private fun shift(dir: Int) {
+        val tile = moving ?: return
+        val i = favRow.indexOfChild(tile)
+        val j = i + dir
+        if (i < 0 || j < 0 || j >= favRow.childCount) return
+        val other = favRow.getChildAt(j)
+        if (other.tag !is String) return
+        // the tile that has the focus stays where it is in the hierarchy; the neighbour moves
+        favRow.removeViewAt(j)
+        favRow.addView(other, i)
+        for (k in 0 until favRow.childCount) {
+            val lp = favRow.getChildAt(k).layoutParams as LinearLayout.LayoutParams
+            lp.leftMargin = if (k == 0) 0 else dp(12f)
+        }
+        favRow.requestLayout()
+        val step = (tile.width + dp(12f)).toFloat()
+        if (Motion.level != Motion.OFF) {
+            other.translationX = dir * step
+            other.animate().translationX(0f).setDuration(180).setInterpolator(android.view.animation.DecelerateInterpolator(2f)).start()
+            tile.translationX = -dir * step
+            tile.animate().translationX(0f).setDuration(180).setInterpolator(android.view.animation.DecelerateInterpolator(2f)).start()
+        }
+        tile.post { tile.requestRectangleOnScreen(android.graphics.Rect(0, 0, tile.width, tile.height)) }
+    }
+
+    /** OK or Back: the favourite is put down and the new order kept. */
+    private fun endMove() {
+        val tile = moving ?: return
+        moving = null
+        tile.foreground = null
+        tile.animate().translationY(0f).setDuration(150).start()
+        val shown = (0 until favRow.childCount).mapNotNull { favRow.getChildAt(it).tag as? String }
+        // what is not on the row (an app not installed now) keeps its place at the end
+        val rest = FavStore.get(this, cfg).filter { it !in shown }
+        FavStore.set(this, shown + rest)
+    }
+
+    // ---------- a folder on the favourites row ----------
+
+    private fun openFolder(tile: FolderTile) {
+        if (folderOpen === tile) { closeFolder(true); return }
+        val f = Folders.get(this, tile.folder.id) ?: return
+        val apps = Folders.apps(this, f)
+        folderRow.removeAllViews()
+        folderTitle.text = f.name
+        val tileW = favRow.getChildAt(0)?.width?.takeIf { it > 0 } ?: dp(140f)
+        apps.forEachIndexed { i, app ->
+            val t = AppTile(this, app)
+            t.setOnClickListener { if (!Apps.launch(this, app.pkg)) toast("Can't open ${app.label}") }
+            t.setOnLongClickListener {
+                Popup.menu(this, app.label, listOf("Open", "Take out of the folder")) { which ->
+                    if (which == 0) Apps.launch(this, app.pkg) else {
+                        Folders.remove(this, app.pkg)
+                        signature = ""
+                        reload(favRow.indexOfChild(tile).coerceAtLeast(0))
+                    }
+                }
+                true
+            }
+            folderRow.addView(t, LinearLayout.LayoutParams(tileW, dp(76f)).apply { if (i > 0) leftMargin = dp(12f) })
+        }
+        if (apps.isEmpty()) {
+            folderRow.addView(label("Empty folder: add apps on the All apps screen (Hold OK on an app)", 11f, C.TEXT2),
+                LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.CENTER_VERTICAL })
+        }
+        folderOpen = tile
+        folderBox.visibility = View.VISIBLE
+        if (Motion.level != Motion.OFF) {
+            folderBox.alpha = 0f
+            folderBox.translationY = dp(12f).toFloat()
+            folderBox.animate().alpha(1f).translationY(0f).setDuration(200)
+                .setInterpolator(android.view.animation.DecelerateInterpolator(2f)).start()
+        }
+        folderRow.getChildAt(0)?.takeIf { it.isFocusable }?.requestFocus()
+    }
+
+    /** The folder's row goes; with [refocus] the folder's own tile gets the focus back. */
+    private fun closeFolder(refocus: Boolean) {
+        val tile = folderOpen ?: return
+        folderOpen = null
+        folderBox.animate().cancel()
+        folderBox.visibility = View.GONE
+        folderRow.removeAllViews()
+        if (refocus && tile.parent === favRow) tile.requestFocus()
     }
 
     private fun toast(msg: String) = Toast.makeText(this, Lang.tr(msg), Toast.LENGTH_SHORT).show()

@@ -585,6 +585,14 @@ object FavStore {
     fun reset(ctx: Context) {
         Prefs.of(ctx).edit().remove(KEY).apply()
     }
+
+    /** The favourites' apps, a folder's apps in its place (for the order of the recommendations). */
+    fun apps(ctx: Context, cfg: Config): List<String> {
+        val folders = Folders.all(ctx)
+        return get(ctx, cfg).flatMap { t ->
+            if (Folders.isToken(t)) folders.firstOrNull { it.id == Folders.idOf(t) }?.apps ?: emptyList() else listOf(t)
+        }.distinct()
+    }
 }
 
 /**

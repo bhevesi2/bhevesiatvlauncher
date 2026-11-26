@@ -529,7 +529,7 @@ class SettingsActivity : PanelActivity() {
         val favs = FavStore.get(this, cfg)
         val last = favs.size - 1
         favs.forEachIndexed { i, pkg ->
-            val name = Apps.one(this, pkg)?.label ?: pkg
+            val name = Apps.one(this, pkg)?.label ?: Folders.get(this, Folders.idOf(pkg))?.let { "▣ " + it.name } ?: pkg
             fun move(to: Int) = change(moveTo = "fav:$to") {
                 favs.removeAt(i)
                 favs.add(to, pkg)
