@@ -89,4 +89,19 @@ class LogicTest {
         assertEquals(RecoDisk.hash("https://x/a.jpg"), RecoDisk.hash("https://x/a.jpg"))
         assertEquals(40, RecoDisk.hash("https://x/a.jpg").length)
     }
+
+    @Test
+    fun autoOffCommands() {
+        val c = AutoOff.parse("1795725209|sensor.living_room_tv_launcher|auto_off|60")!!
+        assertEquals(1795725209L, c.id)
+        assertEquals("sensor.living_room_tv_launcher", c.target)
+        assertEquals("auto_off", c.command)
+        assertEquals(60, c.seconds)
+        assertEquals("cancel", AutoOff.parse("1795725300|sensor.x_launcher|cancel")!!.command)
+        assertEquals(60, AutoOff.parse("1|sensor.x|auto_off")!!.seconds)
+        assertEquals(10, AutoOff.parse("1|sensor.x|auto_off|2")!!.seconds)
+        assertNull(AutoOff.parse(""))
+        assertNull(AutoOff.parse("unknown"))
+        assertNull(AutoOff.parse("x|sensor.x|auto_off"))
+    }
 }

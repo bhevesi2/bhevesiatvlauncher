@@ -105,6 +105,20 @@ class HaClient(private val base: String, private val token: String) {
         }
     }
 
+    /** Fires an event on Home Assistant's event bus (POST /api/events/<type>). */
+    fun fireEvent(type: String, data: JSONObject) {
+        val c = open("/api/events/$type")
+        try {
+            c.requestMethod = "POST"
+            c.doOutput = true
+            c.outputStream.use { it.write(data.toString().toByteArray()) }
+            val code = c.responseCode
+            if (code !in 200..299) throw IllegalStateException("HTTP $code")
+        } finally {
+            c.disconnect()
+        }
+    }
+
     /**
      * Sets the state of an entity of the launcher's own (POST /api/states): Home Assistant shows
      * it like any sensor until it restarts, so it is sent again now and then.

@@ -488,6 +488,16 @@ After an update the launcher has the system compile it ahead of time
 the APK does the same on its own over time), and starts again with the compiled code the next
 time the TV goes to sleep.
 
+## "Nobody in the room" warning
+
+Before Home Assistant switches a TV off because the room looks empty, it writes
+`id|target|auto_off|seconds` to the helper `input_text.tv_command` (`target`: the TV's state
+sensor, e.g. `sensor.living_room_tv_launcher`; `id`: the time in seconds). The launcher shows a
+countdown at the top of the screen; any button on the remote keeps the TV on: the key is used up
+and Home Assistant gets the event `otthon_tv_keep_on` (`{"entity": target}`).
+`id|target|cancel` takes the warning away (someone walked in). The Home Assistant script
+"Living room TV auto off with warning" does this and switches the TV off when nobody answers.
+
 ## Making it the default home app
 
 Settings › Home screen › Home button opens. Android TV only allows this over ADB, so the launcher

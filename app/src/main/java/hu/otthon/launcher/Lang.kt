@@ -470,6 +470,9 @@ object Lang {
         "Teach the Broadlink the amplifier's buttons" to "Az erősítő gombjainak betanítása a Broadlinknek",
         "Test" to "Próba",
         "Test notification" to "Próbaértesítés",
+        "Nobody seems to be in the room" to "Úgy tűnik, senki sincs a szobában",
+        "Press any button to keep it on" to "Nyomj meg egy gombot, és bekapcsolva marad",
+        "The TV stays on" to "A tévé bekapcsolva marad",
         "Text helper" to "Szöveges segéd",
         "That one is not for now 🙈" to "Ez most nem jöhet 🙈",
         "That's all for today!" to "Mára ennyi volt!",
@@ -608,6 +611,7 @@ object Lang {
     /** Texts with something in them: whole-text patterns, the parts in brackets kept. */
     private val rules: List<Pair<Regex, (List<String>) -> String>> = listOf(
         Regex("(\\d+) apps") to { g -> "${g[1]} app" },
+        Regex("The TV switches off in (\\d+) s") to { g -> "A tévé ${g[1]} mp múlva kikapcsol" },
         Regex("(\\d+) of (\\d+) on") to { g -> "${g[1]} / ${g[2]} bekapcsolva" },
         Regex("On · (\\d+)%") to { g -> "Be · ${g[1]}%" },
         Regex("Detections · (.+)") to { g -> "Észlelések · ${g[1]}" },

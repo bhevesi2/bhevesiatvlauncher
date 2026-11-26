@@ -383,6 +383,7 @@ class KeyService : AccessibilityService() {
             eventTypes = AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
         }
         try { registerReceiver(screenOff, android.content.IntentFilter(android.content.Intent.ACTION_SCREEN_OFF)) } catch (e: Exception) { }
+        AutoOff.listen(this)
         volumeWatch.start()
         handler.postDelayed(tick, 30_000L)
         config()?.let { Profile.checkBoot(this, it) }
@@ -393,6 +394,7 @@ class KeyService : AccessibilityService() {
         handler.removeCallbacks(tick)
         try { unregisterReceiver(screenOff) } catch (e: Exception) { }
         volumeWatch.stop()
+        AutoOff.stop(this)
         super.onDestroy()
     }
 
@@ -420,6 +422,8 @@ class KeyService : AccessibilityService() {
     override fun onInterrupt() {}
 
     override fun onKeyEvent(event: KeyEvent): Boolean {
+        // Home Assistant's "nobody here" warning is on screen: any button keeps the TV on
+        if (AutoOff.key(this, event)) return true
         if (SettingsKey.isKey(event.keyCode)) {
             val c = config() ?: return false
             if (event.action == KeyEvent.ACTION_DOWN) android.util.Log.i("OtthonQuick", "gear seen by the button service, mode ${c.settingsKey}")

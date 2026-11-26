@@ -114,6 +114,16 @@ class PopupService : Service() {
         private const val FRONT = "front"
 
         /** The button service saw another app come to the front: passed on to Home Assistant. */
+        private const val KEEP_ON = "keep_on"
+
+        /** From the button service: a button was pressed during the "nobody here" warning. */
+        fun keepOn(ctx: Context) {
+            val i = Intent(ctx, PopupService::class.java).putExtra(KEEP_ON, true)
+            try {
+                if (Build.VERSION.SDK_INT >= 26) ctx.startForegroundService(i) else ctx.startService(i)
+            } catch (e: Exception) { }
+        }
+
         fun front(ctx: Context, pkg: String) {
             val i = Intent(ctx, PopupService::class.java).putExtra(FRONT, pkg)
             try {
@@ -183,7 +193,10 @@ class PopupService : Service() {
     private val dreams = object : android.content.BroadcastReceiver() {
         override fun onReceive(ctx: Context, intent: Intent) {
             // asleep: a launcher compiled after an update starts again with the compiled code
-            if (intent.action == Intent.ACTION_SCREEN_OFF) Precompile.restartIfPending(this@PopupService)
+            if (intent.action == Intent.ACTION_SCREEN_OFF) {
+                main.post { hideWarning() }
+                Precompile.restartIfPending(this@PopupService)
+            }
             TvState.dreaming = intent.action == Intent.ACTION_DREAMING_STARTED
             val c = cfg
             val api = client
@@ -205,11 +218,13 @@ class PopupService : Service() {
         }
         val quickAsked = intent?.getBooleanExtra(QUICK, false) == true
         if (quickAsked) main.post { QuickPanel.toggle(this) }
+        if (intent?.getBooleanExtra(KEEP_ON, false) == true) main.post { keptOn() }
         val noteTest = intent?.getBooleanExtra(NOTE_TEST, false) == true
         if (noteTest) main.post { showNote(Note("bell", "info", "Test notification", "This is how Home Assistant's messages look on this TV.")) }
         val c = cfg
         if (c == null || !needed(c)) {
-            if (intent?.getStringExtra(TEST) == null && intent?.getStringExtra(CAMERA) == null && !noteTest && !quickAsked && intent?.getStringExtra(FRONT) == null) stopSelf()
+            if (intent?.getStringExtra(TEST) == null && intent?.getStringExtra(CAMERA) == null && !noteTest && !quickAsked && intent?.getStringExtra(FRONT) == null &&
+                intent?.getBooleanExtra(KEEP_ON, false) != true) stopSelf()
         }
         return START_STICKY
     }
@@ -225,6 +240,7 @@ class PopupService : Service() {
         watch = null
         hide(false)
         hideNote(false)
+        hideWarning()
     }
 
     private fun reload() {
@@ -233,7 +249,8 @@ class PopupService : Service() {
         client = c.client()
         // the live subscription: started again only when what it watches changed
         val want = if (c.haEnabled && needed(c)) {
-            (c.popupTriggers.map { it.entity } + (if (c.notify) listOf(c.notifyEntity) else emptyList())).distinct()
+            (c.popupTriggers.map { it.entity } + (if (c.notify) listOf(c.notifyEntity) else emptyList()) +
+                (if (c.reportState) listOf(AutoOff.DEFAULT_ENTITY) else emptyList())).distinct()
         } else emptyList()
         val key = if (want.isEmpty()) null else c.haUrl + "|" + c.haToken.hashCode() + "|" + want.joinToString(",")
         if (key != watchKey) {
@@ -271,6 +288,10 @@ class PopupService : Service() {
     private fun onLive(entity: String, state: String, at: Long, first: Boolean) {
         val c = cfg ?: return
         val screenOn = (getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive
+        if (c.reportState && entity == AutoOff.DEFAULT_ENTITY) {
+            command(c, state, first)
+            return
+        }
         if (c.notify && entity == c.notifyEntity) {
             val before = lastNote
             lastNote = state
@@ -314,6 +335,10 @@ class PopupService : Service() {
             val screenOn = (getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive
             val live = watch?.connected == true
             if (c != null && api != null && c.notify && !live) checkNote(c, api, screenOn)
+            if (c != null && api != null && c.reportState && !live) {
+                val raw = try { api.state(AutoOff.DEFAULT_ENTITY).optString("state") } catch (e: Exception) { null }
+                if (raw != null) command(c, raw, lastCommand == null)
+            }
             if (c != null && api != null && c.popupTriggers.isNotEmpty() && !live) {
                 for (t in c.popupTriggers) {
                     val s = try { api.state(t.entity) } catch (e: Exception) { null } ?: continue
@@ -617,5 +642,117 @@ class PopupService : Service() {
         // a test card started the service while nothing is being watched: nothing left to do
         val c = cfg
         if (animate && (c == null || !needed(c)) && overlay == null) stopSelf()
+    }
+
+    // ---------- "nobody seems to be here" ----------
+
+    /** The last command seen in [AutoOff.DEFAULT_ENTITY] (a new one has another id). */
+    private var lastCommand: String? = null
+
+    /** On the watcher's / poller's thread ([bg]). */
+    private fun command(c: Config, raw: String, first: Boolean) {
+        val before = lastCommand
+        lastCommand = raw
+        if (first || before == null || before == raw) return
+        val cmd = AutoOff.parse(raw) ?: return
+        if (cmd.target != TvState.entity(this, c)) return
+        // a command that waited (the TV was asleep, the connection was down) is not shown any more
+        if (Math.abs(System.currentTimeMillis() / 1000 - cmd.id) > 60) return
+        when (cmd.command) {
+            "auto_off" -> {
+                val screenOn = (getSystemService(Context.POWER_SERVICE) as PowerManager).isInteractive
+                if (screenOn) main.post { showWarning(cmd.seconds) }
+            }
+            "cancel" -> main.post { hideWarning() }
+        }
+    }
+
+    private var warnView: View? = null
+    private var warnText: TextView? = null
+    private var warnEnd = 0L
+
+    private fun showWarning(seconds: Int) {
+        if (!allowed(this)) return
+        hideWarning()
+        val d = resources.displayMetrics.density
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            background = rounded(C.PANEL, Look.R_PANEL * d)
+            setPadding((22 * d).toInt(), (16 * d).toInt(), (22 * d).toInt(), (16 * d).toInt())
+        }
+        card.addView(LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            addView(ImageView(this@PopupService).apply {
+                setImageResource(R.drawable.ic_power)
+                setColorFilter(0xFFFAC775.toInt())
+            }, LinearLayout.LayoutParams((22 * d).toInt(), (22 * d).toInt()).apply { rightMargin = (10 * d).toInt() })
+            addView(label("Nobody seems to be in the room", 14f, C.TEXT, bold = true))
+        })
+        val text = label("", 12f, C.TEXT2).apply { gravity = Gravity.CENTER_HORIZONTAL }
+        card.addView(text, LinearLayout.LayoutParams(-2, -2).apply { topMargin = (8 * d).toInt() })
+        card.addView(label("Press any button to keep it on", 11f, C.ON).apply { gravity = Gravity.CENTER_HORIZONTAL },
+            LinearLayout.LayoutParams(-2, -2).apply { topMargin = (6 * d).toInt() })
+        val lp = WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
+            if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
+            // the remote's buttons stay with the app underneath; the button service sees them first
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            y = (36 * d).toInt()
+        }
+        val wm = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        try {
+            wm.addView(card, lp)
+        } catch (e: Exception) {
+            return
+        }
+        warnView = card
+        warnText = text
+        warnEnd = android.os.SystemClock.uptimeMillis() + seconds * 1000L
+        AutoOff.arm(this, seconds * 1000L + 2000L)
+        card.alpha = 0f
+        card.translationY = -16 * d
+        card.animate().alpha(1f).translationY(0f).setDuration(260).setInterpolator(DecelerateInterpolator(2f)).start()
+        main.removeCallbacks(warnTick)
+        warnTick.run()
+    }
+
+    private val warnTick = object : Runnable {
+        override fun run() {
+            val t = warnText ?: return
+            val left = ((warnEnd - android.os.SystemClock.uptimeMillis() + 999) / 1000).toInt()
+            // Home Assistant switches the TV off; if it does not (gone meanwhile), the card goes a little later
+            if (left < -5) { hideWarning(); return }
+            t.text = Lang.tr("The TV switches off in ${left.coerceAtLeast(0)} s")
+            main.postDelayed(this, 500L)
+        }
+    }
+
+    private fun hideWarning() {
+        main.removeCallbacks(warnTick)
+        val v = warnView ?: return
+        warnView = null
+        warnText = null
+        AutoOff.arm(this, 0L)
+        try { (getSystemService(Context.WINDOW_SERVICE) as WindowManager).removeView(v) } catch (e: Exception) { }
+    }
+
+    /** A button was pressed during the warning: Home Assistant is told, the TV stays on. */
+    private fun keptOn() {
+        if (warnView == null) return
+        hideWarning()
+        showNote(Note("power", "info", Lang.tr("The TV stays on"), ""))
+        val c = cfg ?: return
+        val api = client ?: return
+        val target = TvState.entity(this, c)
+        Bg.slow({ api.fireEvent(AutoOff.EVENT, org.json.JSONObject().put("entity", target)); true }) { ok ->
+            if (ok != true) android.util.Log.w("OtthonAutoOff", "Home Assistant not told: the TV may still switch off")
+        }
     }
 }
