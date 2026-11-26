@@ -167,5 +167,10 @@
             android:name=".AllAppsActivity"
             android:exported="false"
             android:screenOrientation="landscape" />
+
+        <activity
+            android:name=".CaveGameActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
     </application>
 </manifest>

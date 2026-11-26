@@ -138,6 +138,14 @@ launcher's preferences (`folders`) and move with the settings ([Carry]).
 Hold OK on a favourite › Move works as on Google TV home: the tile lifts and shows ◀ ▶, the arrows
 move it along the row, OK (or Back) puts it down and keeps the order.
 
+## Kavics kalandja (easter egg)
+
+▲ ▲ ▼ ▼ ◀ ▶ ◀ ▶ on the home screen opens a small platform game of the launcher's own: Kavics, a cave
+girl with a red ponytail, runs through three stone-age levels to the cave at their end, picks up
+amber, jumps on the lizards and throws pebbles at the hedgehogs. ◀ ▶ run, OK or ▲ jump (held:
+higher), ▼ throws, Back pauses. Drawn with shapes only (no pictures); the best score is kept
+(`cave_best`).
+
 ## Recommendations
 
 Down on the bottom row of the home screen slides the page up: the bottom row stays at the top and
