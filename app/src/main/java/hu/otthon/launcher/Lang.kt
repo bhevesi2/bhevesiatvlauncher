@@ -684,6 +684,9 @@ object Lang {
         Regex("(\\d+) episodes") to { g -> "${g[1]} rész" },
         Regex("(\\d+)% watched") to { g -> "${g[1]}% megnézve" },
         Regex("Season (\\d+)") to { g -> "${g[1]}. évad" },
+        Regex("(\\d+) films and episodes, (\\d+) new(, (\\d+) looked up)?(.*)") to { g ->
+            "${g[1]} film és rész, ${g[2]} új" + (if (g[4].isNotEmpty()) ", ${g[4]} adatai letöltve" else "") + g[5]
+        },
         Regex("No share named (.+)") to { g -> "Nincs ilyen megosztás: ${g[1]}" },
         Regex("No folder (.+)") to { g -> "Nincs ilyen mappa: ${g[1]}" },
         Regex("Can't reach (.+)") to { g -> "Nem érem el: ${g[1]}" },

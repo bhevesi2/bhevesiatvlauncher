@@ -1256,7 +1256,8 @@ class SettingsActivity : PanelActivity() {
         section("Library")
         val scanned = Prefs.of(this).getLong("media_scanned_at", 0L)
         row("Look through the folders now", if (MediaLib.scanning) MediaLib.progress + "…" else if (scanned == 0L) "Never yet" else
-            android.text.format.DateFormat.format("yyyy.MM.dd HH:mm", scanned).toString()) {
+            android.text.format.DateFormat.format("yyyy.MM.dd HH:mm", scanned).toString() + " · " +
+                Lang.tr(Prefs.of(this).getString("media_scan_result", "") ?: "")) {
             if (MediaLib.scanning) return@row
             toast("Looking through the folders…")
             val app = applicationContext

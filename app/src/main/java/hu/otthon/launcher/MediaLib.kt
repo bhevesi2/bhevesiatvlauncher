@@ -291,7 +291,9 @@ object MediaLib {
                 val files = ArrayList<Triple<String, Long, Long>>()   // path, size, mtime
                 try {
                     if (src.kind == "usb") usbFiles(app, files) else smbFiles(app, src, files)
+                    android.util.Log.i("OtthonMedia", "${src.label}: ${files.size} video files (${walked} folders, ${skipped} other files)")
                 } catch (e: Exception) {
+                    android.util.Log.w("OtthonMedia", "can't read ${src.label}", e)
                     errors.add("${src.name}: ${e.message ?: e.javaClass.simpleName}")
                     continue
                 }
@@ -324,12 +326,14 @@ object MediaLib {
             }
             progress = "TMDB"
             val looked = enrich(app)
-            Prefs.of(app).edit().putLong("media_scanned_at", System.currentTimeMillis()).apply()
-            return buildString {
-                append("$found files, $added new")
+            val summary = buildString {
+                append("$found films and episodes, $added new")
                 if (looked > 0) append(", $looked looked up")
                 if (errors.isNotEmpty()) append(" · ").append(errors.joinToString("; "))
             }
+            android.util.Log.i("OtthonMedia", "scan: $summary")
+            Prefs.of(app).edit().putLong("media_scanned_at", System.currentTimeMillis()).putString("media_scan_result", summary).apply()
+            return summary
         } finally {
             scanning = false
             progress = ""
@@ -358,11 +362,24 @@ object MediaLib {
         return SmbShare(client, conn, session, share)
     }
 
+    /** For the log: folders looked through and files that were not films in the last scan. */
+    @Volatile private var walked = 0
+    @Volatile private var skipped = 0
+
     private fun smbFiles(ctx: Context, src: Source, out: MutableList<Triple<String, Long, Long>>) {
+        walked = 0
+        skipped = 0
         openShare(ctx, src).use { s ->
             fun walk(dir: String, depth: Int) {
-                if (depth > 6 || out.size > 20000) return
-                for (f in s.share.list(dir)) {
+                if (depth > 8 || out.size > 20000) return
+                walked++
+                val list = try { s.share.list(dir) } catch (e: Exception) {
+                    // one folder that cannot be read does not stop the rest
+                    android.util.Log.w("OtthonMedia", "can't list \"$dir\": $e")
+                    if (depth == 0) throw e
+                    return
+                }
+                for (f in list) {
                     val name = f.fileName
                     if (name == "." || name == ".." || name.startsWith(".") || name.startsWith("@") || name.startsWith("#")) continue
                     val full = if (dir.isEmpty()) name else "$dir\\$name"
@@ -370,7 +387,7 @@ object MediaLib {
                     if (isDir) walk(full, depth + 1)
                     else if (name.substringAfterLast('.', "").lowercase() in VIDEO && !name.lowercase().contains("sample")) {
                         out.add(Triple(full, f.endOfFile, f.lastWriteTime.toEpochMillis()))
-                    }
+                    } else skipped++
                 }
             }
             walk(src.path.replace('/', '\\'), 0)
