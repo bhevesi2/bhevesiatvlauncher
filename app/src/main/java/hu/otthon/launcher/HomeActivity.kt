@@ -1213,12 +1213,25 @@ class HomeActivity : Activity() {
             val now = System.currentTimeMillis()
             if (now - ownMaAt > 600_000L) { ownMa = findOwnMa(client); ownMaAt = now }
             // music played on this TV shows too, whichever player the card is set to
-            val states = (listOfNotNull(base) + ownMa).distinct().mapNotNull { e -> try { e to client.state(e) } catch (x: Exception) { null } }
-            states.firstOrNull { it.second.optString("state") == "playing" }
+            val wanted = (listOfNotNull(base) + ownMa).distinct()
+            var failed = 0
+            val states = wanted.mapNotNull { e -> try { e to client.state(e) } catch (x: Exception) { failed++; null } }
+            // Home Assistant not answering at all: no answer (the card stays as it is), not "nothing plays"
+            if (wanted.isNotEmpty() && failed == wanted.size) throw java.io.IOException("no answer")
+            // in a list of one: an empty answer (nothing to show) is told apart from no answer (Home Assistant away)
+            listOf(states.firstOrNull { it.second.optString("state") == "playing" }
                 ?: states.firstOrNull { it.second.optString("state") == "paused" && it.first == base }
-                ?: states.firstOrNull { it.first == base }
-        }) { picked ->
-            if (picked == null || !resumed) return@run
+                ?: states.firstOrNull { it.first == base })
+        }) { answer ->
+            if (answer == null || !resumed) return@run
+            val picked = answer[0]
+            if (picked == null) {
+                // nothing to follow any more (this TV's player stopped and none is set): no card
+                npShown = null
+                if (npCard.hasFocus()) favRow.getChildAt(0)?.requestFocus()
+                npCard.visibility = View.GONE
+                return@run
+            }
             npShown = picked.first
             val s = picked.second
             val state = s.optString("state")

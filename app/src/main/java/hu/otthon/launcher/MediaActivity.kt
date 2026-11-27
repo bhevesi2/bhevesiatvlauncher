@@ -52,6 +52,8 @@ class MediaActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         CrashLog.install(this)
+        // opened straight after the launcher was restarted, the memory tier may not be known yet
+        LowRam.init(this)
         root = FrameLayout(this).apply { setBackgroundColor(0xFF0B0C10.toInt()) }
         deep = !LowRam.on && threeD(this)
         backdrop = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
@@ -115,6 +117,12 @@ class MediaActivity : Activity() {
     override fun onPause() {
         super.onPause()
         CrashLog.left(this)
+    }
+
+    override fun onDestroy() {
+        main.removeCallbacksAndMessages(null)
+        MediaLib.shrink()
+        super.onDestroy()
     }
 
     override fun onTrimMemory(level: Int) {
@@ -221,13 +229,14 @@ class MediaActivity : Activity() {
             card.setOnFocusChangeListener { v, f ->
                 Look.grow(v, f, if (deep) 1.14f else 1.1f)
                 card.focused(f)
-                if (f) { hero(t); if (deep) { lean(line, v); light(rs) } }
+                if (f) { postersNear(line, line.indexOfChild(v)); hero(t); if (deep) { lean(line, v); light(rs) } }
                 // the cursor left the row: it lies flat again
                 else if (deep) line.post { if (line.findFocus() == null && details == null) flatten(line) }
             }
             line.addView(card, LinearLayout.LayoutParams(dp(112f), dp(168f)).apply { if (i > 0) leftMargin = dp(14f) })
-            loadPoster(card)
         }
+        // the posters a screen holds; the rest come as the cursor moves along the row
+        postersNear(line, 0)
         rows.addView(rs, LinearLayout.LayoutParams(-1, -2))
     }
 
@@ -281,11 +290,23 @@ class MediaActivity : Activity() {
         }
     }
 
+    /**
+     * The posters around [at] in a row (two before, ten after). A library of hundreds of titles
+     * in eight rows would otherwise load every poster at once: minutes of network, and memory a
+     * smaller TV does not have.
+     */
+    private fun postersNear(line: LinearLayout, at: Int) {
+        for (i in maxOf(0, at - 2)..minOf(line.childCount - 1, at + 10)) (line.getChildAt(i) as? PosterCard)?.let { loadPoster(it) }
+    }
+
     private fun loadPoster(card: PosterCard) {
+        if (card.asked) return
+        card.asked = true
         val p = card.title.poster ?: return
-        MediaLib.cached(p, posterSize)?.let { card.setPicture(it, false); return }
-        val app = applicationContext
-        Bg.slow({ MediaLib.picture(app, p, posterSize) }) { b -> if (b != null) card.setPicture(b, true) }
+        // made as wide as the card shows it (a w342 poster is half again as wide as the card)
+        val w = dp(112f * 1.15f)
+        MediaLib.cached(p, posterSize, w)?.let { card.setPicture(it, false); return }
+        MediaLib.load(this, p, posterSize, w) { b -> if (b != null && !isFinishing) card.setPicture(b, true) }
     }
 
     // ---------- the chosen title, big ----------
@@ -326,7 +347,7 @@ class MediaActivity : Activity() {
         val t = pendingHero ?: return@Runnable
         val path = t.backdrop ?: return@Runnable
         val app = applicationContext
-        Bg.slow({ MediaLib.picture(app, path, backdropSize) }) { b -> if (b != null && pendingHero === t) showBackdrop(b) }
+        MediaLib.load(app, path, backdropSize) { b -> if (b != null && pendingHero === t && !isFinishing) showBackdrop(b) }
     }
 
     private fun showBackdrop(b: Bitmap) {
@@ -459,7 +480,7 @@ class MediaActivity : Activity() {
         row.addView(still, LinearLayout.LayoutParams(dp(128f), dp(72f)))
         e.still?.let { p ->
             val app = applicationContext
-            Bg.slow({ MediaLib.picture(app, p, "w300") }) { b -> if (b != null) still.setImageBitmap(b) }
+            MediaLib.load(app, p, "w300", dp(128f)) { b -> if (b != null) still.setImageBitmap(b) }
         }
         val text = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         text.addView(label("${e.episode}. " + (e.name ?: Lang.tr("Episode ${e.episode}")), 12f, C.TEXT, bold = true).apply { maxLines = 1 })
@@ -507,6 +528,8 @@ class MediaActivity : Activity() {
 
 /** A poster in the library: the picture, or the title on a coloured card until the picture comes. */
 class PosterCard(ctx: Context, val title: MediaLib.Title) : FrameLayout(ctx) {
+    /** Its picture has been asked for (once is enough). */
+    var asked = false
     private val image = ImageView(ctx).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
     private val name = ctx.label(title.title, 11f, C.TEXT, bold = true).apply {
         gravity = Gravity.CENTER

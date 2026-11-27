@@ -67,7 +67,7 @@ class MaActivity : PanelActivity() {
     private lateinit var artNext: ImageView
     private var artKey: String? = null
     private val arts = object : LinkedHashMap<String, Bitmap>(8, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Bitmap>?) = size > 6
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Bitmap>?) = size > (if (LowRam.on) 3 else 5)
     }
     /** Stories are fetched one at a time (TheAudioDB answers 30 questions a minute). */
     private val infoExec = Executors.newSingleThreadExecutor()
@@ -468,7 +468,10 @@ class MaActivity : PanelActivity() {
             rowScroll.setPadding(0, dp(12f), dp(20f), dp(6f))
             val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; clipChildren = false; clipToPadding = false }
             s.items.forEachIndexed { i, item ->
-                line.addView(card(item, dp(124f)), LinearLayout.LayoutParams(-2, -2).apply { if (i > 0) leftMargin = dp(16f) })
+                // the covers a screen holds now, the rest as the cursor comes along
+                line.addView(card(item, dp(124f), lazy = i >= 9) {
+                    for (k in maxOf(0, i - 2)..minOf(line.childCount - 1, i + 9)) loadLater(line.getChildAt(k))
+                }, LinearLayout.LayoutParams(-2, -2).apply { if (i > 0) leftMargin = dp(16f) })
             }
             rowScroll.addView(line)
             into.addView(rowScroll, LinearLayout.LayoutParams(-1, -2))
@@ -486,25 +489,47 @@ class MaActivity : PanelActivity() {
                 line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; clipChildren = false }
                 into.addView(line, LinearLayout.LayoutParams(-1, -2).apply { topMargin = if (i == 0) dp(10f) else dp(14f) })
             }
-            line!!.addView(card(item, w), LinearLayout.LayoutParams(w, -2).apply { if (i % perLine > 0) leftMargin = gap })
+            line!!.addView(card(item, w, lazy = i >= perLine * 3) { coversNear(into, i, perLine) }, LinearLayout.LayoutParams(w, -2).apply { if (i % perLine > 0) leftMargin = gap })
         }
     }
 
-    private fun coverView(item: Item, size: Int, round: Boolean, radius: Float): ImageView = ImageView(this).apply {
+    /**
+     * The covers of the lines around card [at] of a grid: a tab of several hundred albums loads
+     * only what is on the screen and just below it, not every cover at once.
+     */
+    private fun coversNear(grid: LinearLayout, at: Int, perLine: Int) {
+        val line = at / perLine
+        for (l in maxOf(0, line - 2)..minOf(grid.childCount - 1, line + 4)) {
+            val row = grid.getChildAt(l) as? ViewGroup ?: continue
+            for (k in 0 until row.childCount) loadLater(row.getChildAt(k))
+        }
+    }
+
+    /** A card's cover that waits for its turn ([coverView] with load = false). */
+    private fun loadLater(card: View?) {
+        val cover = (card as? ViewGroup)?.getChildAt(0) ?: return
+        (cover.tag as? Runnable)?.let { cover.tag = null; it.run() }
+    }
+
+    private fun coverView(item: Item, size: Int, round: Boolean, radius: Float, load: Boolean = true): ImageView = ImageView(this).apply {
         scaleType = ImageView.ScaleType.CENTER_CROP
         background = rounded(0xFF262833.toInt(), if (round) size / 2f else radius)
         clipToOutline = true
         outlineProvider = android.view.ViewOutlineProvider.BACKGROUND
         setImageDrawable(NameCover(item.name, round, resources.displayMetrics.density))
-        item.image?.let { url -> picture(url, size) { b -> if (b != null) setImageBitmap(b) } }
+        val url = item.image
+        if (url != null) {
+            val get = Runnable { picture(url, size) { b -> if (b != null) setImageBitmap(b) } }
+            if (load) get.run() else tag = get
+        }
     }
 
     /** A square cover (round for artists) with the name and the artist under it. */
-    private fun card(item: Item, size: Int): LinearLayout {
+    private fun card(item: Item, size: Int, lazy: Boolean = false, onFocus: (() -> Unit)? = null): LinearLayout {
         val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; clipChildren = false }
         val round = item.type == "artist"
         val radius = if (round) size / 2f else dp(Look.R_TILE).toFloat()
-        val cover = coverView(item, size, round, radius).apply {
+        val cover = coverView(item, size, round, radius, load = !lazy).apply {
             isFocusable = true
             isClickable = true
             isLongClickable = true
@@ -531,6 +556,7 @@ class MaActivity : PanelActivity() {
             name.animate().translationY(if (f) dp(6f).toFloat() else 0f).setDuration(200).start()
             sub.animate().translationY(if (f) dp(6f).toFloat() else 0f).setDuration(200).start()
             val line = box.parent as? LinearLayout
+            if (f) onFocus?.invoke()
             if (f) {
                 if (isIn(box, library)) hero(item)
                 if (deep && line != null) { lean(line, box); light(line) }
@@ -623,11 +649,11 @@ class MaActivity : PanelActivity() {
     private fun infoOf(item: Item, cachedOnly: Boolean = false): MusicInfo.Info? {
         val artist = item.sub.substringBefore(",").trim()
         return when (item.type) {
-            "artist" -> if (cachedOnly) MusicInfo.cached(MusicInfo.artistKey(item.name)) else MusicInfo.artist(applicationContext, item.name)
+            "artist" -> if (cachedOnly) MusicInfo.cached(MusicInfo.artistKey(item.name)) else MusicInfo.now { MusicInfo.artist(applicationContext, item.name) }
             "album" -> {
                 // a real compilation has no artist to look its story up by
                 if (artist.isBlank() || MusicInfo.isVarious(artist)) null
-                else if (cachedOnly) MusicInfo.cached(MusicInfo.albumKey(artist, item.name)) else MusicInfo.album(applicationContext, artist, item.name)
+                else if (cachedOnly) MusicInfo.cached(MusicInfo.albumKey(artist, item.name)) else MusicInfo.now { MusicInfo.album(applicationContext, artist, item.name) }
             }
             else -> null
         }
@@ -1586,6 +1612,9 @@ class MaActivity : PanelActivity() {
     override fun onDestroy() {
         super.onDestroy()
         exec.shutdownNow()
+        // its thread would otherwise stay for the life of the launcher, one more each time the screen is opened
+        infoExec.shutdownNow()
+        main.removeCallbacks(heroLater)
     }
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {

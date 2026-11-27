@@ -424,14 +424,29 @@ class PlayerActivity : Activity() {
         }
     }
     private fun ended() {
-        item?.let { MediaLib.savePosition(this, it.id, player.duration, player.duration) }
+        item?.let { store(it.id, player.duration, player.duration) }
         if (index + 1 < queue.size) { index++; start(0L) } else finish()
     }
 
     private fun save() {
         val it = item ?: return
         val d = player.duration
-        if (d > 0) MediaLib.savePosition(this, it.id, player.currentPosition, d)
+        if (d > 0) store(it.id, player.currentPosition, d)
+    }
+
+    /**
+     * Where it got to, written on a thread of its own (one at a time, in order): the database is
+     * shared with the launcher, a scan there may hold it a moment, and that must never stop the film.
+     */
+    private val writer = java.util.concurrent.Executors.newSingleThreadExecutor()
+
+    private fun store(id: Long, position: Long, duration: Long) {
+        val app = applicationContext
+        try {
+            writer.execute {
+                try { MediaLib.savePosition(app, id, position, duration) } catch (e: Exception) { PlayerLog.w(app, "can't save the position: $e") }
+            }
+        } catch (e: Exception) { }
     }
 
     private var lastSave = 0L
@@ -654,6 +669,9 @@ class PlayerActivity : Activity() {
         save()
         player.release()
         Thread { SharePool.closeAll() }.start()
+        // the last position is written before the process ends
+        writer.shutdown()
+        try { writer.awaitTermination(2, java.util.concurrent.TimeUnit.SECONDS) } catch (e: Exception) { }
         super.onDestroy()
         // the player's process ends with the film: its memory goes back to the TV at once
         android.os.Process.killProcess(android.os.Process.myPid())

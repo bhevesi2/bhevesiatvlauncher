@@ -103,6 +103,17 @@ object MusicInfo {
 
     // ---------- the whole library, in the background ----------
 
+    /** Questions from a screen someone is looking at: the background run waits while there are any. */
+    private val urgent = java.util.concurrent.atomic.AtomicInteger()
+
+    /** [block] (an [artist] or [album] call) ahead of the background run. */
+    fun <T> now(block: () -> T): T {
+        urgent.incrementAndGet()
+        try { return block() } finally { urgent.decrementAndGet() }
+    }
+
+    private fun yieldToScreens() { while (urgent.get() > 0) Thread.sleep(250) }
+
     /** Fetches in a row that could not reach the internet: the background run stops at a few. */
     @Volatile private var failures = 0
 
@@ -127,6 +138,8 @@ object MusicInfo {
         Thread({
             var done = 0; var found = 0; var total = 0
             try {
+                // the TVs of the house share TheAudioDB's key: when not asked for, each starts at a different time
+                if (!force) Thread.sleep((30_000L..600_000L).random())
                 val entry = client.template("{% set p = integration_entities('music_assistant') | select('match', 'media_player') | list %}" +
                     "{{ config_entry_id(p[0]) if p else '' }}").trim()
                 if (entry.isNotBlank()) {
@@ -166,12 +179,14 @@ object MusicInfo {
                     // the most played first: they are the ones looked at
                     fun offline() = failures >= 5
                     for (a in artists) {
+                        yieldToScreens()
                         if (offline()) throw java.io.IOException("offline")
                         if (artist(app, a) != null) found++
                         done++
                         progress = "$done/$total"
                     }
                     for ((by, name) in albums) {
+                        yieldToScreens()
                         if (offline()) throw java.io.IOException("offline")
                         if (album(app, by, name) != null) found++
                         done++
@@ -258,7 +273,14 @@ object MusicInfo {
         val wait = lastAdb + 2100 - System.currentTimeMillis()
         if (wait > 0) Thread.sleep(wait)
         lastAdb = System.currentTimeMillis()
-        get(ADB + path)?.let { JSONObject(it) }
+        val text = try { get(ADB + path) } catch (e: java.io.IOException) {
+            // the shared key is shared by every TV in the house: on "too many", a minute's rest and once more
+            if (e.message != "HTTP 429") throw e
+            Thread.sleep(60_000)
+            lastAdb = System.currentTimeMillis()
+            get(ADB + path)
+        }
+        text?.let { JSONObject(it) }
     }
 
     // ---------- Wikipedia ----------
@@ -296,7 +318,10 @@ object MusicInfo {
         // Wikipedia asks every program to say who it is
         c.setRequestProperty("User-Agent", "OtthonLauncher/1.0 (Android TV home screen; music library)")
         try {
-            if (c.responseCode != 200) return null
+            val code = c.responseCode
+            // too many questions (429) or the server in trouble: not an answer, so nothing is kept as "not found"
+            if (code == 429 || code >= 500) throw java.io.IOException("HTTP $code")
+            if (code != 200) return null
             return c.inputStream.use { it.readBytes().toString(Charsets.UTF_8) }
         } finally {
             c.disconnect()

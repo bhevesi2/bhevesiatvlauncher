@@ -160,6 +160,12 @@ object MediaLib {
     // ---------- the database ----------
 
     class Db(ctx: Context) : SQLiteOpenHelper(ctx.applicationContext, "media.db", null, 1) {
+        init {
+            // the launcher and the player (a process of its own) use it at once: with a write-ahead
+            // log, a scan writing does not lock out the player saving where it got to
+            setWriteAheadLoggingEnabled(true)
+        }
+
         override fun onCreate(db: SQLiteDatabase) {
             db.execSQL(
                 "CREATE TABLE files (id INTEGER PRIMARY KEY, source TEXT, path TEXT, size INTEGER, mtime INTEGER, " +
@@ -271,15 +277,14 @@ object MediaLib {
 
     // ---------- reading the sources ----------
 
-    @Volatile var scanning = false
-        private set
+    private val running = java.util.concurrent.atomic.AtomicBoolean(false)
+    val scanning get() = running.get()
     @Volatile var progress = ""
         private set
 
     /** Looks through every source; new files are added, files gone are hidden. Background thread. */
     fun scan(ctx: Context): String {
-        if (scanning) return "already running"
-        scanning = true
+        if (!running.compareAndSet(false, true)) return "already running"
         val app = ctx.applicationContext
         return try {
             scanAll(app)
@@ -289,7 +294,7 @@ object MediaLib {
             Prefs.of(app).edit().putString("media_scan_result", why).apply()
             why
         } finally {
-            scanning = false
+            running.set(false)
             progress = ""
         }
     }
@@ -539,16 +544,44 @@ object MediaLib {
 
     // ---------- pictures ----------
 
-    private val memory = object : LinkedHashMap<String, Bitmap>(64, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Bitmap>?) = size > (if (LowRam.on) 40 else 120)
+    /**
+     * The pictures in memory, by their size in bytes (not their number: a backdrop is ten posters):
+     * 64 MB on the TVs with memory to spare, 24 / 12 MB on the others.
+     */
+    private val memory = object : android.util.LruCache<String, Bitmap>(when {
+        LowRam.lite -> 12 shl 20
+        LowRam.on -> 24 shl 20
+        else -> 64 shl 20
+    }) {
+        override fun sizeOf(key: String, value: Bitmap) = value.allocationByteCount
     }
 
-    fun cached(path: String, size: String): Bitmap? = synchronized(memory) { memory["$size$path"] }
+    /**
+     * The library's own threads for pictures (three, ending when idle): hundreds of posters must
+     * not queue up in front of the launcher's other background work.
+     */
+    private val pictures = java.util.concurrent.ThreadPoolExecutor(3, 3, 20, TimeUnit.SECONDS, java.util.concurrent.LinkedBlockingQueue())
+        .apply { allowCoreThreadTimeOut(true) }
 
-    /** A TMDB picture ([size]: w342, w780, w1280…), from memory, the TV's storage, or the internet. Background thread. */
-    fun picture(ctx: Context, path: String, size: String): Bitmap? {
-        val k = "$size$path"
-        synchronized(memory) { memory[k] }?.let { return it }
+    fun cached(path: String, size: String, maxW: Int = 0): Bitmap? = memory.get("$size$path@$maxW")
+
+    /** [picture] on the library's picture threads, [done] on the main thread (null when it could not be had). */
+    fun load(ctx: Context, path: String, size: String, maxW: Int = 0, done: (Bitmap?) -> Unit) {
+        cached(path, size, maxW)?.let { done(it); return }
+        val app = ctx.applicationContext
+        pictures.execute {
+            val b = try { picture(app, path, size, maxW) } catch (e: Throwable) { null }
+            Bg.main.post { try { done(b) } catch (e: Throwable) { CrashLog.note(e) } }
+        }
+    }
+
+    /**
+     * A TMDB picture ([size]: w342, w780, w1280…), from memory, the TV's storage, or the internet;
+     * with [maxW], made that wide (a poster is shown 224 px wide, TMDB's w342 is 342). Background thread.
+     */
+    fun picture(ctx: Context, path: String, size: String, maxW: Int = 0): Bitmap? {
+        val k = "$size$path@$maxW"
+        memory.get(k)?.let { return it }
         val dir = File(ctx.cacheDir, "media").apply { mkdirs() }
         val f = File(dir, size + "_" + path.trim('/').replace('/', '_'))
         if (!f.exists()) {
@@ -564,11 +597,18 @@ object MediaLib {
                 c.disconnect()
             }
         }
-        val b = BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.RGB_565 }) ?: return null
+        var b = BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.RGB_565 }) ?: run {
+            f.delete()   // a broken file (a download cut short): fetched again next time
+            return null
+        }
+        if (maxW > 0 && b.width > maxW * 1.15f) b = Bitmap.createScaledBitmap(b, maxW, b.height * maxW / b.width, true)
         f.setLastModified(System.currentTimeMillis())
-        synchronized(memory) { memory[k] = b }
+        memory.put(k, b)
         return b
     }
 
-    fun trim() = synchronized(memory) { memory.clear() }
+    fun trim() = memory.evictAll()
+
+    /** The library closed: a few pictures kept for coming back, the rest of the memory to the home screen. */
+    fun shrink() = memory.trimToSize(8 shl 20)
 }
