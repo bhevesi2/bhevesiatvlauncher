@@ -186,4 +186,13 @@ class LogicTest {
         assertEquals(null, FrameRate.pick(23.976f, listOf(60f)))
         assertEquals(60f, FrameRate.pick(60f, listOf(60f, 50f)))
     }
+
+    @Test
+    fun musicNames() {
+        assertEquals("Abbey Road", MusicInfo.bare("Abbey Road (Remastered 2009)"))
+        assertEquals("Help!", MusicInfo.bare("Help! - 2009 Remaster"))
+        assertEquals("Parachutes", MusicInfo.bare("Parachutes [Deluxe Edition]"))
+        assertEquals("beyonce and jay z", MusicInfo.norm("Beyoncé & Jay-Z"))
+        assertEquals("ossian", MusicInfo.norm("Ossián"))
+    }
 }

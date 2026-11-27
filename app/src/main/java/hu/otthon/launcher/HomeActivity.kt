@@ -645,8 +645,10 @@ class HomeActivity : Activity() {
             }
             setOnClickListener { togglePlay() }
             setOnLongClickListener {
-                if (cfg.nowPlaying == null) {
-                    // Music Assistant: straight to its Now playing page
+                val shown = npShown
+                if (cfg.nowPlaying == null || (shown != null && shown != cfg.nowPlaying && shown in ownMa)) {
+                    // Music Assistant: straight to its Now playing page, on the player the card shows
+                    if (shown != null) Prefs.of(this@HomeActivity).edit().putString("ma_player", shown).apply()
                     startActivity(Intent(this@HomeActivity, MaActivity::class.java).putExtra("now", true))
                     overridePendingTransition(0, 0)
                     awayOnOwnScreen = true
@@ -933,7 +935,7 @@ class HomeActivity : Activity() {
                 open(DashboardActivity::class.java)
             })
         }
-        if (!cfg.haEnabled || npEntity() == null) npCard.visibility = View.GONE
+        if (!cfg.haEnabled || npShown == null) npCard.visibility = View.GONE
 
         val idx = focusFav.coerceIn(0, maxOf(0, favRow.childCount - 1))
         favRow.getChildAt(idx)?.takeIf { it.isFocusable }?.requestFocus()
@@ -1053,7 +1055,7 @@ class HomeActivity : Activity() {
         loadReco()
         if (ha != null) {
             Bg.main.post(statusLoop)
-            if (npEntity() != null) Bg.main.post(npLoop)
+            Bg.main.post(npLoop)
         }
     }
 
@@ -1180,11 +1182,43 @@ class HomeActivity : Activity() {
         return if (p.getBoolean("ma_present", true)) p.getString("ma_player", null) else null
     }
 
+    /** The player the card shows (the set one, or this TV's own Music Assistant player). */
+    @Volatile private var npShown: String? = null
+    /** This TV's own Music Assistant players: by its address in the entity id, or in its room. */
+    @Volatile private var ownMa: List<String> = emptyList()
+    @Volatile private var ownMaAt = 0L
+
+    /** Background thread. */
+    private fun findOwnMa(client: HaClient): List<String> {
+        val ip = Apps.localIp()?.replace('.', '_') ?: ""
+        val adb = cfg.adbEntity ?: ""
+        val t = "{% set ma = integration_entities('music_assistant') | select('match', 'media_player') | list %}" +
+            "{% set a = area_id('$adb') if '$adb' else none %}" +
+            "{% set byIp = (ma | select('search', '$ip') | list) if '$ip' else [] %}" +
+            "{% set byRoom = (ma | select('in', area_entities(a)) | list) if a else [] %}" +
+            "{{ (byIp + byRoom) | unique | list | tojson }}"
+        return try {
+            val arr = org.json.JSONArray(client.template(t).trim())
+            (0 until arr.length()).map { arr.getString(it) }
+        } catch (e: Exception) { emptyList() }
+    }
+
     private fun refreshNowPlaying() {
         val client = ha ?: return
-        val entity = npEntity() ?: return
-        Bg.run({ client.state(entity) }) { s ->
-            if (s == null || !resumed) return@run
+        if (kidsOn || !cfg.haEnabled) return
+        val base = npEntity()
+        Bg.run({
+            val now = System.currentTimeMillis()
+            if (now - ownMaAt > 600_000L) { ownMa = findOwnMa(client); ownMaAt = now }
+            // music played on this TV shows too, whichever player the card is set to
+            val states = (listOfNotNull(base) + ownMa).distinct().mapNotNull { e -> try { e to client.state(e) } catch (x: Exception) { null } }
+            states.firstOrNull { it.second.optString("state") == "playing" }
+                ?: states.firstOrNull { it.second.optString("state") == "paused" && it.first == base }
+                ?: states.firstOrNull { it.first == base }
+        }) { picked ->
+            if (picked == null || !resumed) return@run
+            npShown = picked.first
+            val s = picked.second
             val state = s.optString("state")
             val a = s.optJSONObject("attributes")
             val active = (state == "playing" || state == "paused") && a != null
@@ -1195,7 +1229,7 @@ class HomeActivity : Activity() {
                 return@run
             }
             npCard.visibility = View.VISIBLE
-            npLabel.text = if (cfg.nowPlaying != null) cfg.nowPlayingLabel
+            npLabel.text = if (cfg.nowPlaying != null && npShown == cfg.nowPlaying) cfg.nowPlayingLabel
                 else "Now playing · " + s.optJSONObject("attributes")?.optString("friendly_name", "").orEmpty().trim()
             npTitle.text = a!!.optString("media_title", "")
             val artist = a.optString("media_artist", "")
@@ -1234,7 +1268,7 @@ class HomeActivity : Activity() {
 
     private fun togglePlay() {
         val client = ha ?: return
-        val entity = npEntity() ?: return
+        val entity = npShown ?: npEntity() ?: return
         Bg.run({ client.call("media_player", "media_play_pause", entity) }) {
             Bg.main.postDelayed({ refreshNowPlaying() }, 600)
         }

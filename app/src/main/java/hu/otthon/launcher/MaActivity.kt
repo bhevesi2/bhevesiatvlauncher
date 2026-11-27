@@ -28,11 +28,15 @@ import java.util.concurrent.Executors
 
 /**
  * Music Assistant on the TV, as pages, the way the streaming apps do it:
- *  - Library, the full width: tabs (Home, Playlists, Albums, Artists, Radio) and search. In the
+ *  - Library, the full width, in the film library's look: the chosen album's or artist's picture
+ *    fills the screen behind its name and story (from TheAudioDB and Wikipedia, see [MusicInfo]),
+ *    the covers below in rows that turn in space where there is memory for it (Settings ›
+ *    Library › 3D effects). Tabs (Home, Playlists, Albums, Artists, Radio) and search. In the
  *    top right corner, always one press up away, a Now playing chip and the player it plays on.
- *  - An album or playlist opens on its own page: the cover, Play / Shuffle / Radio, the player,
- *    and the songs. OK on a song plays the album from that song; holding OK gives more choices.
- *  - An artist opens on a page with the artist's albums.
+ *  - An album or playlist opens on its own page over its picture: the cover, the name, its year
+ *    and genre and story, Play / Shuffle / Radio, and the songs. OK on a song plays the album from
+ *    that song; holding OK gives more choices.
+ *  - An artist opens on a page with the photo, the biography and the artist's albums.
  *  - Now playing is a page of its own: the cover large, the cover blurred as the background,
  *    the song, the quality, progress, the controls and what comes next.
  * Back goes back a page; from the library it closes the screen.
@@ -58,6 +62,22 @@ class MaActivity : PanelActivity() {
 
     private lateinit var backdrop: Backdrop
     private lateinit var pages: FrameLayout
+    /** The chosen item's picture over the whole screen, and the next one fading in over it. */
+    private lateinit var art: ImageView
+    private lateinit var artNext: ImageView
+    private var artKey: String? = null
+    private val arts = object : LinkedHashMap<String, Bitmap>(8, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Bitmap>?) = size > 6
+    }
+    /** Stories are fetched one at a time (TheAudioDB answers 30 questions a minute). */
+    private val infoExec = Executors.newSingleThreadExecutor()
+    private var deep = false
+
+    // the library's chosen item, big
+    private lateinit var heroTitle: TextView
+    private lateinit var heroMeta: TextView
+    private lateinit var heroText: TextView
+    private var heroItem: Item? = null
     private val under = ArrayList<Under>()
 
     // library
@@ -150,11 +170,23 @@ class MaActivity : PanelActivity() {
 
     private fun buildUi() {
         val root = FrameLayout(this)
+        deep = !LowRam.on && MediaActivity.threeD(this)
         backdrop = Backdrop(this)
         root.addView(backdrop, FrameLayout.LayoutParams(-1, -1))
         root.addView(View(this).apply {
             background = GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, intArrayOf(0xD9070810.toInt(), 0xC7070810.toInt(), 0xE6070810.toInt()))
         }, FrameLayout.LayoutParams(-1, -1))
+        // the chosen item's picture, faded into the dark to the left and to the bottom (as in the film library)
+        art = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0f }
+        artNext = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0f }
+        root.addView(art, FrameLayout.LayoutParams(-1, -1))
+        root.addView(artNext, FrameLayout.LayoutParams(-1, -1))
+        root.addView(View(this).apply {
+            background = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(0xF20B0C10.toInt(), 0xB30B0C10.toInt(), 0x330B0C10))
+        }, FrameLayout.LayoutParams(-1, -1))
+        root.addView(View(this).apply {
+            background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, intArrayOf(0xFF0B0C10.toInt(), 0xE60B0C10.toInt(), 0x000B0C10))
+        }, FrameLayout.LayoutParams(-1, dp(380f), Gravity.BOTTOM))
         pages = FrameLayout(this).apply { clipChildren = false }
         root.addView(pages, FrameLayout.LayoutParams(-1, -1))
         FocusGlide.install(pages)
@@ -305,15 +337,27 @@ class MaActivity : PanelActivity() {
         tabRow.addView(roundButton(null, "Search") { search() }.apply { setImageDrawable(searchIcon()) },
             LinearLayout.LayoutParams(dp(36f), dp(36f)).apply { leftMargin = dp(10f) })
         val (col, _) = page(null, tabRow)
+        // the chosen album, artist or playlist, big: its name, what it is, its story
+        val hero = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        heroTitle = label("", 26f, C.TEXT, bold = true).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
+        heroMeta = label("", 12f, C.TEXT2).apply { maxLines = 1; ellipsize = TextUtils.TruncateAt.END }
+        heroText = label("", 12f, 0xFFD9D7D2.toInt()).apply { maxLines = 3; ellipsize = TextUtils.TruncateAt.END }
+        hero.addView(heroTitle)
+        hero.addView(heroMeta, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4f) })
+        hero.addView(heroText, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8f) })
+        col.addView(hero, LinearLayout.LayoutParams(dp(600f), dp(132f)).apply { topMargin = dp(14f) })
         scroll = ColScroller(this).apply {
             clipToPadding = false
             clipChildren = false
             isVerticalScrollBarEnabled = false
-            setPadding(0, dp(4f), 0, dp(30f))
+            setPadding(0, dp(12f), 0, dp(30f))
         }
         body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; clipChildren = false }
         scroll.addView(body, FrameLayout.LayoutParams(-1, -2))
-        col.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(6f) })
+        // scrolled up, the covers pass under the story, not over it
+        val clip = FrameLayout(this).apply { clipChildren = true }
+        clip.addView(scroll, FrameLayout.LayoutParams(-1, -1))
+        col.addView(clip, LinearLayout.LayoutParams(-1, 0, 1f))
         message = label("", 14f, C.TEXT2).apply { visibility = View.GONE }
         col.addView(message, LinearLayout.LayoutParams(-2, -2).apply { bottomMargin = dp(40f) })
         return col
@@ -365,6 +409,8 @@ class MaActivity : PanelActivity() {
                     i == 0 -> showRows(body, sections)
                     else -> showGrid(body, sections[0].items, pageWidth, 6)
                 }
+                heroItem = null
+                sections?.firstOrNull()?.items?.firstOrNull()?.let { hero(it) }
                 scroll.scrollTo(0, 0)
             }
         }
@@ -412,8 +458,8 @@ class MaActivity : PanelActivity() {
                 topMargin = if (into.childCount > 0) dp(14f) else dp(6f)
             })
             val rowScroll = RowScroller(this)
-            rowScroll.setPadding(0, dp(10f), dp(20f), dp(6f))
-            val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; clipChildren = false }
+            rowScroll.setPadding(0, dp(12f), dp(20f), dp(6f))
+            val line = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; clipChildren = false; clipToPadding = false }
             s.items.forEachIndexed { i, item ->
                 line.addView(card(item, dp(124f)), LinearLayout.LayoutParams(-2, -2).apply { if (i > 0) leftMargin = dp(16f) })
             }
@@ -473,10 +519,17 @@ class MaActivity : PanelActivity() {
             visibility = if (item.sub.isBlank() || round) View.GONE else View.VISIBLE
         }
         cover.setOnFocusChangeListener { v, f ->
-            Look.grow(v, f, 1.06f)
+            Look.grow(v, f, if (deep) 1.1f else 1.06f)
             name.setTextColor(if (f) C.TEXT else C.TEXT2)
-            name.animate().translationY(if (f) dp(4f).toFloat() else 0f).setDuration(200).start()
-            sub.animate().translationY(if (f) dp(4f).toFloat() else 0f).setDuration(200).start()
+            name.animate().translationY(if (f) dp(6f).toFloat() else 0f).setDuration(200).start()
+            sub.animate().translationY(if (f) dp(6f).toFloat() else 0f).setDuration(200).start()
+            val line = box.parent as? LinearLayout
+            if (f) {
+                if (isIn(box, library)) hero(item)
+                if (deep && line != null) { lean(line, box); light(line) }
+            } else if (deep && line != null) {
+                line.post { if (line.findFocus() == null) flatten(line) }
+            }
         }
         cover.setOnClickListener { open(item) }
         cover.setOnLongClickListener { menu(item); true }
@@ -487,6 +540,158 @@ class MaActivity : PanelActivity() {
     }
 
     private fun clean(name: String) = name.replace('_', ' ').replace(Regex("\\s+"), " ").trim()
+
+    // ---------- 3D, as in the film library ----------
+
+    /** The focused cover faces you, the ones beside it turn in towards it and sink back. */
+    private fun lean(line: LinearLayout, focused: View) {
+        val at = line.indexOfChild(focused)
+        val camera = 9f * resources.displayMetrics.densityDpi
+        for (i in 0 until line.childCount) {
+            val c = line.getChildAt(i)
+            val d = i - at
+            val n = Math.abs(d)
+            c.cameraDistance = camera
+            c.pivotY = c.height * 0.4f
+            val turn = if (n == 0) 0f else (24f + (n - 1) * 5f).coerceAtMost(38f) * (if (d < 0) 1f else -1f)
+            val a = c.animate().rotationY(turn).alpha(if (n == 0) 1f else (1f - n * 0.1f).coerceAtLeast(0.55f))
+            a.scaleX(if (n == 0) 1f else 0.93f).scaleY(if (n == 0) 1f else 0.93f)
+            a.setDuration(320).setInterpolator(android.view.animation.DecelerateInterpolator(2.2f)).start()
+        }
+    }
+
+    private fun flatten(line: LinearLayout) {
+        for (i in 0 until line.childCount) line.getChildAt(i).animate().rotationY(0f).alpha(1f).scaleX(1f).scaleY(1f)
+            .setDuration(300).setInterpolator(android.view.animation.DecelerateInterpolator(2f)).start()
+    }
+
+    /** The row with the cursor is lit, the other rows of the page step back (rows only, not the long grids). */
+    private fun light(line: LinearLayout) {
+        val row = line.parent as? RowScroller ?: return
+        val holder = row.parent as? ViewGroup ?: return
+        for (i in 0 until holder.childCount) {
+            val r = holder.getChildAt(i)
+            if (r !is RowScroller) continue
+            val to = if (r === row) 1f else 0.6f
+            if (r.alpha == to) continue
+            r.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+            r.animate().alpha(to).setDuration(260).withEndAction { if (r.alpha == 1f) r.setLayerType(View.LAYER_TYPE_NONE, null) }.start()
+        }
+    }
+
+    // ---------- the chosen item, big ----------
+
+    private val heroLater = Runnable { heroItem?.let { heroDetails(it) } }
+
+    private fun kindName(type: String) = when (type) {
+        "album" -> "Album"; "artist" -> "Artist"; "playlist" -> "Playlist"; "radio" -> "Radio"; "track" -> "Song"; else -> ""
+    }
+
+    private fun hero(item: Item) {
+        if (heroItem?.uri == item.uri) return
+        heroItem = item
+        heroTitle.text = clean(item.name)
+        val known = infoOf(item, cachedOnly = true)
+        heroMeta.text = metaOf(item, known)
+        heroText.text = known?.text ?: ""
+        if (deep) for ((k, v) in listOf(heroTitle, heroMeta, heroText).withIndex()) {
+            v.animate().cancel()
+            v.alpha = 0f
+            v.translationX = dp(16f).toFloat()
+            v.animate().alpha(1f).translationX(0f).setStartDelay(k * 40L).setDuration(280)
+                .setInterpolator(android.view.animation.DecelerateInterpolator(2f)).start()
+        }
+        // the story and the picture when the cursor rests a moment (fast moves stay calm)
+        main.removeCallbacks(heroLater)
+        main.postDelayed(heroLater, 380)
+    }
+
+    private fun metaOf(item: Item, info: MusicInfo.Info?): String =
+        // the names as they are; only the words of the launcher are translated
+        (listOf(Lang.tr(kindName(item.type)), if (item.type == "artist") "" else item.sub) +
+            (info?.meta?.split(" · ")?.map { if (it.startsWith("since ")) Lang.tr(it) else it } ?: emptyList()))
+            .filter { it.isNotBlank() }.joinToString("  ·  ")
+
+    /** What the internet says about [item] (null for playlists and radio). Background thread unless [cachedOnly]. */
+    private fun infoOf(item: Item, cachedOnly: Boolean = false): MusicInfo.Info? {
+        val artist = item.sub.substringBefore(",").trim()
+        return when (item.type) {
+            "artist" -> if (cachedOnly) MusicInfo.cached(MusicInfo.artistKey(item.name)) else MusicInfo.artist(applicationContext, item.name)
+            "album" -> if (cachedOnly) MusicInfo.cached(MusicInfo.albumKey(artist, item.name)) else MusicInfo.album(applicationContext, artist, item.name)
+            else -> null
+        }
+    }
+
+    private fun heroDetails(item: Item) {
+        try {
+            infoExec.execute {
+                // the cursor has moved on while this waited its turn: not asked for any more
+                if (heroItem !== item) return@execute
+                val info = try { infoOf(item) } catch (e: Exception) { null }
+                main.post {
+                    if (isFinishing || heroItem !== item) return@post
+                    heroMeta.text = metaOf(item, info)
+                    if (info != null && heroText.text.isEmpty()) {
+                        heroText.alpha = 0f
+                        heroText.animate().alpha(1f).setDuration(300).start()
+                    }
+                    heroText.text = info?.text ?: ""
+                    showArtOf(item, info)
+                }
+            }
+        } catch (e: Exception) { }
+    }
+
+    /** The big picture for [item]: the artist's wide photo, else its cover, blurred. */
+    private fun showArtOf(item: Item, info: MusicInfo.Info?) {
+        val wide = info?.backdrop
+        if (wide != null) {
+            artPicture(wide) { b -> if (b != null) showArt(wide, b) else coverArt(item) }
+        } else coverArt(item)
+    }
+
+    private fun coverArt(item: Item) {
+        val url = item.image ?: return
+        val key = "blur|$url"
+        arts[key]?.let { showArt(key, it); return }
+        picture(url, 256) { b ->
+            if (b == null) return@picture
+            val blurred = blur(b)
+            arts[key] = blurred
+            showArt(key, blurred)
+        }
+    }
+
+    private fun artPicture(url: String, done: (Bitmap?) -> Unit) {
+        arts[url]?.let { done(it); return }
+        val client = ha ?: return done(null)
+        val width = if (LowRam.on) 960 else 1600
+        try {
+            exec.execute {
+                val b = try { client.bitmap(url, width, 10000) } catch (e: Throwable) { null }
+                main.post {
+                    if (b != null) arts[url] = b
+                    if (!isFinishing) done(b)
+                }
+            }
+        } catch (e: Exception) { }
+    }
+
+    private fun showArt(key: String, b: Bitmap) {
+        if (artKey == key) return
+        artKey = key
+        artNext.animate().cancel()
+        artNext.setImageBitmap(b)
+        artNext.alpha = 0f
+        artNext.animate().alpha(1f).setDuration(450).withEndAction {
+            art.setImageBitmap(b)
+            art.alpha = 1f
+            art.scaleX = 1f; art.scaleY = 1f
+            artNext.alpha = 0f
+            // a slow drift into the picture
+            if (deep) art.animate().scaleX(1.07f).scaleY(1.07f).setDuration(22_000).setInterpolator(null).start()
+        }.start()
+    }
 
     /** OK on a cover: albums, playlists and artists open; radio stations and songs play. */
     private fun open(item: Item) {
@@ -600,21 +805,30 @@ class MaActivity : PanelActivity() {
         val split = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; clipChildren = false }
         col.addView(split, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(14f) })
 
-        // left: the cover, the names and the buttons
+        // left: the cover beside the names, the story, the buttons (over the album's picture)
+        val leftW = dp(330f)
         val left = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; clipChildren = false }
-        val coverSize = dp(250f)
+        val top = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.BOTTOM; clipChildren = false }
+        val coverSize = dp(150f)
         val cover = coverView(item, coverSize, false, dp(Look.R_TILE).toFloat()).apply { elevation = dp(12f).toFloat() }
-        left.addView(cover, LinearLayout.LayoutParams(coverSize, coverSize))
-        left.addView(label(clean(item.name), 19f, C.TEXT, bold = true).apply {
-            maxLines = 2
+        top.addView(cover, LinearLayout.LayoutParams(coverSize, coverSize))
+        val names = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        names.addView(label(clean(item.name), 19f, C.TEXT, bold = true).apply {
+            maxLines = 3
             ellipsize = TextUtils.TruncateAt.END
-        }, LinearLayout.LayoutParams(coverSize, -2).apply { topMargin = dp(14f) })
-        if (item.sub.isNotBlank()) left.addView(label(item.sub, 13f, C.TEXT2).apply {
+        })
+        if (item.sub.isNotBlank()) names.addView(label(item.sub, 13f, C.TEXT2).apply {
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
-        }, LinearLayout.LayoutParams(coverSize, -2).apply { topMargin = dp(4f) })
+        }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4f) })
+        val facts = label("", 11f, C.TEXT3).apply { maxLines = 2 }
+        names.addView(facts, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4f) })
         val count = label("", 11f, C.TEXT3)
-        left.addView(count, LinearLayout.LayoutParams(coverSize, -2).apply { topMargin = dp(4f) })
+        names.addView(count, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(2f) })
+        top.addView(names, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(16f) })
+        left.addView(top, LinearLayout.LayoutParams(-1, -2))
+        val story = label("", 11f, 0xFFD9D7D2.toInt()).apply { maxLines = 9; ellipsize = TextUtils.TruncateAt.END; visibility = View.GONE }
+        left.addView(story, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(14f) })
         val buttons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; clipChildren = false }
         val playBtn = pill("Play", R.drawable.ic_play) { play(item, "replace", false, shuffle = false) }
         buttons.addView(playBtn)
@@ -622,7 +836,8 @@ class MaActivity : PanelActivity() {
         buttons.addView(pill("Radio", null) { play(item, "replace", true) }, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(8f) })
         left.addView(buttons, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(14f) })
         left.addView(label("Hold OK on a song for more", 10f, C.TEXT3), LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(10f) })
-        split.addView(left, LinearLayout.LayoutParams(coverSize, -1))
+        split.addView(left, LinearLayout.LayoutParams(leftW, -1))
+        fillStory(item, story, facts)
 
         // right: the songs
         val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; clipChildren = false }
@@ -717,6 +932,35 @@ class MaActivity : PanelActivity() {
         (mark.tag as? View)?.visibility = if (on) View.INVISIBLE else View.VISIBLE
     }
 
+    /**
+     * An album's or artist's page: its story under the names, its year, genre or country beside
+     * them, its picture behind the page; for an artist without a picture in the library, the photo.
+     */
+    private fun fillStory(item: Item, story: TextView, meta: TextView, photo: ImageView? = null) {
+        fun put(info: MusicInfo.Info?) {
+            if (info != null && info.text.isNotBlank()) {
+                story.text = info.text
+                if (story.visibility != View.VISIBLE) {
+                    story.visibility = View.VISIBLE
+                    story.alpha = 0f
+                    story.animate().alpha(1f).setDuration(300).start()
+                }
+            }
+            meta.text = info?.meta?.split(" · ")?.joinToString("  ·  ") { if (it.startsWith("since ")) Lang.tr(it) else it } ?: ""
+            if (photo != null && item.image == null) info?.picture?.let { url -> artPicture(url) { b -> if (b != null) photo.setImageBitmap(b) } }
+            showArtOf(item, info)
+        }
+        val known = infoOf(item, cachedOnly = true)
+        if (known != null || item.type !in listOf("album", "artist")) { put(known); return }
+        coverArt(item)
+        try {
+            infoExec.execute {
+                val info = try { infoOf(item) } catch (e: Exception) { null }
+                main.post { if (!isFinishing && isIn(story, pages)) put(info) }
+            }
+        } catch (e: Exception) { }
+    }
+
     // ---------- an artist ----------
 
     private fun openArtist(item: Item) {
@@ -727,21 +971,31 @@ class MaActivity : PanelActivity() {
         val (col, _) = page("ARTIST")
         val split = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; clipChildren = false }
         col.addView(split, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(14f) })
-        val left = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER_HORIZONTAL; clipChildren = false }
-        val size = dp(200f)
-        left.addView(coverView(item, size, true, 0f).apply { elevation = dp(12f).toFloat() }, LinearLayout.LayoutParams(size, size))
-        left.addView(label(clean(item.name), 19f, C.TEXT, bold = true).apply {
-            gravity = Gravity.CENTER
-            maxLines = 2
+        val leftW = dp(330f)
+        val left = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; clipChildren = false }
+        val top = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL; clipChildren = false }
+        val size = dp(130f)
+        val photo = coverView(item, size, true, 0f).apply { elevation = dp(12f).toFloat() }
+        top.addView(photo, LinearLayout.LayoutParams(size, size))
+        val names = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        names.addView(label(clean(item.name), 21f, C.TEXT, bold = true).apply {
+            maxLines = 3
             ellipsize = TextUtils.TruncateAt.END
-        }, LinearLayout.LayoutParams(dp(240f), -2).apply { topMargin = dp(14f) })
+        })
+        val meta = label("", 11f, C.TEXT3).apply { maxLines = 2 }
+        names.addView(meta, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4f) })
+        top.addView(names, LinearLayout.LayoutParams(0, -2, 1f).apply { leftMargin = dp(16f) })
+        left.addView(top, LinearLayout.LayoutParams(-1, -2))
+        val story = label("", 11f, 0xFFD9D7D2.toInt()).apply { maxLines = 11; ellipsize = TextUtils.TruncateAt.END; visibility = View.GONE }
+        left.addView(story, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(14f) })
         val buttons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; clipChildren = false }
         val playBtn = pill("Play", R.drawable.ic_play) { play(item, "replace", false) }
         buttons.addView(playBtn)
         buttons.addView(pill("Shuffle", null) { play(item, "replace", false, shuffle = true) }, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(8f) })
         buttons.addView(pill("Radio", null) { play(item, "replace", true) }, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(8f) })
         left.addView(buttons, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(14f) })
-        split.addView(left, LinearLayout.LayoutParams(dp(240f), -1))
+        split.addView(left, LinearLayout.LayoutParams(leftW, -1))
+        fillStory(item, story, meta, photo)
 
         val grid = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; clipChildren = false }
         val sc = ColScroller(this).apply {
@@ -753,7 +1007,7 @@ class MaActivity : PanelActivity() {
         grid.addView(label("Loading the albums…", 13f, C.TEXT3))
         split.addView(sc, LinearLayout.LayoutParams(0, -1, 1f).apply { leftMargin = dp(40f) })
         push(col, playBtn)
-        val gridWidth = pageWidth - dp(240f) - dp(40f)
+        val gridWidth = pageWidth - dp(330f) - dp(40f)
         exec.execute {
             val albums = try {
                 val client = ha!!
@@ -781,7 +1035,7 @@ class MaActivity : PanelActivity() {
                         grid.addView(label("Albums", 14f, C.TEXT, bold = true), 0)
                         grid.removeViewAt(1)
                         val g = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; clipChildren = false }
-                        showGrid(g, albums, gridWidth, 4)
+                        showGrid(g, albums, gridWidth, 3)
                         grid.addView(g)
                     }
                 }

@@ -171,6 +171,21 @@ offered with the film's own. ◀ ▶ skip (held: faster; the presses add up, the
 when they stop), OK pause, ▲ sound and subtitles, ⏮ the episode before, Back leaves; where it got to is kept, near the end counts as watched, the next episode follows.
 This product uses the TMDB API but is not endorsed or certified by TMDB.
 
+## Music library (Music Assistant)
+
+The music button opens Music Assistant's library in the film library's look: the chosen album's,
+artist's or playlist's picture fills the screen behind its name, kind, year, genre and story; the
+covers below in rows that turn in space (the same 3D effects switch, Settings › Library). The story
+and the pictures come from TheAudioDB (its free shared key; Hungarian biographies where it has
+them, artist photos and wide pictures) and Wikipedia (Hungarian, then English; a page is taken only
+if its title is the name and its text is about music). Kept on the TV in `files/musicinfo`;
+nothing found is asked again after a week. An album or artist page shows the story beside the
+songs or albums, over the picture. Now playing is as it was.
+
+The home screen's music card also shows music played on this TV itself (its own Music Assistant
+player, found by the TV's address in the entity id or by its room), whichever player the card is
+set to.
+
 ## Répakaland (easter egg)
 
 Settings › About: press OK on the version number seven times. A small platform game of the
