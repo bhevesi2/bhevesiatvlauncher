@@ -54,8 +54,23 @@ object Updates {
         0L
     }
 
-    /** Newer than what is installed: published more than 15 minutes after this build was made. */
-    fun isNewer(ctx: Context, r: Release): Boolean = isNewer(installedMinute(ctx), r)
+    /**
+     * Newer than what is installed: a higher build number ("Build 136" against version 0.1.135).
+     * Only when a number cannot be read: published more than 15 minutes after this build was made.
+     */
+    fun isNewer(ctx: Context, r: Release): Boolean {
+        val installed = try { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName } catch (e: Exception) { null }
+        return isNewer(installed, installedMinute(ctx), r)
+    }
+
+    fun isNewer(installedName: String?, installedMinute: Long, r: Release): Boolean {
+        val mine = buildNumber(installedName?.substringAfterLast('.'))
+        val theirs = buildNumber(r.name)
+        return if (mine != null && theirs != null) theirs > mine else isNewer(installedMinute, r)
+    }
+
+    /** The build number in "Build 136" or "136". */
+    fun buildNumber(s: String?): Int? = s?.let { Regex("(\\d+)\\s*$").find(it.trim())?.groupValues?.get(1)?.toIntOrNull() }
 
     fun isNewer(installedMinute: Long, r: Release): Boolean = r.minute > installedMinute + 15
 

@@ -161,4 +161,16 @@ class LogicTest {
         assertEquals(Triple("NAS", "Media", ""), MediaLib.parsePath("NAS/Media"))
         assertNull(MediaLib.parsePath("\\\\NAS"))
     }
+
+    @Test
+    fun updateNumbers() {
+        val r = Updates.Release("Build 136", 1000L, "x.apk")
+        // published only 11 minutes after the installed build: still newer by its number
+        assertEquals(true, Updates.isNewer("0.1.135", 989L, r))
+        assertEquals(false, Updates.isNewer("0.1.136", 989L, r))
+        assertEquals(false, Updates.isNewer("0.1.137", 989L, r))
+        // no number to read: by the time
+        assertEquals(true, Updates.isNewer(null, 900L, r))
+        assertEquals(136, Updates.buildNumber("Build 136"))
+    }
 }
