@@ -150,7 +150,7 @@ object MediaLib {
     }
 
     private fun clean(s: String): String = s
-        .replace(Regex("\\[[^]]*]|\\{[^}]*}"), " ")
+        .replace(Regex("\\[[^\\]]*\\]|\\{[^\\}]*\\}"), " ")
         .replace(Regex("[._]"), " ")
         .replace(JUNK, " ")
         .replace(Regex("[()\\-]+\\s*$"), " ")
@@ -281,7 +281,21 @@ object MediaLib {
         if (scanning) return "already running"
         scanning = true
         val app = ctx.applicationContext
-        try {
+        return try {
+            scanAll(app)
+        } catch (e: Exception) {
+            android.util.Log.w("OtthonMedia", "scan failed", e)
+            val why = "Could not save the films: ${e.javaClass.simpleName} ${e.message ?: ""}".trim()
+            Prefs.of(app).edit().putString("media_scan_result", why).apply()
+            why
+        } finally {
+            scanning = false
+            progress = ""
+        }
+    }
+
+    private fun scanAll(app: Context): String {
+        run {
             val db = Db.of(app).writableDatabase
             var found = 0
             var added = 0
@@ -308,7 +322,10 @@ object MediaLib {
                             db.update("files", ContentValues().apply { put("seen", 1); put("size", size); put("mtime", mtime) },
                                 "source = ? AND path = ?", arrayOf(src.id, path))
                         } else {
-                            val g = guess(path)
+                            val g = try { guess(path) } catch (e: Exception) {
+                                android.util.Log.w("OtthonMedia", "can't read the name of $path", e)
+                                Guess(false, path.replace('\\', '/').substringAfterLast('/').substringBeforeLast('.'), null, null, null, false, false, false)
+                            }
                             db.insert("files", null, ContentValues().apply {
                                 put("source", src.id); put("path", path); put("size", size); put("mtime", mtime)
                                 put("series", if (g.series) 1 else 0); put("title", g.title); g.year?.let { put("year", it) }
@@ -325,7 +342,8 @@ object MediaLib {
                 }
             }
             progress = "TMDB"
-            val looked = enrich(app)
+            android.util.Log.i("OtthonMedia", "saved: $found files, $added new; looking up titles")
+            val looked = try { enrich(app) } catch (e: Exception) { android.util.Log.w("OtthonMedia", "TMDB lookup stopped", e); 0 }
             val summary = buildString {
                 append("$found films and episodes, $added new")
                 if (looked > 0) append(", $looked looked up")
@@ -334,9 +352,6 @@ object MediaLib {
             android.util.Log.i("OtthonMedia", "scan: $summary")
             Prefs.of(app).edit().putLong("media_scanned_at", System.currentTimeMillis()).putString("media_scan_result", summary).apply()
             return summary
-        } finally {
-            scanning = false
-            progress = ""
         }
     }
 
