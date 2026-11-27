@@ -46,6 +46,8 @@ import java.util.EnumSet
 class LibraryDataSource(private val ctx: Context) : BaseDataSource(true) {
     private var uri: Uri? = null
     private var sourceId: String? = null
+    private var src: MediaLib.Source? = null
+    private var path: String? = null
     private var share: MediaLib.SmbShare? = null
     private var smbFile: com.hierynomus.smbj.share.File? = null
     private var local: RandomAccessFile? = null
@@ -68,6 +70,8 @@ class LibraryDataSource(private val ctx: Context) : BaseDataSource(true) {
             val src = MediaLib.sources(ctx).firstOrNull { it.id == u.host } ?: throw java.io.IOException("No source ${u.host}")
             val path = Uri.decode(u.encodedPath?.removePrefix("/") ?: "")
             sourceId = src.id
+            this.src = src
+            this.path = path
             var s = SharePool.take(ctx, src)
             val f = try { openOn(s, path) } catch (e: Exception) {
                 // the kept connection may have gone stale (the NAS slept): once more, on a new one
@@ -94,20 +98,64 @@ class LibraryDataSource(private val ctx: Context) : BaseDataSource(true) {
     private fun openOn(s: MediaLib.SmbShare, path: String) =
         s.share.openFile(path, EnumSet.of(AccessMask.GENERIC_READ), null, SMB2ShareAccess.ALL, SMB2CreateDisposition.FILE_OPEN, null)
 
+    /**
+     * Reads [block] from [at]. A read that fails (the NAS dropped the connection, a read timed
+     * out) is tried again on a new connection, up to three times, before the player hears of it:
+     * a short break in the network should not show at all.
+     */
+    private fun readNow(at: Long): Int {
+        var tries = 0
+        while (true) {
+            try {
+                return (smbFile ?: throw java.io.IOException("closed")).read(block, at, 0, block.size)
+            } catch (e: Exception) {
+                if (interrupted(e)) throw e   // the player gave up this read itself (a seek): no retry
+                tries++
+                PlayerLog.w(ctx, "read at $at failed (try $tries): $e" + (e.cause?.let { " / $it" } ?: ""))
+                if (tries > 3) throw java.io.IOException("Can't read from the NAS", e)
+                try { Thread.sleep(250L * tries) } catch (ie: InterruptedException) { throw e }
+                try { reconnect() } catch (re: Exception) { PlayerLog.w(ctx, "reconnect failed: $re") }
+            }
+        }
+    }
+
+    private fun interrupted(e: Throwable): Boolean {
+        if (Thread.currentThread().isInterrupted) return true
+        var c: Throwable? = e
+        while (c != null) { if (c is InterruptedException || c is java.io.InterruptedIOException && c !is java.net.SocketTimeoutException) return true; c = c.cause }
+        return false
+    }
+
+    /** A new connection and the file opened again on it (the old one is not kept). */
+    private fun reconnect() {
+        try { smbFile?.close() } catch (e: Exception) { }
+        smbFile = null
+        try { share?.close() } catch (e: Exception) { }
+        share = null
+        val s = MediaLib.openShare(ctx, src ?: throw java.io.IOException("No source"))
+        share = s
+        smbFile = openOn(s, path ?: "")
+        PlayerLog.w(ctx, "connected again")
+    }
+
     /** Makes [block] hold the bytes from [at]: the block read ahead if it is that one, else read now. */
-    private fun fill(f: com.hierynomus.smbj.share.File, at: Long): Int {
+    private fun fill(at: Long): Int {
         val a = ahead
         ahead = null
         var got = -1
         if (a != null) {
-            val ready = try { a.get() } catch (e: Exception) { -1 }   // also waits for it to stop writing into spare
+            val ready = try { a.get() } catch (e: Exception) {
+                PlayerLog.w(ctx, "read ahead at $aheadAt failed: ${e.cause ?: e}")
+                -1
+            }   // also waits for it to stop writing into spare
             if (aheadAt == at && ready > 0) {
                 val t = block; block = spare; spare = t
                 got = ready
             }
         }
-        if (got <= 0) got = f.read(block, at, 0, block.size)
+        if (got <= 0) got = readNow(at)
         if (got <= 0) return got
+        val f = smbFile ?: return got
         blockAt = at
         blockLen = got
         read.addAndGet(got.toLong())
@@ -128,7 +176,7 @@ class LibraryDataSource(private val ctx: Context) : BaseDataSource(true) {
         val f = smbFile
         if (f != null) {
             if (blockAt < 0 || position < blockAt || position >= blockAt + blockLen) {
-                if (fill(f, position) <= 0) return M3.RESULT_END_OF_INPUT
+                if (fill(position) <= 0) return M3.RESULT_END_OF_INPUT
             }
             val inBlock = (position - blockAt).toInt()
             n = minOf(want, blockLen - inBlock)
@@ -287,7 +335,7 @@ class PlayerActivity : Activity() {
             .setTargetBufferBytes(bytes)
             .setPrioritizeTimeOverSizeThresholds(false)
             .build()
-        android.util.Log.i("OtthonPlayer", "buffer ${bytes shr 20} MB of ${heap shr 20} MB heap")
+        PlayerLog.w(this, "start: buffer ${bytes shr 20} MB of ${heap shr 20} MB heap")
         player = ExoPlayer.Builder(this)
             .setRenderersFactory(renderers)
             .setLoadControl(load)
@@ -306,12 +354,16 @@ class PlayerActivity : Activity() {
             }
             override fun onPlayerError(error: PlaybackException) {
                 android.util.Log.w("OtthonPlayer", "can't play (${error.errorCodeName})", error)
-                // the network (2000–2999): once more from where it stopped, a little later
-                if (error.errorCode in 2000..2999 && retries < 3) {
+                PlayerLog.w(this@PlayerActivity, "player error ${error.errorCodeName}: ${error.cause}" + (error.cause?.cause?.let { " / $it" } ?: ""))
+                // the network (2000–2999): again from where it stopped; the first time at once and
+                // without a word (a blink in the network should not show), then with the message
+                if (error.errorCode in 2000..2999 && retries < 5) {
                     retries++
-                    loadingText.text = Lang.tr("Connecting again…")
-                    loading.visibility = View.VISIBLE
-                    main.postDelayed({ if (!isFinishing) player.prepare() }, 1500L * retries)
+                    if (retries >= 2) {
+                        loadingText.text = Lang.tr("Connecting again…")
+                        loading.visibility = View.VISIBLE
+                    }
+                    main.postDelayed({ if (!isFinishing) player.prepare() }, if (retries == 1) 150L else 1000L * retries)
                     return
                 }
                 loading.visibility = View.INVISIBLE
@@ -418,7 +470,7 @@ class PlayerActivity : Activity() {
             } else "${clock(p)} / ${clock(d)}   ·   " + Lang.tr("${clock(d - p)} left") + "   ·   " + Lang.tr("ends at $ends")
         }
         bufferText.text = Lang.tr("Ready ahead: $ahead s") + "   ·   $net"
-        if (loading.visibility == View.VISIBLE && retries == 0) {
+        if (loading.visibility == View.VISIBLE && retries < 2) {
             loadingText.text = Lang.tr("Loading…") + "\n$net"
         }
     }
@@ -431,7 +483,7 @@ class PlayerActivity : Activity() {
     /** The ring comes after a moment of loading (a short wait shows nothing) and goes at once. */
     private fun loadingSoon(buffering: Boolean) {
         main.removeCallbacks(showLoading)
-        if (buffering) main.postDelayed(showLoading, 350) else if (retries == 0 || player.playbackState == Player.STATE_READY) loading.visibility = View.INVISIBLE
+        if (buffering) main.postDelayed(showLoading, 350) else if (retries < 2 || player.playbackState == Player.STATE_READY) loading.visibility = View.INVISIBLE
     }
 
     // ---------- the screen's frame rate ----------
@@ -455,7 +507,7 @@ class PlayerActivity : Activity() {
             val same = display.supportedModes.filter { it.physicalWidth == cur.physicalWidth && it.physicalHeight == cur.physicalHeight }
             val rate = FrameRate.pick(fps, same.map { it.refreshRate })
             val best = same.firstOrNull { it.refreshRate == rate }
-            android.util.Log.i("OtthonPlayer", "film ${fps} fps, screen ${cur.refreshRate} Hz, chosen ${best?.refreshRate}")
+            PlayerLog.w(this, "film ${fps} fps, screen ${cur.refreshRate} Hz, chosen ${best?.refreshRate}")
             if (best != null && best.modeId != cur.modeId) {
                 window.attributes = window.attributes.apply { preferredDisplayModeId = best.modeId }
             }
@@ -611,6 +663,25 @@ class PlayerActivity : Activity() {
         fun play(ctx: Context, queue: LongArray, index: Int, startAt: Long = -1L) {
             ctx.startActivity(Intent(ctx, PlayerActivity::class.java).putExtra("queue", queue).putExtra("index", index).putExtra("start", startAt))
         }
+    }
+}
+
+/**
+ * The player's own log of network trouble, in the launcher's folder on the TV's storage
+ * (/sdcard/Android/data/hu.otthon.launcher/files/player.log, readable over ADB): the system log
+ * of a TV turns over in minutes.
+ */
+object PlayerLog {
+    private val fmt = java.text.SimpleDateFormat("MM-dd HH:mm:ss.SSS", java.util.Locale.US)
+
+    fun w(ctx: Context, msg: String) {
+        android.util.Log.w("OtthonPlayer", msg)
+        try {
+            val dir = ctx.getExternalFilesDir(null) ?: return
+            val f = java.io.File(dir, "player.log")
+            if (f.length() > 256 * 1024) f.renameTo(java.io.File(dir, "player.old.log"))
+            synchronized(this) { f.appendText(fmt.format(java.util.Date()) + " " + msg + "\n") }
+        } catch (e: Exception) { }
     }
 }
 

@@ -828,10 +828,8 @@ class HomeActivity : Activity() {
         if (MediaLib.sources(this).isNotEmpty()) {
             addIcon(icons, iconButton(R.drawable.ic_clapper, "Library", true) { open(MediaActivity::class.java) })
         }
+        // the dashboard is opened from the status capsule at the top (a button here only when there is no capsule)
         if (cfg.haEnabled) {
-            addIcon(icons, iconButton(R.drawable.ic_dashboard, "Home Assistant dashboard", true) {
-                open(DashboardActivity::class.java)
-            })
             if (cfg.cameras.isNotEmpty()) {
                 addIcon(icons, iconButton(R.drawable.ic_camera, "Cameras", true) {
                     open(CamerasActivity::class.java)
@@ -930,6 +928,10 @@ class HomeActivity : Activity() {
             chipsRow.setOnClickListener { open(DashboardActivity::class.java) }
         } else {
             chipsRow.visibility = View.GONE
+            // nothing to show at the top: the dashboard's way in stays at the bottom
+            if (cfg.haEnabled) addIcon(icons, iconButton(R.drawable.ic_dashboard, "Home Assistant dashboard", true) {
+                open(DashboardActivity::class.java)
+            })
         }
         if (!cfg.haEnabled || npEntity() == null) npCard.visibility = View.GONE
 
