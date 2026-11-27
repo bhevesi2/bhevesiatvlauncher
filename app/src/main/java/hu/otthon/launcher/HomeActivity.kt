@@ -826,7 +826,7 @@ class HomeActivity : Activity() {
         })
         // the film and series library, once it has somewhere to look
         if (MediaLib.sources(this).isNotEmpty()) {
-            addIcon(icons, iconButton(R.drawable.ic_film, "Library", true) { open(MediaActivity::class.java) })
+            addIcon(icons, iconButton(R.drawable.ic_clapper, "Library", true) { open(MediaActivity::class.java) })
         }
         if (cfg.haEnabled) {
             addIcon(icons, iconButton(R.drawable.ic_dashboard, "Home Assistant dashboard", true) {

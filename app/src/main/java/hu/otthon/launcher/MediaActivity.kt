@@ -45,7 +45,7 @@ class MediaActivity : Activity() {
     private var query = ""
     private var heroKey: String? = null
     private val main = android.os.Handler(android.os.Looper.getMainLooper())
-    private val deep get() = !LowRam.on      // 3D and drifting backdrop where there is memory for it
+    private var deep = false      // 3D and drifting backdrop: where there is memory for it and it is on (Settings › Library)
     private val posterSize get() = if (LowRam.lite) "w185" else "w342"
     private val backdropSize get() = if (LowRam.on) "w780" else "w1280"
 
@@ -53,6 +53,7 @@ class MediaActivity : Activity() {
         super.onCreate(savedInstanceState)
         CrashLog.install(this)
         root = FrameLayout(this).apply { setBackgroundColor(0xFF0B0C10.toInt()) }
+        deep = !LowRam.on && threeD(this)
         backdrop = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
         backdropNext = ImageView(this).apply { scaleType = ImageView.ScaleType.CENTER_CROP; alpha = 0f }
         root.addView(backdrop, FrameLayout.LayoutParams(-1, -1))
@@ -68,14 +69,14 @@ class MediaActivity : Activity() {
         // the rows are drawn only in their own area: scrolled up, they pass under the title and the story, not over them
         page = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; clipChildren = true }
         val top = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
-        top.addView(ImageView(this).apply { setImageResource(R.drawable.ic_film); setColorFilter(0xFFFAC775.toInt()) },
+        top.addView(ImageView(this).apply { setImageResource(R.drawable.ic_clapper); setColorFilter(0xFFFAC775.toInt()) },
             LinearLayout.LayoutParams(dp(20f), dp(20f)).apply { rightMargin = dp(8f) })
         top.addView(label("Library", 14f, C.TEXT, bold = true))
         top.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         status = label("", 10f, C.TEXT2)
         top.addView(status, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = dp(14f) })
         // new films without going to the settings
-        val refresh = pill("Look for new films")
+        val refresh = pill("Library Update")
         refresh.setOnClickListener { maybeScan(force = true) }
         top.addView(refresh, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = dp(12f) })
         search = pill("Search")
@@ -498,6 +499,9 @@ class MediaActivity : Activity() {
 
     companion object {
         fun open(ctx: Context) = ctx.startActivity(Intent(ctx, MediaActivity::class.java))
+
+        /** The 3D effects switch (Settings › Library); on unless turned off. */
+        fun threeD(ctx: Context) = Prefs.of(ctx).getBoolean("media_3d", true)
     }
 }
 

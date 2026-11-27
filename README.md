@@ -156,7 +156,7 @@ is opened (or from Settings).
 The library: the chosen title's backdrop behind its data; rows of posters (Continue watching,
 Recently added, Films, Series, the larger genres); search by title, actor or genre. Where there
 is memory to spare the posters turn in space (cover-flow: the focused one comes forward, the ones
-beside it turn in; the other rows dim) and the backdrop drifts. "Look for new films" at the top.
+beside it turn in; the other rows dim) and the backdrop drifts. "Library Update" at the top looks through the folders. The 3D effects can be switched off in Settings › Library.
 OK on a poster: play, continue, from the start, mark as watched; a series shows its seasons and
 episodes, and the posters behind it cannot take the cursor while it is open.
 

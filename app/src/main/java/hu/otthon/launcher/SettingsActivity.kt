@@ -1263,6 +1263,9 @@ class SettingsActivity : PanelActivity() {
             val app = applicationContext
             Bg.slow({ MediaLib.scan(app) }) { r -> toast(r ?: "Could not look through the folders"); render(focusedRow() ?: 0) }
         }
+        // the turning posters and drifting backdrop: only where there is memory for them
+        if (LowRam.on) row("3D effects", "Not on this TV: it needs more memory") { }
+        else toggle("3D effects", MediaActivity.threeD(this)) { on -> Prefs.of(this).edit().putBoolean("media_3d", on).apply() }
         row("Open the library") { MediaActivity.open(this) }
         note("This product uses the TMDB API but is not endorsed or certified by TMDB.")
     }
