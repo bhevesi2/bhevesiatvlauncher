@@ -27,6 +27,8 @@ import android.widget.TextView
  */
 class MediaActivity : Activity() {
     private lateinit var root: FrameLayout
+    /** Everything under an open details panel: closed to the cursor while the panel is open. */
+    private lateinit var page: LinearLayout
     private lateinit var backdrop: ImageView
     private lateinit var backdropNext: ImageView
     private lateinit var heroTitle: TextView
@@ -62,7 +64,8 @@ class MediaActivity : Activity() {
             background = GradientDrawable(GradientDrawable.Orientation.BOTTOM_TOP, intArrayOf(0xFF0B0C10.toInt(), 0xE60B0C10.toInt(), 0x000B0C10))
         }, FrameLayout.LayoutParams(-1, dp(420f), Gravity.BOTTOM))
 
-        val page = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; clipChildren = false }
+        // the rows are drawn only in their own area: scrolled up, they pass under the title and the story, not over them
+        page = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; clipChildren = true }
         val top = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
         top.addView(ImageView(this).apply { setImageResource(R.drawable.ic_film); setColorFilter(0xFFFAC775.toInt()) },
             LinearLayout.LayoutParams(dp(20f), dp(20f)).apply { rightMargin = dp(8f) })
@@ -359,12 +362,19 @@ class MediaActivity : Activity() {
             val seasons = items.mapNotNull { it.season }.distinct().sorted()
             val tabs = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
             val list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            val tabIds = seasons.associateWith { View.generateViewId() }
+            var shown: Int? = null
             fun showSeason(s: Int) {
+                if (shown == s && list.childCount > 0) return
+                shown = s
                 list.removeAllViews()
-                items.withIndex().filter { it.value.season == s }.forEach { (i, e) -> list.addView(episodeRow(e) { PlayerActivity.play(this, ids, i) }) }
+                items.withIndex().filter { it.value.season == s }.forEach { (i, e) ->
+                    // up from the first episode: back to this season's tab, not whichever tab is nearest
+                    list.addView(episodeRow(e) { PlayerActivity.play(this, ids, i) }.apply { nextFocusUpId = if (list.childCount == 0) tabIds.getValue(s) else View.NO_ID })
+                }
             }
             for (s in seasons) {
-                val tab = pill(Lang.tr("Season $s"))
+                val tab = pill(Lang.tr("Season $s")).apply { id = tabIds.getValue(s) }
                 tab.setOnClickListener { showSeason(s) }
                 tab.setOnFocusChangeListener { v, f ->
                     v.background = rounded(if (f) 0xFFE9E7E2.toInt() else C.GLASS, dp(18f).toFloat())
@@ -381,6 +391,8 @@ class MediaActivity : Activity() {
         }
         root.addView(panel, FrameLayout.LayoutParams(-1, -1))
         details = panel
+        // the cursor stays in the panel: the posters behind it cannot be reached
+        page.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
         panel.alpha = 0f
         panel.translationX = -dp(30f).toFloat()
         panel.animate().alpha(1f).translationX(0f).setDuration(260).setInterpolator(DecelerateInterpolator(2f)).start()
@@ -420,6 +432,7 @@ class MediaActivity : Activity() {
         val d = details ?: return false
         details = null
         root.removeView(d)
+        page.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
         allCards().firstOrNull { it.title.key == heroKey }?.requestFocus()
         return true
     }
