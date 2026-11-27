@@ -436,7 +436,13 @@ class MaActivity : PanelActivity() {
             val o = arr.optJSONObject(i) ?: continue
             val uri = o.optString("uri", "")
             if (uri.isBlank()) continue
-            out.add(Item(uri, o.optString("media_type", ""), o.optString("name", ""), artistsOf(o), imageOf(o)))
+            val type = o.optString("media_type", "")
+            var by = artistsOf(o)
+            // an album filed under "Various Artists" whose songs are all one artist's: shown as theirs
+            if (type == "album" && MusicInfo.isVarious(by.substringBefore(",").trim())) {
+                MusicInfo.albumArtist(this, uri)?.takeIf { it.isNotBlank() }?.let { by = it }
+            }
+            out.add(Item(uri, type, o.optString("name", ""), by, imageOf(o)))
         }
         return out
     }
@@ -618,7 +624,11 @@ class MaActivity : PanelActivity() {
         val artist = item.sub.substringBefore(",").trim()
         return when (item.type) {
             "artist" -> if (cachedOnly) MusicInfo.cached(MusicInfo.artistKey(item.name)) else MusicInfo.artist(applicationContext, item.name)
-            "album" -> if (cachedOnly) MusicInfo.cached(MusicInfo.albumKey(artist, item.name)) else MusicInfo.album(applicationContext, artist, item.name)
+            "album" -> {
+                // a real compilation has no artist to look its story up by
+                if (artist.isBlank() || MusicInfo.isVarious(artist)) null
+                else if (cachedOnly) MusicInfo.cached(MusicInfo.albumKey(artist, item.name)) else MusicInfo.album(applicationContext, artist, item.name)
+            }
             else -> null
         }
     }
@@ -772,7 +782,46 @@ class MaActivity : PanelActivity() {
     /** A song in an album or playlist, from Home Assistant's media browser. */
     private class Song(val uri: String, val title: String, val artist: String)
 
-    private fun songsOf(item: Item): Pair<List<Song>, String?> {
+    /** The songs of [item]; for an album with none in the library, of the same album found in a music service. */
+    private class Songs(val songs: List<Song>, val thumb: String?, val elsewhere: Item?)
+
+    private fun songsOf(item: Item): Songs {
+        val (songs, thumb) = browseSongs(item)
+        if (songs.isNotEmpty() || item.type != "album") return Songs(songs, thumb, null)
+        // added to the library from a service whose songs are not there (Qobuz once): the same album
+        // where Music Assistant can find it now (YouTube Music…), its songs and the way to play it
+        val other = findElsewhere(item) ?: return Songs(songs, thumb, null)
+        val (s2, t2) = browseSongs(other)
+        return if (s2.isEmpty()) Songs(songs, thumb, null) else Songs(s2, thumb ?: t2, other)
+    }
+
+    private fun findElsewhere(item: Item): Item? {
+        val client = ha ?: return null
+        val artist = item.sub.substringBefore(",").trim()
+        val various = artist.isBlank() || MusicInfo.isVarious(artist)
+        val name = MusicInfo.bare(item.name)
+        val data = JSONObject().put("config_entry_id", entry).put("name", name)
+            .put("media_type", JSONArray().put("album")).put("limit", 12)
+        if (!various) data.put("artist", artist)
+        val r = try { client.callResponse("music_assistant", "search", data, 25000) } catch (e: Exception) { return null }
+        val want = MusicInfo.norm(name)
+        return parse(r.optJSONArray("albums")).firstOrNull { a ->
+            !a.uri.startsWith("library://") && MusicInfo.norm(MusicInfo.bare(a.name)) == want &&
+                (various || MusicInfo.norm(a.sub).contains(MusicInfo.norm(artist)) || MusicInfo.norm(artist).contains(MusicInfo.norm(a.sub.substringBefore(","))))
+        }
+    }
+
+    /** Music Assistant's own source name from an uri ("ytmusic--x://album/1" → YouTube Music). */
+    private fun serviceName(uri: String): String {
+        val p = uri.substringBefore("://").substringBefore("--")
+        return when (p) {
+            "ytmusic" -> "YouTube Music"; "spotify" -> "Spotify"; "qobuz" -> "Qobuz"; "tidal" -> "Tidal"; "deezer" -> "Deezer"
+            "apple_music" -> "Apple Music"; "soundcloud" -> "SoundCloud"; "jellyfin" -> "Jellyfin"; "plex" -> "Plex"
+            else -> p.replace('_', ' ').replaceFirstChar { it.uppercase() }
+        }
+    }
+
+    private fun browseSongs(item: Item): Pair<List<Song>, String?> {
         val client = ha ?: return emptyList<Song>() to null
         val player = target ?: return emptyList<Song>() to null
         val r = client.callResponse("media_player", "browse_media", JSONObject()
@@ -818,10 +867,12 @@ class MaActivity : PanelActivity() {
             maxLines = 3
             ellipsize = TextUtils.TruncateAt.END
         })
-        if (item.sub.isNotBlank()) names.addView(label(item.sub, 13f, C.TEXT2).apply {
+        val byLabel = label(item.sub, 13f, C.TEXT2).apply {
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
-        }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4f) })
+            visibility = if (item.sub.isBlank()) View.GONE else View.VISIBLE
+        }
+        names.addView(byLabel, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4f) })
         val facts = label("", 11f, C.TEXT3).apply { maxLines = 2 }
         names.addView(facts, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4f) })
         val count = label("", 11f, C.TEXT3)
@@ -831,10 +882,12 @@ class MaActivity : PanelActivity() {
         val story = label("", 11f, 0xFFD9D7D2.toInt()).apply { maxLines = 9; ellipsize = TextUtils.TruncateAt.END; visibility = View.GONE }
         left.addView(story, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(14f) })
         val buttons = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; clipChildren = false }
-        val playBtn = pill("Play", R.drawable.ic_play) { play(item, "replace", false, shuffle = false) }
+        // what the buttons play: the album, or the same album in a music service when the library has none of its songs
+        var playAs = item
+        val playBtn = pill("Play", R.drawable.ic_play) { play(playAs, "replace", false, shuffle = false) }
         buttons.addView(playBtn)
-        buttons.addView(pill("Shuffle", null) { play(item, "replace", false, shuffle = true) }, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(8f) })
-        buttons.addView(pill("Radio", null) { play(item, "replace", true) }, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(8f) })
+        buttons.addView(pill("Shuffle", null) { play(playAs, "replace", false, shuffle = true) }, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(8f) })
+        buttons.addView(pill("Radio", null) { play(playAs, "replace", true) }, LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(8f) })
         left.addView(buttons, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(14f) })
         left.addView(label("Hold OK on a song for more", 10f, C.TEXT3), LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(10f) })
         split.addView(left, LinearLayout.LayoutParams(leftW, -1))
@@ -857,17 +910,30 @@ class MaActivity : PanelActivity() {
             main.post {
                 if (isFinishing) return@post
                 list.removeAllViews()
-                if (got == null || got.first.isEmpty()) {
-                    list.addView(label(if (got == null) "Music Assistant did not answer." else "No songs found.", 13f, C.TEXT3),
+                if (got == null || got.songs.isEmpty()) {
+                    list.addView(label(if (got == null) "Music Assistant did not answer." else "No songs found, not even in the music services.", 13f, C.TEXT3),
                         LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(10f) })
                     return@post
                 }
-                val (all, thumb) = got
+                val all = got.songs
+                val thumb = got.thumb
+                got.elsewhere?.let { playAs = it }
                 if (item.image == null && thumb != null) picture(thumb, coverSize) { b -> if (b != null) cover.setImageBitmap(b) }
-                count.text = if (all.size == 1) "1 song" else "${all.size} songs"
-                val mainArtist = item.sub.substringBefore(",").trim()
+                count.text = (if (all.size == 1) "1 song" else "${all.size} songs") +
+                    (got.elsewhere?.let { "  ·  " + Lang.tr("from ${serviceName(it.uri)}") } ?: "")
+                // "Various Artists" on an album of one artist's songs: shown (and kept) as theirs
+                var mainArtist = item.sub.substringBefore(",").trim()
+                if (item.type == "album" && MusicInfo.isVarious(mainArtist)) {
+                    val real = MusicInfo.mainArtist(all.map { it.artist })
+                    if (got.elsewhere == null) MusicInfo.setAlbumArtist(this, item.uri, real ?: "")
+                    if (real != null) {
+                        mainArtist = real
+                        byLabel.text = real
+                        byLabel.visibility = View.VISIBLE
+                    }
+                }
                 all.forEachIndexed { i, s ->
-                    list.addView(songRow(item, s, i + 1, s.artist.isNotBlank() && !s.artist.equals(mainArtist, true)),
+                    list.addView(songRow(playAs, s, i + 1, s.artist.isNotBlank() && !s.artist.equals(mainArtist, true)),
                         LinearLayout.LayoutParams(-1, -2).apply { if (i > 0) topMargin = dp(2f) })
                 }
             }

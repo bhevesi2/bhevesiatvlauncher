@@ -195,4 +195,14 @@ class LogicTest {
         assertEquals("beyonce and jay z", MusicInfo.norm("Beyoncé & Jay-Z"))
         assertEquals("ossian", MusicInfo.norm("Ossián"))
     }
+
+    @Test
+    fun variousArtists() {
+        assertEquals(true, MusicInfo.isVarious("Various Artists"))
+        assertEquals(true, MusicInfo.isVarious("VA"))
+        assertEquals(false, MusicInfo.isVarious("ZZ Top"))
+        assertEquals("ZZ Top", MusicInfo.mainArtist(List(10) { "ZZ Top" }))
+        assertEquals("ZZ Top", MusicInfo.mainArtist(List(8) { "ZZ Top" } + listOf("A", "B")))
+        assertEquals(null, MusicInfo.mainArtist(listOf("Kaitlyn Williams", "Seth Lewis Trio", "Kenrick Mervine", "Tom Amend")))
+    }
 }

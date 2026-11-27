@@ -58,6 +58,49 @@ object MusicInfo {
         Info(a.text, a.meta, a.picture, a.backdrop ?: art?.backdrop, a.source)
     }
 
+    // ---------- albums Music Assistant files under "Various Artists" ----------
+
+    /**
+     * Music Assistant puts an album under "Various Artists" when its files say so, also when every
+     * song is by one artist (a missing album artist tag). The songs tell the truth: when most of
+     * them are by one artist, the album is shown as that artist's. Kept per album (uri → artist;
+     * "" for a real compilation) in files/musicinfo/album_artists.json.
+     */
+    private var albumArtists: HashMap<String, String>? = null
+
+    fun isVarious(name: String): Boolean = norm(name) in setOf("various artists", "various", "va", "v a", "verschiedene interpreten",
+        "diverse", "divers", "vegyes eloadok", "kulonbozo eloadok", "artistes divers", "varios artistas", "artisti vari")
+
+    private fun albumArtistFile(ctx: Context) = File(File(ctx.filesDir, "musicinfo").apply { mkdirs() }, "album_artists.json")
+
+    private fun albumArtistMap(ctx: Context): HashMap<String, String> = synchronized(this) {
+        albumArtists ?: HashMap<String, String>().also { m ->
+            try {
+                val o = JSONObject(albumArtistFile(ctx).readText())
+                for (k in o.keys()) m[k] = o.optString(k)
+            } catch (e: Exception) { }
+            albumArtists = m
+        }
+    }
+
+    /** The real artist of a "Various Artists" album, "" for a real compilation, null if not known yet. */
+    fun albumArtist(ctx: Context, uri: String): String? = synchronized(this) { albumArtistMap(ctx)[uri] }
+
+    fun setAlbumArtist(ctx: Context, uri: String, artist: String) = synchronized(this) {
+        val m = albumArtistMap(ctx)
+        if (m[uri] == artist) return@synchronized
+        m[uri] = artist
+        try { albumArtistFile(ctx).writeText(JSONObject(m as Map<*, *>).toString()) } catch (e: Exception) { }
+    }
+
+    /** The artist of most of [artists] (the songs' artists), if one has at least 70% of them. */
+    fun mainArtist(artists: List<String>): String? {
+        val named = artists.map { it.trim() }.filter { it.isNotEmpty() && !isVarious(it) }
+        if (named.isEmpty()) return null
+        val top = named.groupBy { norm(it) }.maxByOrNull { it.value.size } ?: return null
+        return if (top.value.size >= Math.ceil(artists.size * 0.7)) top.value.first() else null
+    }
+
     // ---------- the whole library, in the background ----------
 
     /** Fetches in a row that could not reach the internet: the background run stops at a few. */
@@ -94,10 +137,30 @@ object MusicInfo {
                         return (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
                     }
                     val artists = library("artist", 1000).map { it.optString("name") }.filter { it.isNotBlank() }
-                    val albums = library("album", 2000).mapNotNull { o ->
-                        val name = o.optString("name")
+                    val all = library("album", 2000)
+                    // albums under "Various Artists": their songs say whose they are
+                    val player = p.getString("ma_player", null) ?: client.template(
+                        "{{ (integration_entities('music_assistant') | select('match', 'media_player') | list)[0] }}").trim()
+                    for (o in all) {
+                        val uri = o.optString("uri")
                         val by = o.optJSONArray("artists")?.optJSONObject(0)?.optString("name") ?: ""
-                        if (name.isBlank()) null else by to name
+                        if (!isVarious(by) || albumArtist(app, uri) != null || player.isBlank()) continue
+                        try {
+                            val r = client.callResponse("media_player", "browse_media", JSONObject()
+                                .put("entity_id", player).put("media_content_id", uri).put("media_content_type", "album"), 30000)
+                            val kids = r.optJSONObject(player)?.optJSONArray("children") ?: continue
+                            if (kids.length() == 0) continue
+                            val artists = (0 until kids.length()).map { i ->
+                                kids.optJSONObject(i)?.optString("title", "")?.substringBefore(" - ", "") ?: "" }
+                            setAlbumArtist(app, uri, mainArtist(artists) ?: "")
+                        } catch (e: Exception) { }
+                    }
+                    val albums = all.mapNotNull { o ->
+                        val name = o.optString("name")
+                        var by = o.optJSONArray("artists")?.optJSONObject(0)?.optString("name") ?: ""
+                        if (isVarious(by)) by = albumArtist(app, o.optString("uri")) ?: ""
+                        // a real compilation has no artist to look its story up by
+                        if (name.isBlank() || by.isBlank()) null else by to name
                     }
                     total = artists.size + albums.size
                     // the most played first: they are the ones looked at

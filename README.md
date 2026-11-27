@@ -182,6 +182,12 @@ if its title is the name and its text is about music). Kept on the TV in `files/
 nothing found is asked again after a week. The launcher goes through the whole library in the background once a day (Settings › Library › Music stories shows how far it got; OK starts it now). An album or artist page shows the story beside the
 songs or albums, over the picture. Now playing is as it was.
 
+Albums Music Assistant files under "Various Artists" whose songs are mostly (70%) by one artist
+are shown as that artist's (worked out in the background and when the album is opened; kept in
+`files/musicinfo/album_artists.json`). An album added to the library from a service whose songs
+are no longer there (Qobuz) is looked up in the services Music Assistant has now (YouTube
+Music…): its songs are listed and played from there.
+
 The home screen's music card also shows music played on this TV itself (its own Music Assistant
 player, found by the TV's address in the entity id or by its room), whichever player the card is
 set to.
