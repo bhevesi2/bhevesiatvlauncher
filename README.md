@@ -155,14 +155,20 @@ is opened (or from Settings).
 
 The library: the chosen title's backdrop behind its data; rows of posters (Continue watching,
 Recently added, Films, Series, the larger genres); search by title, actor or genre. Where there
-is memory to spare the posters turn in space and the backdrop drifts. OK on a poster: play,
-continue, from the start, mark as watched; a series shows its seasons and episodes.
+is memory to spare the posters turn in space (cover-flow: the focused one comes forward, the ones
+beside it turn in; the other rows dim) and the backdrop drifts. "Look for new films" at the top.
+OK on a poster: play, continue, from the start, mark as watched; a series shows its seasons and
+episodes, and the posters behind it cannot take the cursor while it is open.
 
 The player (Media3) runs in a process of its own (`:player`) and reads the NAS through SMB in 1 MB
-blocks: Dolby Vision (profiles 5 and 8; 7 plays as HDR10), HDR10, HLG, the TV's own decoders, sound
+blocks, the next block asked for while the current one plays, on one kept connection (a seek does
+not log in again); the buffer is up to 200 MB, as the player's memory allows. While it loads, a
+ring shows it with the read speed; the bar shows how much is ready ahead. Network errors are tried
+again three times. Where the screen has a mode with the film's frame rate (24 Hz for 23.976 fps,
+50 Hz for 25), it switches to it. Dolby Vision (profiles 5 and 8; 7 plays as HDR10), HDR10, HLG, the TV's own decoders, sound
 passed to the amplifier as it is. Subtitle files beside the film (.srt, .hu.srt, .ass, .vtt) are
-offered with the film's own. ◀ ▶ skip (held: faster), OK pause, ▲ sound and subtitles, Back
-leaves; where it got to is kept, near the end counts as watched, the next episode follows.
+offered with the film's own. ◀ ▶ skip (held: faster; the presses add up, the film jumps once
+when they stop), OK pause, ▲ sound and subtitles, ⏮ the episode before, Back leaves; where it got to is kept, near the end counts as watched, the next episode follows.
 This product uses the TMDB API but is not endorsed or certified by TMDB.
 
 ## Répakaland (easter egg)

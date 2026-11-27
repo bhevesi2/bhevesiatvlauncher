@@ -25,6 +25,7 @@ import androidx.media3.common.Tracks
 import androidx.media3.datasource.BaseDataSource
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -37,31 +38,44 @@ import java.util.EnumSet
 
 /**
  * Reads a file of the library for the player: from a NAS share (otthon://<source>/<path>, through
- * the same SMB library as the wallpapers) or from a USB drive (file://). Reads in blocks of 1 MB,
- * so a 4K film does not wait on the network for every small read.
+ * the same SMB library as the wallpapers) or from a USB drive (file://). Reads in blocks of 1 MB
+ * and asks for the next block while the player is still taking the current one, so a 4K film
+ * does not wait on the network for every read. The NAS connection stays open between reads and
+ * seeks (a seek opens the file again, not the share: no new login each time).
  */
 class LibraryDataSource(private val ctx: Context) : BaseDataSource(true) {
     private var uri: Uri? = null
+    private var sourceId: String? = null
     private var share: MediaLib.SmbShare? = null
     private var smbFile: com.hierynomus.smbj.share.File? = null
     private var local: RandomAccessFile? = null
     private var position = 0L
     private var remaining = 0L
-    private val block = ByteArray(1 shl 20)
+    private var size = 0L
+    private var block = ByteArray(BLOCK)
+    private var spare = ByteArray(BLOCK)
     private var blockAt = -1L
     private var blockLen = 0
+    /** The next block, being read while the current one is used. */
+    private var ahead: java.util.concurrent.Future<Int>? = null
+    private var aheadAt = -1L
 
     override fun open(spec: DataSpec): Long {
         transferInitializing(spec)
         uri = spec.uri
         val u = spec.uri
-        val size: Long
         if (u.scheme == "otthon") {
             val src = MediaLib.sources(ctx).firstOrNull { it.id == u.host } ?: throw java.io.IOException("No source ${u.host}")
             val path = Uri.decode(u.encodedPath?.removePrefix("/") ?: "")
-            val s = MediaLib.openShare(ctx, src)
+            sourceId = src.id
+            var s = SharePool.take(ctx, src)
+            val f = try { openOn(s, path) } catch (e: Exception) {
+                // the kept connection may have gone stale (the NAS slept): once more, on a new one
+                s.close()
+                s = MediaLib.openShare(ctx, src)
+                openOn(s, path)
+            }
             share = s
-            val f = s.share.openFile(path, EnumSet.of(AccessMask.GENERIC_READ), null, SMB2ShareAccess.ALL, SMB2CreateDisposition.FILE_OPEN, null)
             smbFile = f
             size = f.fileInformation.standardInformation.endOfFile
         } else {
@@ -77,6 +91,35 @@ class LibraryDataSource(private val ctx: Context) : BaseDataSource(true) {
         return remaining
     }
 
+    private fun openOn(s: MediaLib.SmbShare, path: String) =
+        s.share.openFile(path, EnumSet.of(AccessMask.GENERIC_READ), null, SMB2ShareAccess.ALL, SMB2CreateDisposition.FILE_OPEN, null)
+
+    /** Makes [block] hold the bytes from [at]: the block read ahead if it is that one, else read now. */
+    private fun fill(f: com.hierynomus.smbj.share.File, at: Long): Int {
+        val a = ahead
+        ahead = null
+        var got = -1
+        if (a != null) {
+            val ready = try { a.get() } catch (e: Exception) { -1 }   // also waits for it to stop writing into spare
+            if (aheadAt == at && ready > 0) {
+                val t = block; block = spare; spare = t
+                got = ready
+            }
+        }
+        if (got <= 0) got = f.read(block, at, 0, block.size)
+        if (got <= 0) return got
+        blockAt = at
+        blockLen = got
+        read.addAndGet(got.toLong())
+        val next = at + got
+        if (next < size) {
+            aheadAt = next
+            val buf = spare
+            ahead = reader.submit<Int> { f.read(buf, next, 0, buf.size) }
+        }
+        return got
+    }
+
     override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
         if (length == 0) return 0
         if (remaining == 0L) return M3.RESULT_END_OF_INPUT
@@ -85,10 +128,7 @@ class LibraryDataSource(private val ctx: Context) : BaseDataSource(true) {
         val f = smbFile
         if (f != null) {
             if (blockAt < 0 || position < blockAt || position >= blockAt + blockLen) {
-                val got = f.read(block, position, 0, block.size)
-                if (got <= 0) return M3.RESULT_END_OF_INPUT
-                blockAt = position
-                blockLen = got
+                if (fill(f, position) <= 0) return M3.RESULT_END_OF_INPUT
             }
             val inBlock = (position - blockAt).toInt()
             n = minOf(want, blockLen - inBlock)
@@ -98,6 +138,7 @@ class LibraryDataSource(private val ctx: Context) : BaseDataSource(true) {
             l.seek(position)
             n = l.read(buffer, offset, want)
             if (n <= 0) return M3.RESULT_END_OF_INPUT
+            read.addAndGet(n.toLong())
         }
         position += n
         remaining -= n
@@ -108,8 +149,12 @@ class LibraryDataSource(private val ctx: Context) : BaseDataSource(true) {
     override fun getUri(): Uri? = uri
 
     override fun close() {
+        // the block being read ahead finishes first: its file is closed next
+        try { ahead?.get(5, java.util.concurrent.TimeUnit.SECONDS) } catch (e: Exception) { }
+        ahead = null
         try { smbFile?.close() } catch (e: Exception) { }
-        try { share?.close() } catch (e: Exception) { }
+        // the share is kept for the next open (a seek, the next episode)
+        share?.let { s -> sourceId?.let { id -> SharePool.give(id, s) } ?: s.close() }
         try { local?.close() } catch (e: Exception) { }
         smbFile = null
         share = null
@@ -119,6 +164,11 @@ class LibraryDataSource(private val ctx: Context) : BaseDataSource(true) {
     }
 
     companion object {
+        private const val BLOCK = 1 shl 20
+        private val reader = java.util.concurrent.Executors.newCachedThreadPool { r -> Thread(r, "otthon-read-ahead").apply { isDaemon = true } }
+        /** Bytes read from the files so far, for the speed shown while buffering. */
+        val read = java.util.concurrent.atomic.AtomicLong()
+
         /** The address the player reads an item from. */
         fun uriOf(source: MediaLib.Source, path: String): Uri =
             if (source.kind == "usb") Uri.fromFile(java.io.File(path))
@@ -127,13 +177,44 @@ class LibraryDataSource(private val ctx: Context) : BaseDataSource(true) {
 }
 
 /**
+ * One open connection per NAS source in the player's process. Opening a share means a connection
+ * and a login, which took the most time of a seek; now the file is opened on a kept share.
+ */
+object SharePool {
+    private val idle = HashMap<String, MediaLib.SmbShare>()
+
+    fun take(ctx: Context, src: MediaLib.Source): MediaLib.SmbShare {
+        val kept = synchronized(this) { idle.remove(src.id) }
+        if (kept != null) {
+            if (try { kept.share.isConnected() } catch (e: Exception) { false }) return kept
+            kept.close()
+        }
+        return MediaLib.openShare(ctx, src)
+    }
+
+    fun give(id: String, s: MediaLib.SmbShare) {
+        val extra = synchronized(this) { if (idle.containsKey(id)) s else { idle[id] = s; null } }
+        extra?.close()
+    }
+
+    fun closeAll() {
+        val all = synchronized(this) { idle.values.toList().also { idle.clear() } }
+        all.forEach { it.close() }
+    }
+}
+
+/**
  * The library's player, in a process of its own (":player"): if a film is too much for the TV,
  * only the player closes, never the home screen. Dolby Vision, HDR10(+) and the TV's own
  * decoders come with Media3; sound that the TV cannot decode goes to the amplifier as it is.
  *
- * ◀ ▶ skip back 10 s / forward 30 s (held: faster), OK pauses, ▲ sound and subtitles, ▼ shows
- * where it is, Back leaves (where it got to is kept, near the end counts as watched). After an
- * episode the next one starts.
+ * ◀ ▶ skip back 10 s / forward 30 s (held: faster; the presses add up and the film jumps once,
+ * when they stop), OK pauses, ▲ sound and subtitles, ▼ shows where it is, Back leaves (where it got
+ * to is kept, near the end counts as watched). After an episode the next one starts.
+ *
+ * While the film loads, a ring in the middle shows it, with how fast the NAS is read and how much
+ * is ready. A network error is tried again (three times) from where it stopped. Where the TV has a
+ * screen mode with the film's frame rate (24 Hz for a 23.976 fps film), it switches to it.
  */
 class PlayerActivity : Activity() {
     private lateinit var player: ExoPlayer
@@ -143,6 +224,9 @@ class PlayerActivity : Activity() {
     private lateinit var timeText: TextView
     private lateinit var badges: TextView
     private lateinit var progress: ProgressLine
+    private lateinit var loading: LinearLayout
+    private lateinit var loadingText: TextView
+    private lateinit var bufferText: TextView
     private var queue = longArrayOf()
     private var index = 0
     private var item: MediaLib.Item? = null
@@ -175,31 +259,66 @@ class PlayerActivity : Activity() {
         bar.addView(badges, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(4f) })
         bar.addView(progress, LinearLayout.LayoutParams(-1, dp(6f)).apply { topMargin = dp(12f) })
         bar.addView(timeText, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(6f) })
+        bufferText = label("", 10f, C.TEXT2)
+        bar.addView(bufferText, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(2f) })
         bar.addView(label("OK pause · ◀ ▶ skip · ▲ sound and subtitles · Back leave", 10f, C.TEXT2),
             LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(4f) })
         root.addView(bar, FrameLayout.LayoutParams(-1, -2, Gravity.BOTTOM))
+        // loading: a turning ring in the middle, with the speed and what is ready
+        loading = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            setPadding(dp(22f), dp(18f), dp(22f), dp(16f))
+            background = rounded(0x99000000.toInt(), dp(16f).toFloat())
+            visibility = View.INVISIBLE
+        }
+        loading.addView(Spinner(this), LinearLayout.LayoutParams(dp(44f), dp(44f)))
+        loadingText = label("", 11f, C.TEXT).apply { gravity = Gravity.CENTER }
+        loading.addView(loadingText, LinearLayout.LayoutParams(-2, -2).apply { topMargin = dp(10f) })
+        root.addView(loading, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
         setContentView(root)
 
         val renderers = DefaultRenderersFactory(this).setEnableDecoderFallback(true)
+        // a bigger buffer than the default for films from the NAS, as much as the player's memory allows
+        val heap = Runtime.getRuntime().maxMemory()
+        val bytes = (heap * 0.45).toLong().coerceIn(48L shl 20, 200L shl 20).toInt()
+        val load = DefaultLoadControl.Builder()
+            .setBufferDurationsMs(30_000, 120_000, 2_000, 4_000)
+            .setTargetBufferBytes(bytes)
+            .setPrioritizeTimeOverSizeThresholds(false)
+            .build()
+        android.util.Log.i("OtthonPlayer", "buffer ${bytes shr 20} MB of ${heap shr 20} MB heap")
         player = ExoPlayer.Builder(this)
             .setRenderersFactory(renderers)
+            .setLoadControl(load)
             .setMediaSourceFactory(DefaultMediaSourceFactory(DataSource.Factory { LibraryDataSource(applicationContext) }))
             .build()
         view.player = player
         player.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_ENDED) ended()
+                if (state == Player.STATE_READY) retries = 0
+                loadingSoon(state == Player.STATE_BUFFERING)
                 tick()
             }
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (!isPlaying) { save(); show() } else hideSoon()
             }
             override fun onPlayerError(error: PlaybackException) {
-                android.util.Log.w("OtthonPlayer", "can't play", error)
+                android.util.Log.w("OtthonPlayer", "can't play (${error.errorCodeName})", error)
+                // the network (2000–2999): once more from where it stopped, a little later
+                if (error.errorCode in 2000..2999 && retries < 3) {
+                    retries++
+                    loadingText.text = Lang.tr("Connecting again…")
+                    loading.visibility = View.VISIBLE
+                    main.postDelayed({ if (!isFinishing) player.prepare() }, 1500L * retries)
+                    return
+                }
+                loading.visibility = View.INVISIBLE
                 titleText.text = Lang.tr("Can't play this file") + " (" + error.errorCodeName + ")"
                 show()
             }
-            override fun onTracksChanged(tracks: Tracks) = describe(tracks)
+            override fun onTracksChanged(tracks: Tracks) { describe(tracks); matchFrameRate(tracks) }
         })
         start(intent.getLongExtra("start", -1L))
         main.post(ticker)
@@ -207,6 +326,7 @@ class PlayerActivity : Activity() {
 
     /** Plays queue[index]; [startAt] -1 means where it got to last time. */
     private fun start(startAt: Long) {
+        seekTarget = -1L
         val id = queue.getOrNull(index) ?: return finish()
         val it = MediaLib.item(this, id) ?: return finish()
         item = it
@@ -272,13 +392,74 @@ class PlayerActivity : Activity() {
         }
     }
 
+    private var lastRead = 0L
+    private var lastReadAt = 0L
+    private var speed = 0.0   // MB/s, smoothed
+
     private fun tick() {
+        val now = android.os.SystemClock.elapsedRealtime()
+        val r = LibraryDataSource.read.get()
+        if (lastReadAt > 0 && now > lastReadAt) {
+            val mbs = (r - lastRead) / 1048576.0 / ((now - lastReadAt) / 1000.0)
+            speed = if (speed == 0.0) mbs else speed * 0.6 + mbs * 0.4
+        }
+        lastRead = r
+        lastReadAt = now
         val d = player.duration
-        val p = player.currentPosition
+        val p = if (seekTarget >= 0) seekTarget else player.currentPosition
+        val ahead = ((player.bufferedPosition - player.currentPosition) / 1000).coerceAtLeast(0)
+        val net = String.format("%.1f MB/s", speed)
         if (d > 0) {
             progress.set(p.toFloat() / d, player.bufferedPosition.toFloat() / d)
-            timeText.text = "${clock(p)} / ${clock(d)}   ·   " + Lang.tr("${clock(d - p)} left")
+            val ends = java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(System.currentTimeMillis() + (d - p)))
+            timeText.text = if (seekTarget >= 0) {
+                val by = seekTarget - player.currentPosition
+                "→ ${clock(p)} / ${clock(d)}   ·   " + (if (by >= 0) "+" else "−") + clock(Math.abs(by))
+            } else "${clock(p)} / ${clock(d)}   ·   " + Lang.tr("${clock(d - p)} left") + "   ·   " + Lang.tr("ends at $ends")
         }
+        bufferText.text = Lang.tr("Ready ahead: $ahead s") + "   ·   $net"
+        if (loading.visibility == View.VISIBLE && retries == 0) {
+            loadingText.text = Lang.tr("Loading…") + "\n$net"
+        }
+    }
+
+    // ---------- loading ----------
+
+    private var retries = 0
+    private val showLoading = Runnable { if (player.playbackState == Player.STATE_BUFFERING) { loading.visibility = View.VISIBLE; tick() } }
+
+    /** The ring comes after a moment of loading (a short wait shows nothing) and goes at once. */
+    private fun loadingSoon(buffering: Boolean) {
+        main.removeCallbacks(showLoading)
+        if (buffering) main.postDelayed(showLoading, 350) else if (retries == 0 || player.playbackState == Player.STATE_READY) loading.visibility = View.INVISIBLE
+    }
+
+    // ---------- the screen's frame rate ----------
+
+    private var modeSet = false
+
+    /**
+     * A 23.976 fps film on a 60 Hz screen stutters on every slow pan: where the TV has a mode with
+     * the same size and a refresh rate that is a whole multiple of the film's (24, 48, 120 Hz…),
+     * the player asks for it (the lowest such). Back on leaving, as the window goes.
+     */
+    private fun matchFrameRate(tracks: Tracks) {
+        if (modeSet) return
+        var fps = -1f
+        for (g in tracks.groups) if (g.type == M3.TRACK_TYPE_VIDEO) for (i in 0 until g.length) if (g.isTrackSelected(i)) fps = g.getTrackFormat(i).frameRate
+        if (fps <= 1f) return
+        modeSet = true
+        try {
+            @Suppress("DEPRECATION") val display = windowManager.defaultDisplay
+            val cur = display.mode
+            val same = display.supportedModes.filter { it.physicalWidth == cur.physicalWidth && it.physicalHeight == cur.physicalHeight }
+            val rate = FrameRate.pick(fps, same.map { it.refreshRate })
+            val best = same.firstOrNull { it.refreshRate == rate }
+            android.util.Log.i("OtthonPlayer", "film ${fps} fps, screen ${cur.refreshRate} Hz, chosen ${best?.refreshRate}")
+            if (best != null && best.modeId != cur.modeId) {
+                window.attributes = window.attributes.apply { preferredDisplayModeId = best.modeId }
+            }
+        } catch (e: Exception) { android.util.Log.w("OtthonPlayer", "frame rate", e) }
     }
 
     private fun clock(ms: Long): String {
@@ -355,6 +536,16 @@ class PlayerActivity : Activity() {
     }
 
     private var seekStep = 0
+    /** Where the presses of ◀ ▶ have got to; the film jumps there once they stop (-1: none). */
+    private var seekTarget = -1L
+    private val seekNow = Runnable {
+        if (seekTarget >= 0) {
+            player.seekTo(seekTarget)
+            seekTarget = -1L
+            tick()
+        }
+    }
+
     override fun dispatchKeyEvent(e: KeyEvent): Boolean {
         val down = e.action == KeyEvent.ACTION_DOWN
         when (e.keyCode) {
@@ -365,21 +556,36 @@ class PlayerActivity : Activity() {
             KeyEvent.KEYCODE_MEDIA_PLAY -> { if (down) player.play(); return true }
             KeyEvent.KEYCODE_MEDIA_PAUSE -> { if (down) player.pause(); return true }
             KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND, KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                val d = player.duration
+                if (d <= 0) return true
                 if (down) {
                     val back = e.keyCode == KeyEvent.KEYCODE_DPAD_LEFT || e.keyCode == KeyEvent.KEYCODE_MEDIA_REWIND
                     // held down: bigger and bigger steps
                     seekStep = if (e.repeatCount == 0) 0 else seekStep + 1
-                    val step = when { seekStep > 20 -> 300_000L; seekStep > 8 -> 60_000L; back -> 10_000L; else -> 30_000L }
-                    val to = (player.currentPosition + if (back) -step else step).coerceIn(0L, maxOf(0L, player.duration - 1000))
-                    player.seekTo(to)
+                    val step = when { seekStep > 24 -> 300_000L; seekStep > 8 -> 60_000L; back -> 10_000L; else -> 30_000L }
+                    val from = if (seekTarget >= 0) seekTarget else player.currentPosition
+                    seekTarget = (from + if (back) -step else step).coerceIn(0L, maxOf(0L, d - 3000))
+                    main.removeCallbacks(seekNow)
                     tick()
                     show()
+                } else {
+                    // a pause between presses still adds up; the jump comes when they stop
+                    main.removeCallbacks(seekNow)
+                    main.postDelayed(seekNow, 650)
                 }
                 return true
             }
             KeyEvent.KEYCODE_DPAD_UP -> { if (down && e.repeatCount == 0) tracksMenu(); return true }
             KeyEvent.KEYCODE_DPAD_DOWN, KeyEvent.KEYCODE_INFO -> { if (down) show(); return true }
             KeyEvent.KEYCODE_MEDIA_NEXT -> { if (down && index + 1 < queue.size) { save(); index++; start(0L) }; return true }
+            KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+                // the episode before; within its first 10 s, else back to its start
+                if (down && e.repeatCount == 0) {
+                    if (player.currentPosition < 10_000 && index > 0) { save(); index--; start(0L) } else { player.seekTo(0L); show() }
+                }
+                return true
+            }
+            KeyEvent.KEYCODE_MEDIA_STOP -> { if (!down) { save(); finish() }; return true }
             KeyEvent.KEYCODE_BACK -> { if (!down) { save(); finish() }; return true }
         }
         return super.dispatchKeyEvent(e)
@@ -395,6 +601,7 @@ class PlayerActivity : Activity() {
         main.removeCallbacksAndMessages(null)
         save()
         player.release()
+        Thread { SharePool.closeAll() }.start()
         super.onDestroy()
         // the player's process ends with the film: its memory goes back to the TV at once
         android.os.Process.killProcess(android.os.Process.myPid())
@@ -404,6 +611,36 @@ class PlayerActivity : Activity() {
         fun play(ctx: Context, queue: LongArray, index: Int, startAt: Long = -1L) {
             ctx.startActivity(Intent(ctx, PlayerActivity::class.java).putExtra("queue", queue).putExtra("index", index).putExtra("start", startAt))
         }
+    }
+}
+
+object FrameRate {
+    /**
+     * A refresh rate that is a whole multiple (1–5×) of [fps], within 0.25%: an exact one first
+     * (59.94 Hz for 29.97 fps rather than 30 Hz), then the lowest. Null if none.
+     */
+    fun pick(fps: Float, rates: List<Float>): Float? = rates
+        .map { r -> val k = r / fps; val n = Math.round(k); Triple(r, n, Math.abs(k - n) / Math.max(n, 1)) }
+        .filter { (_, n, err) -> n in 1..5 && err < 0.0025f }
+        .minWithOrNull(compareBy<Triple<Float, Int, Float>>({ if (it.third < 0.0005f) 0 else 1 }, { it.first }))
+        ?.first
+}
+
+/** A turning arc: the film is loading. */
+class Spinner(ctx: Context) : View(ctx) {
+    private val p = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
+    private val r = android.graphics.RectF()
+    override fun onDraw(c: Canvas) {
+        val w = width.toFloat()
+        p.strokeWidth = w * 0.09f
+        val inset = p.strokeWidth
+        r.set(inset, inset, w - inset, height - inset)
+        p.color = 0x33FFFFFF
+        c.drawArc(r, 0f, 360f, false, p)
+        val t = android.os.SystemClock.uptimeMillis()
+        p.color = 0xFFFAC775.toInt()
+        c.drawArc(r, (t % 1000) * 0.36f, 90f + 60f * Math.sin(t / 400.0).toFloat(), false, p)
+        if (isShown) postInvalidateOnAnimation()
     }
 }
 

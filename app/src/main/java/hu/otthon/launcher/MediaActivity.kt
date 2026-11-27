@@ -40,6 +40,7 @@ class MediaActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var search: TextView
     private var details: View? = null
+    private var detailsTitle: MediaLib.Title? = null
     private var titles: List<MediaLib.Title> = emptyList()
     private var query = ""
     private var heroKey: String? = null
@@ -73,6 +74,10 @@ class MediaActivity : Activity() {
         top.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
         status = label("", 10f, C.TEXT2)
         top.addView(status, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = dp(14f) })
+        // new films without going to the settings
+        val refresh = pill("Look for new films")
+        refresh.setOnClickListener { maybeScan(force = true) }
+        top.addView(refresh, LinearLayout.LayoutParams(-2, -2).apply { rightMargin = dp(12f) })
         search = pill("Search")
         search.setOnClickListener { askSearch() }
         top.addView(search)
@@ -102,7 +107,7 @@ class MediaActivity : Activity() {
     override fun onResume() {
         super.onResume()
         CrashLog.entered(this)
-        // back from the player: where it got to may have changed
+        // back from the player: where it got to may have changed (an open title shows its next episode)
         if (titles.isNotEmpty()) reload(keepFocus = true)
     }
 
@@ -127,7 +132,7 @@ class MediaActivity : Activity() {
     // ---------- reading ----------
 
     private fun maybeScan(force: Boolean = false) {
-        if (MediaLib.sources(this).isEmpty()) return
+        if (MediaLib.sources(this).isEmpty() || MediaLib.scanning) return
         val last = Prefs.of(this).getLong("media_scanned_at", 0L)
         if (!force && System.currentTimeMillis() - last < 6 * 3600_000L) return
         status.text = Lang.tr("Looking for new films…")
@@ -145,6 +150,8 @@ class MediaActivity : Activity() {
         Bg.run({ MediaLib.titles(app) }) { list ->
             titles = list ?: emptyList()
             build(focusKey)
+            val open = detailsTitle
+            if (details != null && open != null) openDetails(titles.firstOrNull { it.key == open.key } ?: open)
         }
     }
 
@@ -211,9 +218,11 @@ class MediaActivity : Activity() {
             val card = PosterCard(this, t)
             card.setOnClickListener { openDetails(t) }
             card.setOnFocusChangeListener { v, f ->
-                Look.grow(v, f, 1.1f)
+                Look.grow(v, f, if (deep) 1.14f else 1.1f)
                 card.focused(f)
-                if (f) { hero(t); if (deep) lean(line, v) }
+                if (f) { hero(t); if (deep) { lean(line, v); light(rs) } }
+                // the cursor left the row: it lies flat again
+                else if (deep) line.post { if (line.findFocus() == null && details == null) flatten(line) }
             }
             line.addView(card, LinearLayout.LayoutParams(dp(112f), dp(168f)).apply { if (i > 0) leftMargin = dp(14f) })
             loadPoster(card)
@@ -230,16 +239,44 @@ class MediaActivity : Activity() {
         return out
     }
 
-    /** 3D: the focused poster faces you, the ones beside it lean in towards it. */
+    /**
+     * 3D: the focused poster comes forward and faces you, the ones beside it turn in towards it,
+     * more the further they are, and sink back a little. The camera is close enough for the
+     * perspective to show (at the default distance a turn of 20° looks like a narrower poster).
+     */
     private fun lean(line: LinearLayout, focused: View) {
         val at = line.indexOfChild(focused)
+        val camera = 9f * resources.displayMetrics.densityDpi
         for (i in 0 until line.childCount) {
             val c = line.getChildAt(i)
             val d = i - at
-            c.cameraDistance = 8000 * resources.displayMetrics.density
-            val turn = when { d == 0 -> 0f; d < 0 -> (14f + (-d - 1) * 3f).coerceAtMost(22f); else -> -(14f + (d - 1) * 3f).coerceAtMost(22f) }
-            c.animate().rotationY(turn).translationZ(if (d == 0) dp(8f).toFloat() else 0f).setDuration(260)
-                .setInterpolator(DecelerateInterpolator(2f)).start()
+            c.cameraDistance = camera
+            val n = Math.abs(d)
+            val turn = if (n == 0) 0f else (26f + (n - 1) * 5f).coerceAtMost(40f) * (if (d < 0) 1f else -1f)
+            val a = c.animate().rotationY(turn).translationZ(if (n == 0) dp(14f).toFloat() else 0f)
+                .alpha(if (n == 0) 1f else (1f - n * 0.1f).coerceAtLeast(0.55f))
+            if (n != 0) a.scaleX(0.92f).scaleY(0.92f)
+            a.setDuration(320).setInterpolator(DecelerateInterpolator(2.2f)).start()
+        }
+    }
+
+    private fun flatten(line: LinearLayout) {
+        for (i in 0 until line.childCount) {
+            line.getChildAt(i).animate().rotationY(0f).translationZ(0f).alpha(1f).scaleX(1f).scaleY(1f)
+                .setDuration(300).setInterpolator(DecelerateInterpolator(2f)).start()
+        }
+    }
+
+    /** The row with the cursor is lit, the others step back into the dark. */
+    private fun light(focusedRow: View) {
+        for (i in 0 until rows.childCount) {
+            val r = rows.getChildAt(i)
+            if (r !is RowScroller) continue
+            val to = if (r === focusedRow) 1f else 0.6f
+            if (r.alpha == to) continue
+            // a dimmed row is kept as one picture on the GPU, not drawn see-through card by card
+            r.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+            r.animate().alpha(to).setDuration(260).withEndAction { if (r.alpha == 1f) r.setLayerType(View.LAYER_TYPE_NONE, null) }.start()
         }
     }
 
@@ -272,6 +309,12 @@ class MediaActivity : Activity() {
         if (t.watched) badges.add(Lang.tr("Watched"))
         heroBadges.text = badges.joinToString("  ·  ")
         heroText.text = t.overview
+        if (deep) for ((k, v) in listOf(heroTitle, heroMeta, heroBadges, heroText).withIndex()) {
+            v.animate().cancel()
+            v.alpha = 0f
+            v.translationX = dp(18f).toFloat()
+            v.animate().alpha(1f).translationX(0f).setStartDelay(k * 40L).setDuration(300).setInterpolator(DecelerateInterpolator(2f)).start()
+        }
         // the backdrop changes only when the focus rests for a moment (fast scrolling stays calm)
         pendingHero = t
         main.removeCallbacks(backdropLater)
@@ -391,6 +434,7 @@ class MediaActivity : Activity() {
         }
         root.addView(panel, FrameLayout.LayoutParams(-1, -1))
         details = panel
+        detailsTitle = t
         // the cursor stays in the panel: the posters behind it cannot be reached
         page.descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
         panel.alpha = 0f
@@ -431,6 +475,7 @@ class MediaActivity : Activity() {
     private fun closeDetails(): Boolean {
         val d = details ?: return false
         details = null
+        detailsTitle = null
         root.removeView(d)
         page.descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
         allCards().firstOrNull { it.title.key == heroKey }?.requestFocus()

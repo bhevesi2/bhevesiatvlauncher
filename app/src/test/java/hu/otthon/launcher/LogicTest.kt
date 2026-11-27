@@ -173,4 +173,17 @@ class LogicTest {
         assertEquals(true, Updates.isNewer(null, 900L, r))
         assertEquals(136, Updates.buildNumber("Build 136"))
     }
+
+    @Test
+    fun frameRates() {
+        val tcl = listOf(60f, 59.94f, 50f, 30f, 24f, 23.976f, 120f)
+        assertEquals(23.976f, FrameRate.pick(23.976f, tcl))
+        assertEquals(50f, FrameRate.pick(25f, tcl))
+        assertEquals(59.94f, FrameRate.pick(29.97f, tcl))
+        // only 24 Hz for a 23.976 film: close enough (one frame in 42 s)
+        assertEquals(24f, FrameRate.pick(23.976f, listOf(60f, 50f, 24f)))
+        // a 60 Hz-only screen keeps what it has
+        assertEquals(null, FrameRate.pick(23.976f, listOf(60f)))
+        assertEquals(60f, FrameRate.pick(60f, listOf(60f, 50f)))
+    }
 }
