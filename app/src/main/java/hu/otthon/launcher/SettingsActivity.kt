@@ -1232,7 +1232,7 @@ class SettingsActivity : PanelActivity() {
                 }
             }
         }
-        row("Add a NAS folder", "Windows (SMB) share, e.g. \\\\192.168.2.2\\Filmek") { addSmbSource() }
+        row("Add a NAS folder", "Its network path, user name and password") { addSmbSource() }
         if (sources.none { it.kind == "usb" }) row("Add USB drives", "Every drive plugged into the TV") {
             val id = "usb"
             MediaLib.saveSources(this, MediaLib.sources(this) + MediaLib.Source(id, "USB", "usb", "", "", "", ""))
@@ -1266,26 +1266,39 @@ class SettingsActivity : PanelActivity() {
         note("This product uses the TMDB API but is not endorsed or certified by TMDB.")
     }
 
-    /** A new NAS folder: address, share, folder, user, password, one question at a time. */
-    private fun addSmbSource() {
-        val nas = cfg.nas
-        Popup.text(this, "NAS address", nas?.host ?: "", "The NAS's name or IP address, e.g. 192.168.2.2") { host ->
-            if (host.isBlank()) return@text
-            Popup.text(this, "Share", "", "The shared folder's name on the NAS, e.g. Filmek") { share ->
-                if (share.isBlank()) return@text
-                Popup.text(this, "Folder in the share", "", "Empty: the whole share") { path ->
-                    Popup.text(this, "User name", nas?.user ?: "", "Empty: guest") { user ->
-                        Popup.text(this, "Password", "", "Kept on this TV only") { pw ->
-                            val list = MediaLib.sources(this)
-                            val id = "s" + java.lang.Long.toString(System.currentTimeMillis(), 36)
-                            val name = share.trim() + (if (path.isBlank()) "" else " / " + path.trim())
-                            MediaLib.saveSources(this, list + MediaLib.Source(id, name, "smb", host.trim(), share.trim(), path.trim().trim('/', '\\'), user.trim()))
-                            if (pw.isNotEmpty()) MediaLib.setPassword(this, id, pw)
-                            toast("Added. Looking through it…")
-                            val app = applicationContext
-                            Bg.slow({ MediaLib.scan(app) }) { r -> toast(r ?: "Could not read the folder"); render(focusedRow() ?: 0) }
-                            render(focusedRow() ?: 0)
+    /**
+     * A new NAS folder: its network path in one field (as in Windows: \\\\NAS\\Filmek), then the user
+     * name and the password. The share is tried before it is kept; when it cannot be read, the
+     * questions come again with the answers given.
+     */
+    private fun addSmbSource(path0: String = "", user0: String? = null) {
+        Popup.text(this, "Network path", path0, "As in Windows, e.g. \\\\192.168.2.2\\Filmek or \\\\NAS\\Media\\Sorozatok") { input ->
+            if (input.isBlank()) return@text
+            val parsed = MediaLib.parsePath(input)
+            if (parsed == null) {
+                toast("Write the NAS and the share too, e.g. \\\\NAS\\Filmek")
+                addSmbSource(input, user0)
+                return@text
+            }
+            val (host, share, folder) = parsed
+            Popup.text(this, "User name", user0 ?: cfg.nas?.user ?: "", "Empty: guest") { user ->
+                Popup.text(this, "Password", "", "Kept on this TV only") { pw ->
+                    val id = "s" + java.lang.Long.toString(System.currentTimeMillis(), 36)
+                    val name = (listOf(share) + folder.split('/').filter { it.isNotBlank() }).last()
+                    val src = MediaLib.Source(id, name, "smb", host, share, folder, user.trim())
+                    toast("Trying the folder…")
+                    val app = applicationContext
+                    Bg.slow({ MediaLib.test(app, src, pw) ?: "" }) { problem ->
+                        if (!problem.isNullOrEmpty()) {
+                            toast(problem)
+                            addSmbSource(input, user)
+                            return@slow
                         }
+                        MediaLib.saveSources(this, MediaLib.sources(this) + src)
+                        if (pw.isNotEmpty()) MediaLib.setPassword(this, id, pw)
+                        toast("Added. Looking through it…")
+                        render(focusedRow() ?: 0)
+                        Bg.slow({ MediaLib.scan(app) }) { r -> toast(r ?: "Could not read the folder"); render(focusedRow() ?: 0) }
                     }
                 }
             }

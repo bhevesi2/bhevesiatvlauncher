@@ -54,6 +54,37 @@ object MediaLib {
         }
     }
 
+    /**
+     * A network path as typed: \\\\NAS\\Filmek\\4K, //NAS/Filmek, smb://NAS/Filmek/4K or NAS/Filmek.
+     * The host, the share, and the folder inside it; null when there is no share in it.
+     */
+    fun parsePath(input: String): Triple<String, String, String>? {
+        val t = input.trim().removePrefix("smb:").replace('\\', '/').trim('/')
+        val parts = t.split('/').filter { it.isNotBlank() }
+        if (parts.size < 2) return null
+        return Triple(parts[0], parts[1], parts.drop(2).joinToString("/"))
+    }
+
+    /** Can the share be read with these? null when it can, else why not, in a few words. Background thread. */
+    fun test(ctx: Context, src: Source, password: String): String? = try {
+        val client = smbClient()
+        client.connect(src.host).use { conn ->
+            val session = conn.authenticate(AuthenticationContext(src.user, password.toCharArray(), ""))
+            (session.connectShare(src.share) as DiskShare).use { share -> share.list(src.path.replace('/', '\\')) }
+            session.close()
+        }
+        client.close()
+        null
+    } catch (e: Exception) {
+        val m = e.toString()
+        when {
+            m.contains("LOGON_FAILURE", true) || m.contains("ACCESS_DENIED", true) -> "Wrong user name or password"
+            m.contains("BAD_NETWORK_NAME", true) -> "No share named ${src.share}"
+            m.contains("OBJECT_NAME_NOT_FOUND", true) || m.contains("OBJECT_PATH_NOT_FOUND", true) -> "No folder ${src.path}"
+            else -> "Can't reach ${src.host}"
+        }
+    }
+
     private const val SOURCES = "media_sources"
 
     fun sources(ctx: Context): List<Source> = try {

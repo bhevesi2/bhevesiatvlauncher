@@ -152,4 +152,13 @@ class LogicTest {
         assertEquals("2001 A Space Odyssey", y.title)
         assertEquals(1968, y.year)
     }
+
+    @Test
+    fun networkPaths() {
+        assertEquals(Triple("192.168.2.2", "Filmek", ""), MediaLib.parsePath("\\\\192.168.2.2\\Filmek"))
+        assertEquals(Triple("NAS", "Media", "Sorozatok/4K"), MediaLib.parsePath("\\\\NAS\\Media\\Sorozatok\\4K\\"))
+        assertEquals(Triple("NAS", "Media", "Filmek"), MediaLib.parsePath("smb://NAS/Media/Filmek"))
+        assertEquals(Triple("NAS", "Media", ""), MediaLib.parsePath("NAS/Media"))
+        assertNull(MediaLib.parsePath("\\\\NAS"))
+    }
 }
