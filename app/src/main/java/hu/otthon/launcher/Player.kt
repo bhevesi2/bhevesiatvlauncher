@@ -70,7 +70,7 @@ class LibraryDataSource(private val ctx: Context) : BaseDataSource(true) {
             size = f.length()
         }
         position = spec.position
-        remaining = if (spec.length != M3.LENGTH_UNSET) spec.length else size - spec.position
+        remaining = if (spec.length != M3.LENGTH_UNSET.toLong()) spec.length else size - spec.position
         if (remaining < 0) throw java.io.EOFException()
         blockAt = -1L
         transferStarted(spec)
