@@ -176,10 +176,10 @@ This product uses the TMDB API but is not endorsed or certified by TMDB.
 The music button opens Music Assistant's library in the film library's look: the chosen album's,
 artist's or playlist's picture fills the screen behind its name, kind, year, genre and story; the
 covers below in rows that turn in space (the same 3D effects switch, Settings › Library). The story
-and the pictures come from TheAudioDB (its free shared key; Hungarian biographies where it has
-them, artist photos and wide pictures) and Wikipedia (Hungarian, then English; a page is taken only
+and the pictures come from TheAudioDB (its free shared key: biographies, artist photos and wide
+pictures) and Wikipedia (English first, Hungarian only where there is no English; a page is taken only
 if its title is the name and its text is about music). Kept on the TV in `files/musicinfo`;
-nothing found is asked again after a week. An album or artist page shows the story beside the
+nothing found is asked again after a week. The launcher goes through the whole library in the background once a day (Settings › Library › Music stories shows how far it got; OK starts it now). An album or artist page shows the story beside the
 songs or albums, over the picture. Now playing is as it was.
 
 The home screen's music card also shows music played on this TV itself (its own Music Assistant

@@ -151,6 +151,7 @@ class MaActivity : PanelActivity() {
             main.post {
                 Prefs.of(this).edit().putBoolean("ma_present", found).apply()
                 if (found) {
+                    MusicInfo.prefetch(this, ha)
                     showTab(0)
                     refreshNow()
                     if (wantNow) openNow()

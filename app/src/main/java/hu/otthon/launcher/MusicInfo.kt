@@ -13,12 +13,15 @@ import java.text.Normalizer
  * biography, photo and wide background picture, an album's description, year and genre.
  *
  * From TheAudioDB (its free shared key: 30 questions a minute, so one at a time and spaced) and
- * Wikipedia: Hungarian first (TheAudioDB's Hungarian text, then the Hungarian Wikipedia), then
- * English. A Wikipedia page is taken only when its title is the name asked for and its text is
- * about music (an album's must name the artist), so a namesake does not slip in.
+ * Wikipedia: English first (TheAudioDB's text, then the English Wikipedia: there is far more of
+ * it), Hungarian only where there is no English. A Wikipedia page is taken only when its title is
+ * the name asked for and its text is about music (an album's must name the artist), so a namesake
+ * does not slip in.
  *
  * Kept on the TV (filesDir/musicinfo), so each is fetched once; nothing found is asked again after
- * a week. All calls but [cached] on a background thread.
+ * a week. [prefetch] goes through the whole Music Assistant library in the background once a day,
+ * so the stories are there before anyone opens the library. All calls but [cached] on a
+ * background thread.
  */
 object MusicInfo {
     class Info(
@@ -42,8 +45,9 @@ object MusicInfo {
     /** What is known without asking anyone (memory only): for the first, instant fill of a page. */
     fun cached(key: String): Info? = synchronized(memory) { memory[key] }
 
-    fun artistKey(name: String) = "artist|" + norm(name)
-    fun albumKey(artist: String, album: String) = "album|" + norm(artist) + "|" + norm(bare(album))
+    /** v2: English first (the v1 store had Hungarian first; its files are no longer read). */
+    fun artistKey(name: String) = "v2|artist|" + norm(name)
+    fun albumKey(artist: String, album: String) = "v2|album|" + norm(artist) + "|" + norm(bare(album))
 
     fun artist(ctx: Context, name: String): Info? = remember(ctx, artistKey(name)) { fetchArtist(name) }
 
@@ -52,6 +56,74 @@ object MusicInfo {
         // the artist's wide picture behind the album, when the album has none of its own
         val art = if (artist.isNotBlank()) artist(ctx, artist) else null
         Info(a.text, a.meta, a.picture, a.backdrop ?: art?.backdrop, a.source)
+    }
+
+    // ---------- the whole library, in the background ----------
+
+    /** Fetches in a row that could not reach the internet: the background run stops at a few. */
+    @Volatile private var failures = 0
+
+    @Volatile var prefetching = false
+        private set
+    /** For the settings: what the last run did. */
+    @Volatile var progress = ""
+        private set
+
+    /**
+     * Once a day (or when [force]d), a background thread goes through Music Assistant's artists and
+     * albums and fetches what is not kept yet. Slow on purpose: TheAudioDB's free key allows 30
+     * questions a minute, a library of a few hundred albums takes half an hour or so.
+     */
+    fun prefetch(ctx: Context, client: HaClient?, force: Boolean = false) {
+        if (client == null || prefetching) return
+        val p = Prefs.of(ctx)
+        if (!p.getBoolean("ma_present", true)) return
+        if (!force && System.currentTimeMillis() - p.getLong("music_info_at", 0L) < 24 * 3600_000L) return
+        prefetching = true
+        val app = ctx.applicationContext
+        Thread({
+            var done = 0; var found = 0; var total = 0
+            try {
+                val entry = client.template("{% set p = integration_entities('music_assistant') | select('match', 'media_player') | list %}" +
+                    "{{ config_entry_id(p[0]) if p else '' }}").trim()
+                if (entry.isNotBlank()) {
+                    fun library(type: String, limit: Int): List<JSONObject> {
+                        val r = client.callResponse("music_assistant", "get_library", JSONObject()
+                            .put("config_entry_id", entry).put("media_type", type).put("order_by", "play_count_desc").put("limit", limit), 30000)
+                        val arr = r.optJSONArray("items") ?: return emptyList()
+                        return (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }
+                    }
+                    val artists = library("artist", 1000).map { it.optString("name") }.filter { it.isNotBlank() }
+                    val albums = library("album", 2000).mapNotNull { o ->
+                        val name = o.optString("name")
+                        val by = o.optJSONArray("artists")?.optJSONObject(0)?.optString("name") ?: ""
+                        if (name.isBlank()) null else by to name
+                    }
+                    total = artists.size + albums.size
+                    // the most played first: they are the ones looked at
+                    fun offline() = failures >= 5
+                    for (a in artists) {
+                        if (offline()) throw java.io.IOException("offline")
+                        if (artist(app, a) != null) found++
+                        done++
+                        progress = "$done/$total"
+                    }
+                    for ((by, name) in albums) {
+                        if (offline()) throw java.io.IOException("offline")
+                        if (album(app, by, name) != null) found++
+                        done++
+                        progress = "$done/$total"
+                    }
+                    p.edit().putLong("music_info_at", System.currentTimeMillis()).apply()
+                }
+            } catch (e: Exception) {
+                android.util.Log.w("OtthonMusic", "prefetch: $e")
+            } finally {
+                progress = if (total > 0) "$found of $total have a story" else progress
+                p.edit().putString("music_info_result", progress).apply()
+                prefetching = false
+            }
+        }, "otthon-music-info").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }.start()
     }
 
     // ---------- the store ----------
@@ -76,8 +148,10 @@ object MusicInfo {
         } catch (e: Exception) { }
         val info = try { fetch() } catch (e: Exception) {
             android.util.Log.w("OtthonMusic", "info for $key: $e")
+            failures++
             return null   // not reachable now: not kept, asked again next time
         }
+        failures = 0
         synchronized(memory) { memory[key] = info }
         try {
             val o = JSONObject().put("key", key).put("at", System.currentTimeMillis())
@@ -95,8 +169,8 @@ object MusicInfo {
             ?.takeIf { same(it.optString("strArtist"), name) }
         val music = listOf("band", "singer", "musician", "rapper", "composer", "songwriter", "dj", "duo", "group", "orchestra",
             "együttes", "zenekar", "énekes", "zenész", "rapper", "zeneszerző", "előadó", "dalszerző", "duó", "zenekar")
-        val hu = a?.str("strBiographyHU") ?: wiki("hu", name, name, null, music)
-        val text = hu ?: a?.str("strBiography") ?: wiki("en", name, name, null, music) ?: ""
+        val text = a?.str("strBiography") ?: wiki("en", name, name, null, music)
+            ?: a?.str("strBiographyHU") ?: wiki("hu", name, name, null, music) ?: ""
         if (a == null && text.isBlank()) return null
         val meta = listOfNotNull(a?.str("strGenre"), a?.str("strCountry"), a?.str("intFormedYear")?.let { "since $it" }).joinToString(" · ")
         val source = if (a != null && (text == a.str("strBiographyHU") || text == a.str("strBiography"))) "TheAudioDB" else "Wikipedia"
@@ -108,8 +182,8 @@ object MusicInfo {
         val name = bare(album)
         val a = if (artist.isBlank()) null else adb("searchalbum.php?s=" + enc(artist) + "&a=" + enc(name))?.optJSONArray("album")
             ?.let { arr -> (0 until arr.length()).mapNotNull { arr.optJSONObject(it) }.firstOrNull { same(it.optString("strAlbum"), name) } }
-        val hu = a?.str("strDescriptionHU") ?: wiki("hu", "$name $artist album", name, artist, null)
-        val text = hu ?: a?.str("strDescription") ?: wiki("en", "$name $artist album", name, artist, null) ?: ""
+        val text = a?.str("strDescription") ?: wiki("en", "$name $artist album", name, artist, null)
+            ?: a?.str("strDescriptionHU") ?: wiki("hu", "$name $artist album", name, artist, null) ?: ""
         if (a == null && text.isBlank()) return null
         val meta = listOfNotNull(a?.str("intYearReleased"), a?.str("strGenre")).joinToString(" · ")
         val source = if (a != null && (text == a.str("strDescriptionHU") || text == a.str("strDescription"))) "TheAudioDB" else "Wikipedia"

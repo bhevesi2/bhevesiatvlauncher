@@ -1267,6 +1267,16 @@ class SettingsActivity : PanelActivity() {
         if (LowRam.on) row("3D effects", "Not on this TV: it needs more memory") { }
         else toggle("3D effects", MediaActivity.threeD(this)) { on -> Prefs.of(this).edit().putBoolean("media_3d", on).apply() }
         row("Open the library") { MediaActivity.open(this) }
+        if (cfg.haEnabled && Prefs.of(this).getBoolean("ma_present", true)) {
+            section("Music")
+            // the music library's stories and pictures: fetched in the background once a day
+            row("Music stories", if (MusicInfo.prefetching) Lang.tr("Fetching…") + " " + MusicInfo.progress
+                else Prefs.of(this).getString("music_info_result", "")?.ifBlank { null } ?: Lang.tr("Fetched in the background once a day")) {
+                MusicInfo.prefetch(this, cfg.client(), force = true)
+                toast("Fetching the stories in the background…")
+                render(focusedRow() ?: 0)
+            }
+        }
         note("This product uses the TMDB API but is not endorsed or certified by TMDB.")
     }
 

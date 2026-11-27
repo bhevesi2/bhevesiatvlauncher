@@ -1056,6 +1056,8 @@ class HomeActivity : Activity() {
         if (ha != null) {
             Bg.main.post(statusLoop)
             Bg.main.post(npLoop)
+            // the music library's stories, fetched in the background once a day
+            MusicInfo.prefetch(this, ha)
         }
     }
 
