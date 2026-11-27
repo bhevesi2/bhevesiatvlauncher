@@ -138,6 +138,33 @@ launcher's preferences (`folders`) and move with the settings ([Carry]).
 Hold OK on a favourite › Move works as on Google TV home: the tile lifts and shows ◀ ▶, the arrows
 move it along the row, OK (or Back) puts it down and keeps the order.
 
+## Film library ("Filmtár")
+
+The film button on the home screen (once a source is set) opens a library of the films and
+series in folders on the NAS (Windows/SMB shares, as many as needed) and on USB drives plugged
+into the TV. Settings › Library: add a NAS folder (address, share, folder, user; the password is
+kept with the other secrets on the TV), add USB drives (the launcher needs the "all files"
+permission: `appops set hu.otthon.launcher MANAGE_EXTERNAL_STORAGE allow`), the TMDB key
+(themoviedb.org › Settings › API; kept on the TV only), look through the folders now.
+
+The files are read from their names (title and year, or series and SxxEyy; a series' folder gives
+the title of bare SxxEyy files), then looked up on TMDB (Hungarian title and story, falling back to
+English, poster, backdrop, cast, genres, episode names and pictures). Kept in `media.db`; the
+pictures in the TV's cache. The folders are looked through again every six hours when the library
+is opened (or from Settings).
+
+The library: the chosen title's backdrop behind its data; rows of posters (Continue watching,
+Recently added, Films, Series, the larger genres); search by title, actor or genre. Where there
+is memory to spare the posters turn in space and the backdrop drifts. OK on a poster: play,
+continue, from the start, mark as watched; a series shows its seasons and episodes.
+
+The player (Media3) runs in a process of its own (`:player`) and reads the NAS through SMB in 1 MB
+blocks: Dolby Vision (profiles 5 and 8; 7 plays as HDR10), HDR10, HLG, the TV's own decoders, sound
+passed to the amplifier as it is. Subtitle files beside the film (.srt, .hu.srt, .ass, .vtt) are
+offered with the film's own. ◀ ▶ skip (held: faster), OK pause, ▲ sound and subtitles, Back
+leaves; where it got to is kept, near the end counts as watched, the next episode follows.
+This product uses the TMDB API but is not endorsed or certified by TMDB.
+
 ## Répakaland (easter egg)
 
 Settings › About: press OK on the version number seven times. A small platform game of the

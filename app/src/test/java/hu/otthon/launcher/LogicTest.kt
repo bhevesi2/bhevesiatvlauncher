@@ -126,4 +126,30 @@ class LogicTest {
         assertEquals("folder:a", Folders.token("a"))
         assertEquals("a", Folders.idOf("folder:a"))
     }
+
+    @Test
+    fun mediaNames() {
+        val f = MediaLib.guess("Filmek\\Dune.Part.Two.2024.2160p.UHD.BluRay.DV.HDR.x265-GRP.mkv")
+        assertEquals(false, f.series)
+        assertEquals("Dune Part Two", f.title)
+        assertEquals(2024, f.year)
+        assertEquals(true, f.uhd)
+        assertEquals(true, f.dv)
+        val e = MediaLib.guess("Sorozatok\\The Bear\\Season 2\\The.Bear.S02E05.1080p.WEB-DL.mkv")
+        assertEquals(true, e.series)
+        assertEquals("The Bear", e.title)
+        assertEquals(2, e.season)
+        assertEquals(5, e.episode)
+        // only the episode in the name: the series' folder gives the title
+        val f2 = MediaLib.guess("Sorozatok\\Shogun\\S01E03.mkv")
+        assertEquals("Shogun", f2.title)
+        assertEquals(3, f2.episode)
+        val m = MediaLib.guess("Filmek\\A Tanú (1969).avi")
+        assertEquals("A Tanú", m.title)
+        assertEquals(1969, m.year)
+        // a year in the title is not the release year
+        val y = MediaLib.guess("2001 A Space Odyssey 1968 1080p.mkv")
+        assertEquals("2001 A Space Odyssey", y.title)
+        assertEquals(1968, y.year)
+    }
 }

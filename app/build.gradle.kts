@@ -79,6 +79,9 @@ dependencies {
     // installs the baseline profile (src/main/baseline-prof.txt) on the TV, so the system compiles
     // the launcher ahead of time instead of while it runs
     implementation("androidx.profileinstaller:profileinstaller:1.4.1")
+    // the film library's player: Dolby Vision, HDR, the TV's own decoders, MKV/MP4, subtitles
+    implementation("androidx.media3:media3-exoplayer:1.4.1")
+    implementation("androidx.media3:media3-ui:1.4.1")
 
     testImplementation("junit:junit:4.13.2")
     // the real org.json: Android's own is only there on a device

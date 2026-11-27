@@ -537,6 +537,15 @@ object Secrets {
         return strip(j)
     }
 
+    /** A secret of its own kind (a media source's password, the TMDB key): empty when there is none. */
+    fun get(ctx: Context, key: String): String = all(ctx).optString(key, "")
+
+    fun put(ctx: Context, key: String, value: String) {
+        val s = all(ctx)
+        if (value.isEmpty()) s.remove(key) else s.put(key, value)
+        save(ctx, s)
+    }
+
     /** Puts the kept secrets back into settings just read. */
     fun merge(ctx: Context, j: JSONObject) {
         val s = all(ctx)

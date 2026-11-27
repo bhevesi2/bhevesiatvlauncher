@@ -20,6 +20,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <!-- the streaming apps' recommendation rows, as the Google TV home reads them -->
     <uses-permission android:name="android.permission.READ_TV_LISTINGS" />
+    <!-- the film library: films on USB drives plugged into the TV (granted over ADB) -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
 
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
@@ -166,6 +170,19 @@
         <activity
             android:name=".AllAppsActivity"
             android:exported="false"
+            android:screenOrientation="landscape" />
+
+        <activity
+            android:name=".MediaActivity"
+            android:exported="false"
+            android:screenOrientation="landscape" />
+
+        <!-- the player in a process of its own: a film too much for the TV never takes the home screen with it -->
+        <activity
+            android:name=".PlayerActivity"
+            android:exported="false"
+            android:process=":player"
+            android:configChanges="keyboard|keyboardHidden|navigation|screenSize|smallestScreenSize|screenLayout|orientation|density"
             android:screenOrientation="landscape" />
 
         <activity

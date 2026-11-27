@@ -70,7 +70,7 @@ class SettingsActivity : PanelActivity() {
     /** Apps that publish recommendations, read once when the Home screen page is first shown. */
     private var publishers: List<Pair<String, String>>? = null
 
-    private val roots = listOf("Appearance", "Favorites", "Kids profile", "Home screen", "Cameras", "Inputs", "Remote", "Dashboard", "Home Assistant", "About")
+    private val roots = listOf("Appearance", "Favorites", "Kids profile", "Home screen", "Cameras", "Inputs", "Remote", "Dashboard", "Home Assistant", "Library", "About")
 
     /** The kids profile's time helpers are looked up in Home Assistant once, when its page is first shown. */
     private var kidsChecked = false
@@ -161,6 +161,8 @@ class SettingsActivity : PanelActivity() {
         stack.add(rootPage(0))
         render(-1)
         navViews[0].requestFocus()
+        // opened from the library: straight to its page
+        if (intent.getStringExtra("page") == "media") showRoot(roots.indexOf("Library"), true)
     }
 
     @Deprecated("Deprecated in Java")
@@ -202,7 +204,8 @@ class SettingsActivity : PanelActivity() {
         6 -> Page(roots[6]) { remotePage() }
         7 -> Page(roots[7]) { dashboardPage() }
         8 -> Page(roots[8]) { haPage() }
-        else -> Page(roots[9]) { aboutPage() }
+        9 -> Page(roots[9]) { mediaPage() }
+        else -> Page(roots[10]) { aboutPage() }
     }
 
     private fun showRoot(i: Int, focusPane: Boolean) {
@@ -1207,6 +1210,86 @@ class SettingsActivity : PanelActivity() {
             }
         }
         note("Tokens are created in Home Assistant under your profile › Security › Long-lived access tokens.")
+    }
+
+    // ---------- the film and series library ----------
+
+    private fun mediaPage() {
+        note("Films and series from folders on the NAS and from USB drives, with pictures and stories from TMDB. Open it with the film button on the home screen.")
+        section("Where the films are")
+        val sources = MediaLib.sources(this)
+        for (src in sources) {
+            row(src.name.ifBlank { src.label }, src.label) {
+                Popup.menu(this, src.name.ifBlank { src.label }, listOf("Rename", "Remove")) { which ->
+                    if (which == 0) Popup.text(this, "Name", src.name) { v ->
+                        MediaLib.saveSources(this, MediaLib.sources(this).map { if (it.id == src.id) it.copy(name = v) else it })
+                        render(focusedRow() ?: 0)
+                    } else {
+                        MediaLib.saveSources(this, MediaLib.sources(this).filter { it.id != src.id })
+                        MediaLib.setPassword(this, src.id, "")
+                        render(0)
+                    }
+                }
+            }
+        }
+        row("Add a NAS folder", "Windows (SMB) share, e.g. \\\\192.168.2.2\\Filmek") { addSmbSource() }
+        if (sources.none { it.kind == "usb" }) row("Add USB drives", "Every drive plugged into the TV") {
+            val id = "usb"
+            MediaLib.saveSources(this, MediaLib.sources(this) + MediaLib.Source(id, "USB", "usb", "", "", "", ""))
+            toast("Added. The TV must allow the launcher to read all files (done over ADB).")
+            render(focusedRow() ?: 0)
+        }
+        section("Film data")
+        val key = MediaLib.tmdbKey(this)
+        row("TMDB key", if (key.isBlank()) "Not set: no pictures or stories" else "Set (…" + key.takeLast(4) + ")") {
+            Popup.text(this, "TMDB key", "", "The API key or the API Read Access Token from themoviedb.org › Settings › API") { v ->
+                if (v.isBlank()) return@text
+                MediaLib.setTmdbKey(this, v)
+                toast("Checking the key…")
+                val app = applicationContext
+                Bg.run({ MediaLib.checkKey(app) }) { r ->
+                    toast(if (r == "OK") "The key works" else (r ?: "TMDB not reachable"))
+                    render(focusedRow() ?: 0)
+                }
+            }
+        }
+        section("Library")
+        val scanned = Prefs.of(this).getLong("media_scanned_at", 0L)
+        row("Look through the folders now", if (MediaLib.scanning) MediaLib.progress + "…" else if (scanned == 0L) "Never yet" else
+            android.text.format.DateFormat.format("yyyy.MM.dd HH:mm", scanned).toString()) {
+            if (MediaLib.scanning) return@row
+            toast("Looking through the folders…")
+            val app = applicationContext
+            Bg.slow({ MediaLib.scan(app) }) { r -> toast(r ?: "Could not look through the folders"); render(focusedRow() ?: 0) }
+        }
+        row("Open the library") { MediaActivity.open(this) }
+        note("This product uses the TMDB API but is not endorsed or certified by TMDB.")
+    }
+
+    /** A new NAS folder: address, share, folder, user, password, one question at a time. */
+    private fun addSmbSource() {
+        val nas = cfg.nas
+        Popup.text(this, "NAS address", nas?.host ?: "", "The NAS's name or IP address, e.g. 192.168.2.2") { host ->
+            if (host.isBlank()) return@text
+            Popup.text(this, "Share", "", "The shared folder's name on the NAS, e.g. Filmek") { share ->
+                if (share.isBlank()) return@text
+                Popup.text(this, "Folder in the share", "", "Empty: the whole share") { path ->
+                    Popup.text(this, "User name", nas?.user ?: "", "Empty: guest") { user ->
+                        Popup.text(this, "Password", "", "Kept on this TV only") { pw ->
+                            val list = MediaLib.sources(this)
+                            val id = "s" + java.lang.Long.toString(System.currentTimeMillis(), 36)
+                            val name = share.trim() + (if (path.isBlank()) "" else " / " + path.trim())
+                            MediaLib.saveSources(this, list + MediaLib.Source(id, name, "smb", host.trim(), share.trim(), path.trim().trim('/', '\\'), user.trim()))
+                            if (pw.isNotEmpty()) MediaLib.setPassword(this, id, pw)
+                            toast("Added. Looking through it…")
+                            val app = applicationContext
+                            Bg.slow({ MediaLib.scan(app) }) { r -> toast(r ?: "Could not read the folder"); render(focusedRow() ?: 0) }
+                            render(focusedRow() ?: 0)
+                        }
+                    }
+                }
+            }
+        }
     }
 
     private fun aboutPage() {
