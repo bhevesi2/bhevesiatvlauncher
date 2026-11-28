@@ -356,12 +356,19 @@ object MediaLib {
                     db.endTransaction()
                 }
             }
+            // what the TVs found out, from the NAS first (a TV without a key knows TMDB's answers so)
+            progress = "NAS"
+            val shared = try { SharedLibrary.take(app) } catch (e: Exception) { android.util.Log.w("OtthonMedia", "shared list", e); 0 }
             progress = "TMDB"
-            android.util.Log.i("OtthonMedia", "saved: $found files, $added new; looking up titles")
+            android.util.Log.i("OtthonMedia", "saved: $found files, $added new, $shared from the shared list; looking up titles")
             val looked = try { enrich(app) } catch (e: Exception) { android.util.Log.w("OtthonMedia", "TMDB lookup stopped", e); 0 }
+            // and back to the NAS, for the others (only from a TV with a TMDB key)
+            val notWritten = if (tmdbKey(app).isNotBlank()) try { SharedLibrary.give(app) } catch (e: Exception) { e.javaClass.simpleName } else null
             val summary = buildString {
                 append("$found films and episodes, $added new")
+                if (shared > 0) append(", $shared from the NAS's shared list")
                 if (looked > 0) append(", $looked looked up")
+                if (notWritten != null) append(" · shared list not written ($notWritten)")
                 if (errors.isNotEmpty()) append(" · ").append(errors.joinToString("; "))
             }
             android.util.Log.i("OtthonMedia", "scan: $summary")

@@ -184,6 +184,13 @@ English; its opening and, where it has one, the poster). A page is taken only if
 title and, for a film, it is about a film of that year. Their ids are kept negative: a TMDB key
 added later looks them up again. Both CC BY-SA, named in the library and in Settings.
 
+The TVs share what they found out through the NAS: a TV with a TMDB key writes, after each scan,
+`\\NAS\share\.meta\library.json` (for each file, by its path in the share: which TMDB title,
+film or series, season and episode; the titles' data; the episodes'), merged with what another TV
+wrote there. Every TV reads it before looking anything up itself, so a TV without a key shows
+TMDB's data too, and a file it took for a film but is an episode is put right. Writing needs the
+NAS user's write access; reading works without it. Only TMDB's data goes there.
+
 ## Music library (Music Assistant)
 
 The music button opens Music Assistant's library in the film library's look: the chosen album's,
