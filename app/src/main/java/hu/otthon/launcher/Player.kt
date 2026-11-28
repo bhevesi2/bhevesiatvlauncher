@@ -345,7 +345,12 @@ class PlayerActivity : Activity() {
         val skip = avoid.toSet()
         val selector = MediaCodecSelector { mime, secure, tunneling ->
             val all = MediaCodecSelector.DEFAULT.getDecoderInfos(mime, secure, tunneling)
-            val fit = all.filter { c -> c.name !in skip && (mime == MimeTypes.VIDEO_DOLBY_VISION || !dolbyVisionDecoder(c.name)) }
+            var fit = all.filter { c -> c.name !in skip && (mime == MimeTypes.VIDEO_DOLBY_VISION || !dolbyVisionDecoder(c.name)) }
+            // old small formats (XviD/DivX, H.263): the TV's own decoder may take them and give no
+            // picture (the Sony's MediaTek one did); the software one plays them easily, so it goes first
+            if (mime == "video/mp4v-es" || mime == "video/3gpp" || mime == "video/divx" || mime == "video/x-divx") {
+                fit = fit.sortedBy { c -> if (softwareDecoder(c.name)) 0 else 1 }
+            }
             fit.ifEmpty { all.filter { it.name !in skip }.ifEmpty { all } }
         }
         val renderers = DefaultRenderersFactory(this).setEnableDecoderFallback(true).setMediaCodecSelector(selector)
@@ -566,6 +571,11 @@ class PlayerActivity : Activity() {
             .putStringArrayListExtra("avoid", next).putExtra("recovered", recovered + 1))
         overridePendingTransition(0, 0)
         finish()
+    }
+
+    private fun softwareDecoder(name: String): Boolean {
+        val n = name.lowercase()
+        return n.startsWith("omx.google.") || n.startsWith("c2.android.") || n.startsWith("omx.ffmpeg.")
     }
 
     private fun dolbyVisionDecoder(name: String): Boolean {
