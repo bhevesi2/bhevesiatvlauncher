@@ -164,7 +164,9 @@ The player (Media3) runs in a process of its own (`:player`) and reads the NAS t
 blocks, the next block asked for while the current one plays, on one kept connection (a seek does
 not log in again); the buffer is up to 200 MB, as the player's memory allows. While it loads, a
 ring shows it with the read speed; the bar shows how much is ready ahead. Network errors are tried
-again three times. Where the screen has a mode with the film's frame rate (24 Hz for 23.976 fps,
+again three times. A Dolby Vision decoder gets Dolby Vision only (the Sony's took plain films
+too and showed nothing); a film that stops for good while loading starts again where it was
+without the decoders it had (twice at most). The buffer is smaller on the TVs with less memory. Where the screen has a mode with the film's frame rate (24 Hz for 23.976 fps,
 50 Hz for 25), it switches to it. Dolby Vision (profiles 5 and 8; 7 plays as HDR10), HDR10, HLG, the TV's own decoders, sound
 passed to the amplifier as it is. Subtitle files beside the film (.srt, .hu.srt, .ass, .vtt) are
 offered with the film's own. ◀ ▶ skip (held: faster; the presses add up, the film jumps once

@@ -508,6 +508,8 @@ object Lang {
         "Sound and subtitles" to "Hang és felirat",
         "Can't play this file" to "Ez a fájl nem játszható le",
         "Connecting again…" to "Újracsatlakozás…",
+        "This TV can't play this file" to "Ez a tévé nem tudja lejátszani ezt a fájlt",
+        "This kind of file can't be played" to "Ilyen fájlt nem tud lejátszani",
         "OK pause · ◀ ▶ skip · ▲ sound and subtitles · Back leave" to "OK szünet · ◀ ▶ tekerés · ▲ hang és felirat · Vissza kilépés",
         "Where the films are" to "Hol vannak a filmek",
         "Add a NAS folder" to "NAS-mappa hozzáadása",

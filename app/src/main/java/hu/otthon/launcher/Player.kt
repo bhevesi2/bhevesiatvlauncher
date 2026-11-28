@@ -26,6 +26,8 @@ import androidx.media3.datasource.BaseDataSource
 import androidx.media3.datasource.DataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -263,6 +265,10 @@ object SharePool {
  * While the film loads, a ring in the middle shows it, with how fast the NAS is read and how much
  * is ready. A network error is tried again (three times) from where it stopped. Where the TV has a
  * screen mode with the film's frame rate (24 Hz for a 23.976 fps film), it switches to it.
+ *
+ * A Dolby Vision decoder is given Dolby Vision only: the Sony's (MediaTek's) takes a plain film
+ * too and never shows a picture. If the film still stops for good while loading (loaded but not
+ * playing), the player starts again where it was, without the decoders it had.
  */
 class PlayerActivity : Activity() {
     private lateinit var player: ExoPlayer
@@ -276,6 +282,13 @@ class PlayerActivity : Activity() {
     private lateinit var loadingText: TextView
     private lateinit var bufferText: TextView
     private var queue = longArrayOf()
+    /** Decoders not to use (they got stuck on this film), and how many times it started again so. */
+    private var avoid = ArrayList<String>()
+    private var recovered = 0
+    private var videoDecoder: String? = null
+    private var audioDecoder: String? = null
+    /** Started again in this process: its end must not end the process. */
+    private var handedOver = false
     private var index = 0
     private var item: MediaLib.Item? = null
     private val main = android.os.Handler(android.os.Looper.getMainLooper())
@@ -285,6 +298,9 @@ class PlayerActivity : Activity() {
         CrashLog.install(this)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         queue = intent.getLongArrayExtra("queue") ?: longArrayOf(intent.getLongExtra("id", -1))
+        avoid = intent.getStringArrayListExtra("avoid") ?: ArrayList()
+        recovered = intent.getIntExtra("recovered", 0)
+        LowRam.init(this)
         index = intent.getIntExtra("index", 0).coerceIn(0, maxOf(0, queue.size - 1))
 
         val root = FrameLayout(this).apply { setBackgroundColor(0xFF000000.toInt()) }
@@ -326,10 +342,18 @@ class PlayerActivity : Activity() {
         root.addView(loading, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
         setContentView(root)
 
-        val renderers = DefaultRenderersFactory(this).setEnableDecoderFallback(true)
-        // a bigger buffer than the default for films from the NAS, as much as the player's memory allows
+        val skip = avoid.toSet()
+        val selector = MediaCodecSelector { mime, secure, tunneling ->
+            val all = MediaCodecSelector.DEFAULT.getDecoderInfos(mime, secure, tunneling)
+            val fit = all.filter { c -> c.name !in skip && (mime == MimeTypes.VIDEO_DOLBY_VISION || !dolbyVisionDecoder(c.name)) }
+            fit.ifEmpty { all.filter { it.name !in skip }.ifEmpty { all } }
+        }
+        val renderers = DefaultRenderersFactory(this).setEnableDecoderFallback(true).setMediaCodecSelector(selector)
+        // a bigger buffer than the default for films from the NAS, as much as the player's memory allows,
+        // and less on the TVs with less memory (the home screen must stay alive behind the film)
         val heap = Runtime.getRuntime().maxMemory()
-        val bytes = (heap * 0.45).toLong().coerceIn(48L shl 20, 200L shl 20).toInt()
+        val most = when { LowRam.lite -> 64L shl 20; LowRam.on -> 110L shl 20; else -> 200L shl 20 }
+        val bytes = (heap * 0.45).toLong().coerceIn(32L shl 20, most).toInt()
         val load = DefaultLoadControl.Builder()
             .setBufferDurationsMs(30_000, 120_000, 2_000, 4_000)
             .setTargetBufferBytes(bytes)
@@ -339,13 +363,26 @@ class PlayerActivity : Activity() {
         player = ExoPlayer.Builder(this)
             .setRenderersFactory(renderers)
             .setLoadControl(load)
+            .setReleaseTimeoutMs(2_000)
             .setMediaSourceFactory(DefaultMediaSourceFactory(DataSource.Factory { LibraryDataSource(applicationContext) }))
             .build()
         view.player = player
+        player.addAnalyticsListener(object : AnalyticsListener {
+            override fun onVideoDecoderInitialized(eventTime: AnalyticsListener.EventTime, decoderName: String, initializedTimestampMs: Long, initializationDurationMs: Long) {
+                videoDecoder = decoderName
+                PlayerLog.w(this@PlayerActivity, "video decoder $decoderName")
+            }
+            override fun onAudioDecoderInitialized(eventTime: AnalyticsListener.EventTime, decoderName: String, initializedTimestampMs: Long, initializationDurationMs: Long) {
+                audioDecoder = decoderName
+                PlayerLog.w(this@PlayerActivity, "audio decoder $decoderName")
+            }
+        })
         player.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_ENDED) ended()
                 if (state == Player.STATE_READY) retries = 0
+                if (state == Player.STATE_BUFFERING) { bufferingSince = android.os.SystemClock.elapsedRealtime(); readAtBuffering = LibraryDataSource.read.get() }
+                else bufferingSince = 0L
                 loadingSoon(state == Player.STATE_BUFFERING)
                 tick()
             }
@@ -367,7 +404,10 @@ class PlayerActivity : Activity() {
                     return
                 }
                 loading.visibility = View.INVISIBLE
-                titleText.text = Lang.tr("Can't play this file") + " (" + error.errorCodeName + ")"
+                // 3003: a kind of file the player has no reader for (WMV, RealMedia…)
+                val ext = item?.path?.substringAfterLast('.', "")?.lowercase() ?: ""
+                titleText.text = if (error.errorCode == 3003) Lang.tr("This kind of file can't be played") + (if (ext.isNotBlank()) " (.$ext)" else "")
+                    else Lang.tr("Can't play this file") + " (" + error.errorCodeName + ")"
                 show()
             }
             override fun onTracksChanged(tracks: Tracks) { describe(tracks); matchFrameRate(tracks) }
@@ -485,9 +525,52 @@ class PlayerActivity : Activity() {
             } else "${clock(p)} / ${clock(d)}   ·   " + Lang.tr("${clock(d - p)} left") + "   ·   " + Lang.tr("ends at $ends")
         }
         bufferText.text = Lang.tr("Ready ahead: $ahead s") + "   ·   $net"
+        watch(now)
         if (loading.visibility == View.VISIBLE && retries < 2) {
             loadingText.text = Lang.tr("Loading…") + "\n$net"
         }
+    }
+
+    // ---------- a film that stops for good while loading ----------
+
+    private var bufferingSince = 0L
+    private var readAtBuffering = 0L
+
+    /**
+     * Loading that no longer loads (the player has stopped asking for data) for 12 s, or 30 s of
+     * loading with 40 MB read and still no picture: a decoder that takes the film and gives
+     * nothing back. Started again where it was, without that decoder (the second time without the
+     * sound decoder too); twice at most, then the message.
+     */
+    private fun watch(now: Long) {
+        if (bufferingSince == 0L || seekTarget >= 0 || !player.playWhenReady || handedOver) return
+        val waited = now - bufferingSince
+        val read = LibraryDataSource.read.get() - readAtBuffering
+        val stuck = (waited > 12_000 && !player.isLoading) || (waited > 30_000 && read > (40L shl 20))
+        if (!stuck) return
+        PlayerLog.w(this, "stuck loading ${waited / 1000} s, ${read shr 20} MB read, loading ${player.isLoading}; video $videoDecoder, audio $audioDecoder")
+        if (recovered >= 2) {
+            bufferingSince = 0L
+            loading.visibility = View.INVISIBLE
+            titleText.text = Lang.tr("This TV can't play this file")
+            show()
+            return
+        }
+        val next = ArrayList(avoid)
+        videoDecoder?.let { if (it !in next) next.add(it) }
+        if (recovered >= 1) audioDecoder?.let { if (it !in next) next.add(it) }
+        save()
+        handedOver = true
+        startActivity(Intent(this, PlayerActivity::class.java)
+            .putExtra("queue", queue).putExtra("index", index).putExtra("start", player.currentPosition)
+            .putStringArrayListExtra("avoid", next).putExtra("recovered", recovered + 1))
+        overridePendingTransition(0, 0)
+        finish()
+    }
+
+    private fun dolbyVisionDecoder(name: String): Boolean {
+        val n = name.lowercase()
+        return n.contains("dolby.vision") || n.contains(".dvhe") || n.contains(".dvav") || n.contains(".dvh1") || n.contains("dovi")
     }
 
     // ---------- loading ----------
@@ -674,7 +757,8 @@ class PlayerActivity : Activity() {
         try { writer.awaitTermination(2, java.util.concurrent.TimeUnit.SECONDS) } catch (e: Exception) { }
         super.onDestroy()
         // the player's process ends with the film: its memory goes back to the TV at once
-        android.os.Process.killProcess(android.os.Process.myPid())
+        // (not when it has just started the film again in this process)
+        if (!handedOver) android.os.Process.killProcess(android.os.Process.myPid())
     }
 
     companion object {
