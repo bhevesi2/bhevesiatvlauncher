@@ -211,7 +211,8 @@ class LogicTest {
     private class Rec : androidx.media3.extractor.TrackOutput {
         val times = ArrayList<Long>()
         var csd: ByteArray? = null
-        override fun format(format: androidx.media3.common.Format) { csd = format.initializationData.firstOrNull() }
+        var fps = -1f
+        override fun format(format: androidx.media3.common.Format) { csd = format.initializationData.firstOrNull(); fps = format.frameRate }
         override fun sampleData(input: androidx.media3.common.DataReader, length: Int, allowEndOfInput: Boolean, sampleDataPart: Int): Int {
             val b = ByteArray(length); var n = 0
             while (n < length) { val r = input.read(b, n, length - n); if (r < 0) break; n += r }
@@ -244,6 +245,8 @@ class LogicTest {
         val normal = mend(listOf(vol + vop(0, true, 50), vop(1, true, 30), vop(2, true, 10), vop(2, true, 11), vop(1, true, 31), vop(2, true, 12)))
         assertEquals(listOf(0L, 3L, 1L, 2L, 5L, 4L), normal.times)
         assertEquals(true, normal.csd?.take(4) == listOf<Byte>(0, 0, 1, 0x20))
+        // the frame rate Media3's AVI reader leaves out: 40 ms chunks, 25 fps
+        assertEquals(25f, normal.fps, 0.01f)
         val packed = mend(listOf(vol + vop(0, true, 50), vop(1, true, 30) + vop(2, true, 10), vop(1, false, 0), vop(1, true, 31) + vop(2, true, 11), vop(1, false, 0)))
         assertEquals(listOf(0L, 2L, 1L, 4L, 3L), packed.times)
         val skipped = mend(listOf(vol + vop(0, true, 50), vop(1, true, 30), vop(1, false, 0), vop(1, true, 31)))

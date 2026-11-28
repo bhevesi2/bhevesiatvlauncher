@@ -29,7 +29,11 @@ import androidx.media3.extractor.avi.AviExtractor
  *    that reorders the frames expects: a B-frame is shown one frame earlier, the frame before it
  *    after the B-frames.
  *
- * Everything else (other formats, audio, MPEG-4 in MKV/MP4) goes through as it was.
+ * And for every AVI video track: the frame rate. Media3's AVI reader reads it from the file but
+ * does not pass it on; the MediaTek decoder, given 0 fps, never put a frame out (and the screen's
+ * frame rate could not be matched to an AVI). It is worked out from the first two chunks' times.
+ *
+ * Everything else (audio, MPEG-4 in MKV/MP4) goes through as it was.
  */
 object Mp4vExtractors : ExtractorsFactory {
     private val default = DefaultExtractorsFactory()
@@ -74,10 +78,18 @@ private class MendedAvi(private val inner: Extractor) : Extractor {
     override fun release() = inner.release()
 }
 
-/** The video track of an AVI: MPEG-4 Part 2 mended (see [Mp4vExtractors]), anything else as it was. */
+/** The video track of an AVI: its frame rate given; MPEG-4 Part 2 mended too (see [Mp4vExtractors]). */
 private class Mp4vTrack(private val out: TrackOutput) : TrackOutput {
     private var mend = false
+    /** MPEG-4 Part 2: split, ordered, headers given. Else only the frame rate is added. */
+    private var mp4v = false
     private var pendingFormat: Format? = null
+    private var csd: ByteArray? = null
+    /** The first chunks' times, for the frame rate. */
+    private var firstTime = -1L
+    private var frameUs = 0L
+    /** Other formats' first chunks, held until the frame rate is known. */
+    private val held = ArrayList<Triple<ByteArray, Long, Int>>()
 
     // the bytes given for the samples not yet ended
     private var buf = ByteArray(256 * 1024)
@@ -97,11 +109,13 @@ private class Mp4vTrack(private val out: TrackOutput) : TrackOutput {
     private val group = ArrayList<Vop>()
 
     override fun format(format: Format) {
-        mend = format.sampleMimeType == MimeTypes.VIDEO_MP4V
-        if (!mend) out.format(format)
-        // given with the headers from the first frame
-        else if (pendingFormat == null) pendingFormat = format
+        mp4v = format.sampleMimeType == MimeTypes.VIDEO_MP4V
+        // the format waits for the frame rate (and, for MPEG-4, the headers from the first frame)
+        if (pendingFormat == null && !sentFormat) { mend = true; pendingFormat = format }
+        else out.format(format)
     }
+
+    private var sentFormat = false
 
     override fun sampleData(input: DataReader, length: Int, allowEndOfInput: Boolean, sampleDataPart: Int): Int {
         if (!mend) return out.sampleData(input, length, allowEndOfInput, sampleDataPart)
@@ -130,6 +144,9 @@ private class Mp4vTrack(private val out: TrackOutput) : TrackOutput {
         // what came after this sample stays for the next
         System.arraycopy(buf, start + size, buf, 0, offset)
         len = offset
+        if (firstTime < 0) firstTime = timeUs
+        else if (frameUs == 0L && timeUs > firstTime) frameUs = timeUs - firstTime
+        if (!mp4v) { plain(chunk, timeUs, flags); return }
         try {
             chunk(chunk, timeUs, flags and M3.BUFFER_FLAG_KEY_FRAME != 0)
         } catch (e: Exception) {
@@ -141,6 +158,20 @@ private class Mp4vTrack(private val out: TrackOutput) : TrackOutput {
         }
     }
 
+    /** Not MPEG-4 Part 2: each chunk as it is; the first two held until the frame rate is known. */
+    private fun plain(data: ByteArray, timeUs: Long, flags: Int) {
+        if (!sentFormat) {
+            held.add(Triple(data, timeUs, flags))
+            if (frameUs == 0L && held.size < 2) return
+            sendFormat(null)
+            for ((d, t, f) in held) { out.sampleData(ParsableByteArray(d), d.size, TrackOutput.SAMPLE_DATA_PART_MAIN); out.sampleMetadata(t, f, d.size, 0, null) }
+            held.clear()
+            return
+        }
+        out.sampleData(ParsableByteArray(data), data.size, TrackOutput.SAMPLE_DATA_PART_MAIN)
+        out.sampleMetadata(timeUs, flags, data.size, 0, null)
+    }
+
     private fun room(n: Int) {
         if (len + n > buf.size) buf = buf.copyOf(maxOf(buf.size * 2, len + n))
     }
@@ -148,7 +179,7 @@ private class Mp4vTrack(private val out: TrackOutput) : TrackOutput {
     // ---------- one AVI chunk ----------
 
     private fun chunk(data: ByteArray, timeUs: Long, key: Boolean) {
-        if (pendingFormat != null) sendFormat(headers(data))
+        if (csd == null && !sentFormat) csd = headers(data)
         slots.addLast(timeUs)
         val vops = split(data)
         var first = true
@@ -209,6 +240,11 @@ private class Mp4vTrack(private val out: TrackOutput) : TrackOutput {
     }
 
     fun flush() {
+        if (!mp4v && held.isNotEmpty()) {
+            sendFormat(null)
+            for ((d, t, f) in held) { out.sampleData(ParsableByteArray(d), d.size, TrackOutput.SAMPLE_DATA_PART_MAIN); out.sampleMetadata(t, f, d.size, 0, null) }
+            held.clear()
+        }
         while (waiting.isNotEmpty()) {
             val v = waiting.removeFirst()
             v.slot = slots.removeFirstOrNull() ?: (group.lastOrNull()?.slot ?: 0L)
@@ -219,15 +255,22 @@ private class Mp4vTrack(private val out: TrackOutput) : TrackOutput {
 
     fun reset() {
         len = 0
+        held.clear()
         slots.clear()
         waiting.clear()
         group.clear()
     }
 
-    private fun sendFormat(csd: ByteArray?) {
+    /** The format, once: with the frame rate from the chunks' times and, for MPEG-4, the headers. */
+    private fun sendFormat(@Suppress("UNUSED_PARAMETER") unused: ByteArray?) {
         val f = pendingFormat ?: return
         pendingFormat = null
-        out.format(if (csd != null && csd.isNotEmpty()) f.buildUpon().setInitializationData(listOf(csd)).build() else f)
+        sentFormat = true
+        var b = f.buildUpon()
+        val c = csd
+        if (mp4v && c != null && c.isNotEmpty()) b = b.setInitializationData(listOf(c))
+        if (frameUs > 0) b = b.setFrameRate(1_000_000f / frameUs)
+        out.format(b.build())
     }
 
     // ---------- the MPEG-4 stream ----------
