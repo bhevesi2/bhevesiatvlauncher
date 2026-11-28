@@ -289,6 +289,12 @@ class PlayerActivity : Activity() {
     private var audioDecoder: String? = null
     /** Started again in this process: its end must not end the process. */
     private var handedOver = false
+    /**
+     * AVI read through the mending layer (AviMpeg4.kt). Not at first: Media3's own reader plays
+     * XviD on most TVs (the TCL); only when the TV's decoder gets stuck on an AVI, and then on
+     * that TV from the start, once it has helped there.
+     */
+    private var mend = false
     private var index = 0
     private var item: MediaLib.Item? = null
     private val main = android.os.Handler(android.os.Looper.getMainLooper())
@@ -300,6 +306,7 @@ class PlayerActivity : Activity() {
         queue = intent.getLongArrayExtra("queue") ?: longArrayOf(intent.getLongExtra("id", -1))
         avoid = intent.getStringArrayListExtra("avoid") ?: ArrayList()
         recovered = intent.getIntExtra("recovered", 0)
+        mend = intent.getBooleanExtra("mend", Prefs.of(this).getBoolean("avi_mend", false))
         LowRam.init(this)
         index = intent.getIntExtra("index", 0).coerceIn(0, maxOf(0, queue.size - 1))
 
@@ -342,6 +349,7 @@ class PlayerActivity : Activity() {
         root.addView(loading, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
         setContentView(root)
 
+        Mp4vExtractors.report = { m -> PlayerLog.w(applicationContext, m) }
         val skip = avoid.toSet()
         val selector = MediaCodecSelector { mime, secure, tunneling ->
             val all = MediaCodecSelector.DEFAULT.getDecoderInfos(mime, secure, tunneling)
@@ -366,7 +374,8 @@ class PlayerActivity : Activity() {
             .setRenderersFactory(renderers)
             .setLoadControl(load)
             .setReleaseTimeoutMs(2_000)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(DataSource.Factory { LibraryDataSource(applicationContext) }, Mp4vExtractors))
+            .setMediaSourceFactory(DefaultMediaSourceFactory(DataSource.Factory { LibraryDataSource(applicationContext) },
+                if (mend) Mp4vExtractors else androidx.media3.extractor.DefaultExtractorsFactory()))
             .build()
         view.player = player
         player.addAnalyticsListener(object : AnalyticsListener {
@@ -382,7 +391,14 @@ class PlayerActivity : Activity() {
         player.addListener(object : Player.Listener {
             override fun onPlaybackStateChanged(state: Int) {
                 if (state == Player.STATE_ENDED) ended()
-                if (state == Player.STATE_READY) retries = 0
+                if (state == Player.STATE_READY) {
+                    retries = 0
+                    // the mending made this TV's decoder play an AVI: from now on, at once
+                    if (mend && recovered > 0 && !Prefs.of(this@PlayerActivity).getBoolean("avi_mend", false)) {
+                        Prefs.of(this@PlayerActivity).edit().putBoolean("avi_mend", true).apply()
+                        PlayerLog.w(this@PlayerActivity, "the mended AVI plays: kept for this TV")
+                    }
+                }
                 if (state == Player.STATE_BUFFERING) { bufferingSince = android.os.SystemClock.elapsedRealtime(); readAtBuffering = LibraryDataSource.read.get() }
                 else bufferingSince = 0L
                 loadingSoon(state == Player.STATE_BUFFERING)
@@ -551,21 +567,32 @@ class PlayerActivity : Activity() {
         val stuck = (waited > 12_000 && !player.isLoading) || (waited > 30_000 && read > (40L shl 20))
         if (!stuck) return
         PlayerLog.w(this, "stuck loading ${waited / 1000} s, ${read shr 20} MB read, loading ${player.isLoading}; video $videoDecoder, audio $audioDecoder")
-        if (recovered >= 2) {
+        // what the video decoder was given and gave back
+        player.videoDecoderCounters?.let { c ->
+            PlayerLog.w(this, "video decoder: ${c.decoderInitCount} started, ${c.queuedInputBufferCount} frames in, ${c.renderedOutputBufferCount} shown, " +
+                "${c.droppedBufferCount} dropped, ${c.skippedOutputBufferCount} skipped, ${c.skippedInputBufferCount} input skipped; format ${player.videoFormat?.let { "${it.sampleMimeType} ${it.codecs} ${it.width}x${it.height} ${it.frameRate}" }}")
+        }
+        if (recovered >= 3) {
             bufferingSince = 0L
             loading.visibility = View.INVISIBLE
             titleText.text = Lang.tr("This TV can't play this file")
             show()
             return
         }
+        val avi = item?.path?.lowercase()?.let { it.endsWith(".avi") || it.endsWith(".divx") } == true
         val next = ArrayList(avoid)
-        videoDecoder?.let { if (it !in next) next.add(it) }
-        if (recovered >= 1) audioDecoder?.let { if (it !in next) next.add(it) }
+        // an AVI on the TV's own decoder: first the same decoder with the mended stream, then another decoder
+        val mendNext = mend || avi
+        if (mend || !avi) {
+            videoDecoder?.let { if (it !in next) next.add(it) }
+            // the sound decoder too, the second time (not for an AVI: there the steps are the mending, then the picture's decoder)
+            if (!avi && recovered >= 1) audioDecoder?.let { if (it !in next) next.add(it) }
+        }
         save()
         handedOver = true
         startActivity(Intent(this, PlayerActivity::class.java)
             .putExtra("queue", queue).putExtra("index", index).putExtra("start", player.currentPosition)
-            .putStringArrayListExtra("avoid", next).putExtra("recovered", recovered + 1))
+            .putStringArrayListExtra("avoid", next).putExtra("recovered", recovered + 1).putExtra("mend", mendNext))
         overridePendingTransition(0, 0)
         finish()
     }

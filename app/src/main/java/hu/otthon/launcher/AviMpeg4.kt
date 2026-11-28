@@ -38,6 +38,9 @@ import androidx.media3.extractor.avi.AviExtractor
 object Mp4vExtractors : ExtractorsFactory {
     private val default = DefaultExtractorsFactory()
 
+    /** Where the mending tells what it saw (the player's log): the headers and the first frames. */
+    @Volatile var report: ((String) -> Unit)? = null
+
     override fun createExtractors(): Array<Extractor> = mend(default.createExtractors())
 
     override fun createExtractors(uri: android.net.Uri, responseHeaders: Map<String, List<String>>): Array<Extractor> =
@@ -233,8 +236,14 @@ private class Mp4vTrack(private val out: TrackOutput) : TrackOutput {
         group.clear()
     }
 
+    private var told = 0
+
     private fun send(v: Vop, timeUs: Long) {
         sendFormat(null)
+        if (told < 12) {
+            told++
+            Mp4vExtractors.report?.invoke("mp4v frame ${"IPBS"[v.type]} at ${timeUs / 1000} ms, ${v.data.size} B${if (v.key) ", key" else ""}: " + hex(v.data, 20))
+        }
         out.sampleData(ParsableByteArray(v.data), v.data.size, TrackOutput.SAMPLE_DATA_PART_MAIN)
         out.sampleMetadata(timeUs, if (v.key) M3.BUFFER_FLAG_KEY_FRAME else 0, v.data.size, 0, null)
     }
@@ -270,8 +279,12 @@ private class Mp4vTrack(private val out: TrackOutput) : TrackOutput {
         val c = csd
         if (mp4v && c != null && c.isNotEmpty()) b = b.setInitializationData(listOf(c))
         if (frameUs > 0) b = b.setFrameRate(1_000_000f / frameUs)
+        Mp4vExtractors.report?.invoke("avi video ${f.sampleMimeType} ${f.width}x${f.height}, ${if (frameUs > 0) 1_000_000f / frameUs else 0f} fps, headers " +
+            (c?.let { "${it.size} B: " + hex(it, 64) } ?: "none") + (if (mp4v) ", time bits $timeBits" else ""))
         out.format(b.build())
     }
+
+    private fun hex(d: ByteArray, n: Int) = d.take(n).joinToString("") { "%02x".format(it) }
 
     // ---------- the MPEG-4 stream ----------
 
