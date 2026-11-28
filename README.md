@@ -166,7 +166,11 @@ not log in again); the buffer is up to 200 MB, as the player's memory allows. Wh
 ring shows it with the read speed; the bar shows how much is ready ahead. Network errors are tried
 again three times. A Dolby Vision decoder gets Dolby Vision only (the Sony's took plain films
 too and showed nothing); a film that stops for good while loading starts again where it was
-without the decoders it had (twice at most). The buffer is smaller on the TVs with less memory. Where the screen has a mode with the film's frame rate (24 Hz for 23.976 fps,
+without the decoders it had (twice at most). The buffer is smaller on the TVs with less memory. AVI files with MPEG-4 video (XviD, DivX) are mended
+on the way to the decoder (`AviMpeg4.kt`): Media3's AVI reader gives the TV's hardware decoder
+neither the stream's headers (VOL) nor B-frame times in display order, and the Sony's MediaTek
+decoder played nothing; the headers now go as the decoder's configuration, packed-bitstream
+chunks are split and their placeholders dropped, B-frames get their display times. Where the screen has a mode with the film's frame rate (24 Hz for 23.976 fps,
 50 Hz for 25), it switches to it. Dolby Vision (profiles 5 and 8; 7 plays as HDR10), HDR10, HLG, the TV's own decoders, sound
 passed to the amplifier as it is. Subtitle files beside the film (.srt, .hu.srt, .ass, .vtt) are
 offered with the film's own. ◀ ▶ skip (held: faster; the presses add up, the film jumps once

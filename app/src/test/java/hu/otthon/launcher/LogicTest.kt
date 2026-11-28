@@ -205,4 +205,48 @@ class LogicTest {
         assertEquals("ZZ Top", MusicInfo.mainArtist(List(8) { "ZZ Top" } + listOf("A", "B")))
         assertEquals(null, MusicInfo.mainArtist(listOf("Kaitlyn Williams", "Seth Lewis Trio", "Kenrick Mervine", "Tom Amend")))
     }
+
+    // ---------- AVI MPEG-4 (XviD/DivX) mending: headers to the decoder, packed frames, B-frame times ----------
+
+    private class Rec : androidx.media3.extractor.TrackOutput {
+        val times = ArrayList<Long>()
+        var csd: ByteArray? = null
+        override fun format(format: androidx.media3.common.Format) { csd = format.initializationData.firstOrNull() }
+        override fun sampleData(input: androidx.media3.common.DataReader, length: Int, allowEndOfInput: Boolean, sampleDataPart: Int): Int {
+            val b = ByteArray(length); var n = 0
+            while (n < length) { val r = input.read(b, n, length - n); if (r < 0) break; n += r }
+            return n
+        }
+        override fun sampleData(data: androidx.media3.common.util.ParsableByteArray, length: Int, sampleDataPart: Int) { data.skipBytes(length) }
+        override fun sampleMetadata(timeUs: Long, flags: Int, size: Int, offset: Int, cryptoData: androidx.media3.extractor.TrackOutput.CryptoData?) { times.add(timeUs / 40_000) }
+    }
+
+    private fun bits(s: String): ByteArray { val b = s.padEnd(((s.length + 7) / 8) * 8, '1'); return ByteArray(b.length / 8) { i -> b.substring(i * 8, i * 8 + 8).toInt(2).toByte() } }
+    private val vol = byteArrayOf(0, 0, 1, 0x20) + bits("0" + "00000001" + "0" + "0001" + "0" + "00" + "1" + "0000000000011001" + "1" + "0")
+    private fun vop(type: Int, coded: Boolean, payload: Int) =
+        byteArrayOf(0, 0, 1, 0xB6.toByte()) + bits(type.toString(2).padStart(2, '0') + "0" + "1" + "00001" + "1" + (if (coded) "1" else "0")) + ByteArray(payload) { 0x55 }
+
+    private fun mend(chunks: List<ByteArray>): Rec {
+        val rec = Rec()
+        val cls = Class.forName("hu.otthon.launcher.Mp4vTrack")
+        val t = cls.getDeclaredConstructor(androidx.media3.extractor.TrackOutput::class.java).apply { isAccessible = true }.newInstance(rec) as androidx.media3.extractor.TrackOutput
+        t.format(androidx.media3.common.Format.Builder().setSampleMimeType("video/mp4v-es").build())
+        chunks.forEachIndexed { i, c ->
+            t.sampleData(androidx.media3.common.util.ParsableByteArray(c), c.size)
+            t.sampleMetadata(i * 40_000L, if (i == 0) androidx.media3.common.C.BUFFER_FLAG_KEY_FRAME else 0, c.size, 0, null)
+        }
+        cls.getDeclaredMethod("flush").apply { isAccessible = true }.invoke(t)
+        return rec
+    }
+
+    @Test
+    fun aviMpeg4() {
+        val normal = mend(listOf(vol + vop(0, true, 50), vop(1, true, 30), vop(2, true, 10), vop(2, true, 11), vop(1, true, 31), vop(2, true, 12)))
+        assertEquals(listOf(0L, 3L, 1L, 2L, 5L, 4L), normal.times)
+        assertEquals(true, normal.csd?.take(4) == listOf<Byte>(0, 0, 1, 0x20))
+        val packed = mend(listOf(vol + vop(0, true, 50), vop(1, true, 30) + vop(2, true, 10), vop(1, false, 0), vop(1, true, 31) + vop(2, true, 11), vop(1, false, 0)))
+        assertEquals(listOf(0L, 2L, 1L, 4L, 3L), packed.times)
+        val skipped = mend(listOf(vol + vop(0, true, 50), vop(1, true, 30), vop(1, false, 0), vop(1, true, 31)))
+        assertEquals(listOf(0L, 1L, 3L), skipped.times)
+    }
 }
