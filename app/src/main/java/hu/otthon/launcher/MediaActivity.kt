@@ -100,6 +100,8 @@ class MediaActivity : Activity() {
         scroll = ColScroller(this).apply { isVerticalScrollBarEnabled = false; clipChildren = false; clipToPadding = false }
         rows = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; clipChildren = false; setPadding(0, dp(6f), 0, dp(40f)) }
         scroll.addView(rows)
+        // the rows stop whole at the top, the one above fades out
+        scroll.rowsAtTop(rows, dp(22f), dp(18f))
         page.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         root.addView(page, FrameLayout.LayoutParams(-1, -1))
         setContentView(root)

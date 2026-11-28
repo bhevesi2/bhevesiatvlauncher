@@ -444,12 +444,16 @@ object MediaLib {
     }
 
     private fun usbFiles(ctx: Context, out: MutableList<Triple<String, Long, Long>>) {
+        walked = 0
+        skipped = 0
         fun walk(dir: File, depth: Int) {
             if (depth > 6 || out.size > 20000) return
+            walked++
             for (f in dir.listFiles() ?: return) {
                 if (f.name.startsWith(".")) continue
                 if (f.isDirectory) walk(f, depth + 1)
                 else if (f.extension.lowercase() in VIDEO && !f.name.lowercase().contains("sample")) out.add(Triple(f.absolutePath, f.length(), f.lastModified()))
+                else skipped++
             }
         }
         for (r in usbRoots(ctx)) walk(r, 0)

@@ -351,10 +351,13 @@ class MaActivity : PanelActivity() {
             clipToPadding = false
             clipChildren = false
             isVerticalScrollBarEnabled = false
-            setPadding(0, dp(12f), 0, dp(30f))
+            // no padding at the top: the fade starts at the very edge (the room for the grown cover is in the rows)
+            setPadding(0, 0, 0, dp(30f))
         }
-        body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; clipChildren = false }
+        body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; clipChildren = false; setPadding(0, dp(12f), 0, 0) }
         scroll.addView(body, FrameLayout.LayoutParams(-1, -2))
+        // the rows (and the grids' lines) stop whole at the top, the one above fades out
+        scroll.rowsAtTop(body, dp(20f), dp(16f))
         // scrolled up, the covers pass under the story, not over it
         val clip = FrameLayout(this).apply { clipChildren = true }
         clip.addView(scroll, FrameLayout.LayoutParams(-1, -1))

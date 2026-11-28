@@ -140,3 +140,38 @@ class ColScroller(ctx: Context) : ScrollView(ctx) {
         glide.to(to.toFloat())
     }
 }
+
+/**
+ * A list of rows that stops on whole rows: the focused row, with the heading above it, is brought
+ * [gap] below the list's top, so a row is never left cut at the top edge; what is above it fades
+ * out in a [fade] strip while it moves. The end gets room enough for the last row to come up too.
+ * [content] is the list's one child (the rows and their headings).
+ */
+fun ColScroller.rowsAtTop(content: android.view.ViewGroup, gap: Int, fade: Int) {
+    isVerticalFadingEdgeEnabled = fade > 0
+    setFadingEdgeLength(fade)
+    fun block(of: View): View? {
+        var v: View = of
+        while (v.parent !== content) v = v.parent as? View ?: return null
+        return v
+    }
+    fun targetOf(b: View): Int {
+        val i = content.indexOfChild(b)
+        val prev = if (i > 0) content.getChildAt(i - 1) else null
+        val head = prev is android.widget.TextView
+        val top = if (head) prev!!.top else b.top
+        val first = (0 until (if (head) i - 1 else i)).none { content.getChildAt(it).hasFocusable() }
+        return if (first) 0 else maxOf(0, top - gap)
+    }
+    anchor = { f -> block(f)?.let { targetOf(it) } }
+    fun pad() {
+        if (height == 0 || content.childCount == 0) return
+        val last = (content.childCount - 1 downTo 0).map { content.getChildAt(it) }.firstOrNull { it.hasFocusable() } ?: return
+        val t = targetOf(last)
+        val want = maxOf(0, t + height - paddingTop - paddingBottom - (content.height - content.paddingBottom))
+        if (content.paddingBottom != want) content.setPadding(content.paddingLeft, content.paddingTop, content.paddingRight, want)
+    }
+    addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> post { pad() } }
+    content.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> post { pad() } }
+}
+
