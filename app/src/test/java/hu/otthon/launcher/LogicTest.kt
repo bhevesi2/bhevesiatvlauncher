@@ -249,4 +249,9 @@ class LogicTest {
         val skipped = mend(listOf(vol + vop(0, true, 50), vop(1, true, 30), vop(1, false, 0), vop(1, true, 31)))
         assertEquals(listOf(0L, 1L, 3L), skipped.times)
     }
+
+    @Test
+    fun tvmazeText() {
+        assertEquals("Chef Carmen \"Carmy\" Berzatto & co.\nSeason two.", OpenData.plain("<p>Chef <b>Carmen</b> &quot;Carmy&quot; Berzatto &amp; co.</p><p>Season two.</p>"))
+    }
 }

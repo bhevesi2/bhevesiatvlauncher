@@ -1278,6 +1278,8 @@ class SettingsActivity : PanelActivity() {
             }
         }
         note("This product uses the TMDB API but is not endorsed or certified by TMDB.")
+        // without a key (or where TMDB has nothing) the library still gets its stories
+        note("Without a key, or where TMDB has nothing: series from TVmaze, films from Wikipedia (CC BY-SA), no key needed.")
     }
 
     /**

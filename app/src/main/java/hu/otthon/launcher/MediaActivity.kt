@@ -195,7 +195,8 @@ class MediaActivity : Activity() {
             rows.addView(label("Without a TMDB key the films have no pictures or stories: Settings › Library › TMDB key", 11f, C.TEXT2),
                 LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(48f); topMargin = dp(10f) })
         }
-        rows.addView(label("Film data and pictures: TMDB. This product uses the TMDB API but is not endorsed or certified by TMDB.", 9f, 0x88FFFFFF.toInt()),
+        rows.addView(label("Film data and pictures: TMDB. This product uses the TMDB API but is not endorsed or certified by TMDB. " +
+            "Where TMDB has nothing: series from TVmaze, films from Wikipedia (CC BY-SA).", 9f, 0x88FFFFFF.toInt()),
             LinearLayout.LayoutParams(-2, -2).apply { leftMargin = dp(48f); topMargin = dp(18f) })
         val all = allCards()
         (all.firstOrNull { it.title.key == focusKey } ?: all.firstOrNull())?.requestFocus()

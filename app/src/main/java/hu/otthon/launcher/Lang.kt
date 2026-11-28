@@ -508,6 +508,7 @@ object Lang {
         "Sound and subtitles" to "Hang és felirat",
         "Can't play this file" to "Ez a fájl nem játszható le",
         "Connecting again…" to "Újracsatlakozás…",
+        "Without a key, or where TMDB has nothing: series from TVmaze, films from Wikipedia (CC BY-SA), no key needed." to "Kulcs nélkül, vagy ahol a TMDB nem talál semmit: sorozatok a TVmaze-ről, filmek a Wikipediáról (CC BY-SA), kulcs nélkül.",
         "This TV can't play this file" to "Ez a tévé nem tudja lejátszani ezt a fájlt",
         "This kind of file can't be played" to "Ilyen fájlt nem tud lejátszani",
         "OK pause · ◀ ▶ skip · ▲ sound and subtitles · Back leave" to "OK szünet · ◀ ▶ tekerés · ▲ hang és felirat · Vissza kilépés",

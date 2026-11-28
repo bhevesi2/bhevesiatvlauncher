@@ -100,7 +100,16 @@ object MediaLib {
     fun setPassword(ctx: Context, id: String, pw: String) = Secrets.put(ctx, "media_pw_$id", pw)
 
     fun tmdbKey(ctx: Context): String = Secrets.get(ctx, "tmdb_key")
-    fun setTmdbKey(ctx: Context, key: String) = Secrets.put(ctx, "tmdb_key", key.trim())
+    fun setTmdbKey(ctx: Context, key: String) {
+        Secrets.put(ctx, "tmdb_key", key.trim())
+        if (key.isBlank()) return
+        // with a key, what TVmaze and Wikipedia gave (negative ids) and what nobody found are asked of TMDB again
+        try {
+            val db = Db.of(ctx).writableDatabase
+            db.execSQL("UPDATE files SET tmdb = NULL WHERE tmdb < 0")
+            db.execSQL("DELETE FROM misses")
+        } catch (e: Exception) { }
+    }
 
     // ---------- what a file is, from its name (no Android here: tested) ----------
 
@@ -220,7 +229,7 @@ object MediaLib {
                 val tmdb = c.getLong(1)
                 val fileTitle = c.getString(2) ?: ""
                 out.add(Title(
-                    key = (if (series) "s:" else "m:") + (if (tmdb > 0) tmdb.toString() else fileTitle),
+                    key = (if (series) "s:" else "m:") + (if (tmdb != 0L) tmdb.toString() else fileTitle),
                     series = series, tmdb = tmdb,
                     title = c.getString(13) ?: fileTitle, original = c.getString(14) ?: "", overview = c.getString(15) ?: "",
                     year = if (!c.isNull(16)) c.getInt(16) else if (!c.isNull(3)) c.getInt(3) else null,
@@ -237,8 +246,9 @@ object MediaLib {
     /** The files of a title: a film's file(s), or a series' episodes in order. */
     fun items(ctx: Context, t: Title): List<Item> {
         val db = Db.of(ctx).readableDatabase
-        val where = if (t.tmdb > 0) "f.tmdb = ? AND f.series = ?" else "f.title = ? AND f.series = ?"
-        val arg = if (t.tmdb > 0) t.tmdb.toString() else t.title
+        // a title found anywhere (TMDB: positive id, TVmaze or Wikipedia: negative) by its id, else by its name
+        val where = if (t.tmdb != 0L) "f.tmdb = ? AND f.series = ?" else "f.title = ? AND f.series = ?"
+        val arg = if (t.tmdb != 0L) t.tmdb.toString() else t.title
         val out = ArrayList<Item>()
         db.rawQuery(
             "SELECT f.id, f.source, f.path, f.series, f.title, f.season, f.episode, f.position, f.duration, f.watched, e.name, e.overview, e.still " +
@@ -465,10 +475,20 @@ object MediaLib {
         if (tmdb(ctx, "/configuration", emptyMap()) != null) "OK" else "The key was not accepted"
     } catch (e: Exception) { e.message ?: "TMDB not reachable" }
 
-    /** Looks up the titles not known yet (and refreshes ones older than a month). Background thread. */
+    /**
+     * Looks up the titles not known yet. TMDB first (with a key); what it does not know, or every
+     * title without a key: a series on TVmaze, a film on Wikipedia (neither needs a key). Their ids
+     * are kept negative, so a TMDB key added later looks them up again. Background thread.
+     */
     fun enrich(ctx: Context): Int {
-        if (tmdbKey(ctx).isBlank()) return 0
+        val hasKey = tmdbKey(ctx).isNotBlank()
         val db = Db.of(ctx).writableDatabase
+        // once: what TMDB did not find before TVmaze and Wikipedia were asked too is looked up again now
+        val p = Prefs.of(ctx)
+        if (!p.getBoolean("media_open_data", false)) {
+            try { db.execSQL("DELETE FROM misses") } catch (e: Exception) { }
+            p.edit().putBoolean("media_open_data", true).apply()
+        }
         val lang = if (Lang.hu) "hu-HU" else "en-US"
         val todo = ArrayList<Triple<Boolean, String, Int?>>()
         db.rawQuery("SELECT DISTINCT series, title, year FROM files WHERE tmdb IS NULL AND seen = 1", null).use { c ->
@@ -480,12 +500,19 @@ object MediaLib {
             val missKey = "${if (series) "s" else "m"}|$title|$year"
             val missed = db.rawQuery("SELECT at FROM misses WHERE key = ?", arrayOf(missKey)).use { if (it.moveToFirst()) it.getLong(0) else 0L }
             if (System.currentTimeMillis() - missed < 3 * 86_400_000L) continue
-            val id = try { find(ctx, series, title, year, lang) } catch (e: Exception) { null }
+            var id: Long? = null
+            if (hasKey) {
+                // not reachable now (no internet): left for the next time, not kept as "not found"
+                id = try { find(ctx, series, title, year, lang) } catch (e: java.io.IOException) { continue } catch (e: Exception) { null }
+                if (id != null) { try { details(ctx, series, id, lang) } catch (e: Exception) { continue } }
+            }
+            if (id == null) id = try {
+                if (series) OpenData.series(ctx, title, year) else OpenData.film(ctx, title, year)
+            } catch (e: java.io.IOException) { continue } catch (e: Exception) { null }
             if (id == null) {
                 db.insertWithOnConflict("misses", null, ContentValues().apply { put("key", missKey); put("at", System.currentTimeMillis()) }, SQLiteDatabase.CONFLICT_REPLACE)
                 continue
             }
-            try { details(ctx, series, id, lang) } catch (e: Exception) { continue }
             db.update("files", ContentValues().apply { put("tmdb", id) }, "series = ? AND title = ? AND tmdb IS NULL",
                 arrayOf(if (series) "1" else "0", title))
             done++
@@ -583,12 +610,15 @@ object MediaLib {
         val k = "$size$path@$maxW"
         memory.get(k)?.let { return it }
         val dir = File(ctx.cacheDir, "media").apply { mkdirs() }
-        val f = File(dir, size + "_" + path.trim('/').replace('/', '_'))
+        // a TMDB path (/abc.jpg), or a whole address (TVmaze, Wikipedia)
+        val whole = path.startsWith("http")
+        val f = File(dir, if (whole) "u_" + Integer.toHexString(path.hashCode()) + "_" + path.length else size + "_" + path.trim('/').replace('/', '_'))
         if (!f.exists()) {
-            val c = URL(IMAGES + size + path).openConnection() as HttpURLConnection
+            val c = URL(if (whole) path else IMAGES + size + path).openConnection() as HttpURLConnection
             try {
                 c.connectTimeout = 8000
                 c.readTimeout = 15000
+                c.setRequestProperty("User-Agent", OpenData.AGENT)
                 if (c.responseCode != 200) return null
                 val tmp = File(f.path + ".tmp")
                 c.inputStream.use { i -> tmp.outputStream().use { o -> i.copyTo(o) } }
@@ -597,7 +627,14 @@ object MediaLib {
                 c.disconnect()
             }
         }
-        var b = BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.RGB_565 }) ?: run {
+        // a big picture (Wikipedia's are often 2000 px and more) read at a fraction when it is shown small
+        var sample = 1
+        if (maxW > 0) {
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(f.path, bounds)
+            while (bounds.outWidth / (sample * 2) >= maxW) sample *= 2
+        }
+        var b = BitmapFactory.decodeFile(f.path, BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.RGB_565; inSampleSize = sample }) ?: run {
             f.delete()   // a broken file (a download cut short): fetched again next time
             return null
         }

@@ -177,6 +177,13 @@ offered with the film's own. ◀ ▶ skip (held: faster; the presses add up, the
 when they stop), OK pause, ▲ sound and subtitles, ⏮ the episode before, Back leaves; where it got to is kept, near the end counts as watched, the next episode follows.
 This product uses the TMDB API but is not endorsed or certified by TMDB.
 
+Without a TMDB key, or for what TMDB does not know, the library asks sources that need no key:
+a series on TVmaze (story, genres, rating, cast, poster, wide picture, every episode's name, story
+and picture), a film on Wikipedia (Hungarian first when the launcher speaks Hungarian, then
+English; its opening and, where it has one, the poster). A page is taken only if its name is the
+title and, for a film, it is about a film of that year. Their ids are kept negative: a TMDB key
+added later looks them up again. Both CC BY-SA, named in the library and in Settings.
+
 ## Music library (Music Assistant)
 
 The music button opens Music Assistant's library in the film library's look: the chosen album's,
